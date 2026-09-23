@@ -1,6 +1,7 @@
 // 다중 뷰포트의 레이아웃·카메라·가시성 계산을 제공한다.
 #include "EnginePCH.h"
 #include "Editor/LevelEditor/MultipleViewports/Core/MultipleViewports.h"
+#include "Component/PrimitiveComponent.h"
 
 #include <algorithm>
 #include <cassert>
@@ -388,15 +389,16 @@ bool IsAABBInFrustum(const FAABB& Bounds, const FFrustumPlanes& Frustum)
     return true;
 }
 
-// 절두체 검사에 통과한 렌더 대상 ID를 재사용 출력 버퍼에 모은다.
-void CullForView(const TArray<FRenderableObject>& WorldObjects, const FFrustumPlanes& Frustum, TArray<ObjectId>& OutVisibleIds)
+
+// 절두체 검사에 통과한 컴포넌트 포인터를 모은다
+void CullForView(const TArray<FRenderableObject>& WorldObjects, const FFrustumPlanes& Frustum, TArray<UPrimitiveComponent*>& OutVisiblePrimitives)
 {
-    OutVisibleIds.Reset();
+    OutVisiblePrimitives.Reset();
     for (const FRenderableObject& Object : WorldObjects)
     {
-        if (IsAABBInFrustum(Object.WorldBounds, Frustum))
+        if (Object.Primitive && IsAABBInFrustum(Object.WorldBounds, Frustum))
         {
-            OutVisibleIds.Add(Object.Id);
+            OutVisiblePrimitives.Add(Object.Primitive);
         }
     }
 }

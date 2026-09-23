@@ -75,6 +75,8 @@ public:
 
 	uint32 GetUUID() const { return ObjectUUID; }
 	void SetUUID(uint32 Uid) { ObjectUUID = Uid; }
+	uint32 GetInternalIndex() const { return InternalIndex; }
+	uint32 GetSerialNumber() const { return InternalSerialNumber; }
 
 	const FName& GetFName() const { return Name; }         // FName 비교용
 	FString GetName() const { return Name.ToString(); }    // Name 출력용
@@ -113,8 +115,9 @@ public:
 	}
 
 private:
-	uint32 ObjectUUID;
-	uint32 InternalIndex;
+	uint32 ObjectUUID = 0;
+	uint32 InternalIndex = 0;
+	uint32 InternalSerialNumber = 0;
 
 	FName Name = FName("None");
 	UObject* Outer = nullptr;

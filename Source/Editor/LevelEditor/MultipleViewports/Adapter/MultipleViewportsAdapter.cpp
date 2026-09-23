@@ -165,9 +165,8 @@ void FMultipleViewportsAdapter::InitializeFromWorld(UWorld& World)
         MainCamera->GetNearZ(),
         MainCamera->GetFarZ()};
     Views.Mode = ELayoutMode::QuadSplit;
-    // 최신 trace의 구도를 사용해 화면 정면은 +X, 화면 오른쪽은 +Y가 되도록 시작한다.
-    Views.Cameras[0] = {{{-11.665390f, 6.117728f, 9.921079f},
-        {0.081251f, 0.256328f, -0.291035f, 0.918146f}}, Perspective};
+    // 씬의 메인 카메라 위치와 회전을 반영한다
+    Views.Cameras[0] = {{MainCamera->GetWorldLocation(), MainCamera->GetRelativeRotationQuat()}, Perspective};
     Views.Cameras[0].Transform.Rotation = MakeCameraRotation(
         CameraYawDegrees(Views.Cameras[0].Transform.Rotation),
         CameraPitchDegrees(Views.Cameras[0].Transform.Rotation));
@@ -443,38 +442,26 @@ void FMultipleViewportsAdapter::UpdateInput(
     Views.Cameras[ActiveViewIndex] = UpdatedCamera;
 }
 
-// 현재 World의 가시 컴포넌트에서 경계만 캡처한다. Mesh·삼각형은 복사하지 않는다.
+// 현재 World의 가시 컴포넌트에서 경계와 컴포넌트 포인터를 캡처한다
 void FMultipleViewportsAdapter::CaptureWorld(UWorld& World)
 {
+    const auto& Primitives = World.GetWorldPrimitiveComponents();
     RenderObjects.Reset();
-    for (auto& Entry : PrimitiveById) Entry.second.bCaptured = false;
+    RenderObjects.Reserve(Primitives.Num());
     bCapturedBillboard = false;
     bCapturedParticle = false;
-
-    for (TObjectIterator<UPrimitiveComponent> It; It; ++It)
+   
+    // 등록된 컴포넌트 순회
+    for (const auto& WeakPrimitive : Primitives)
     {
-        UPrimitiveComponent* Primitive = *It;
-        if (!Primitive || !Primitive->IsVisible() || !Primitive->GetOwner() ||
-            Primitive->GetOwner()->GetWorld() != &World) continue;
-        const ObjectId Id = Primitive->GetUUID();
-        if (Id == InvalidObjectId) continue;
-
+        UPrimitiveComponent* Primitive = WeakPrimitive.Get();
+        if (!Primitive || !Primitive->IsVisible()) continue;
+        
+        // 바운딩 박스와 컴포넌트 포인터 등록
         FRenderableObject RenderObject{};
-        RenderObject.Id = Id;
-        RenderObject.WorldBounds = MakeWorldBounds(Primitive->CalcBounds());
+        RenderObject.Primitive = Primitive;
+        RenderObject.WorldBounds = MakeWorldBounds(Primitive->GetWorldBounds());
         RenderObjects.Add(RenderObject);
-        PrimitiveSnapshot& Snapshot = PrimitiveById[Id];
-        Snapshot.Primitive = Primitive;
-        Snapshot.bCaptured = true;
-        Snapshot.bParticlesPrepared = false;
-        if (Cast<UParticleSubUVComponent>(Primitive)) bCapturedParticle = true;
-        else if (Cast<UBillboardComponent>(Primitive)) bCapturedBillboard = true;
-    }
-
-    for (auto Iterator = PrimitiveById.begin(); Iterator != PrimitiveById.end();)
-    {
-        const auto Current = Iterator++;
-        if (!Current->second.bCaptured) PrimitiveById.Remove(Current->first);
     }
 }
 
@@ -628,68 +615,24 @@ bool FMultipleViewportsAdapter::TryGetActiveViewRay(const FVector2 LocalMousePos
     return true;
 }
 
-// 범위를 검사한 뒤 지정 View의 재사용 가시 ID 버퍼 크기를 반환한다.
+// 범위를 검사한 뒤 지정 View의 재사용 가시 컴포넌트 버퍼 크기를 반환한다
 std::size_t FMultipleViewportsAdapter::GetVisibleObjectCount(const int32 ViewIndex) const
 {
     assert(ViewIndex >= 0 && ViewIndex < 4);
-    return VisibleIds[ViewIndex].Num();
+    return VisiblePrimitives[ViewIndex].Num();
 }
 
-// 가시 ID를 컴포넌트로 역매핑해 큐를 구성한다. 생존 목록·상수는 프레임 공통, Billboard·정렬 거리는 View별이다.
+// 가시 컴포넌트를 직접 순회하여 렌더 큐를 구성한다
 void FMultipleViewportsAdapter::BuildRenderQueue(const int32 ViewIndex, TQueue<FRenderPacket>& OutQueue)
 {
     OutQueue.Reset();
     if (!IsViewActive(ViewIndex)) return;
     {
-        CullForView(RenderObjects, PrepareView(ViewIndex).Frustum, VisibleIds[ViewIndex]);
+        CullForView(RenderObjects, PrepareView(ViewIndex).Frustum, VisiblePrimitives[ViewIndex]);
     }
-    for (const ObjectId Id : VisibleIds[ViewIndex])
+    for (UPrimitiveComponent* Primitive : VisiblePrimitives[ViewIndex])
     {
-        const auto Found = PrimitiveById.Find(Id);
-        if (!Found || !Found->Primitive)
-            continue;
-
-        UPrimitiveComponent* Primitive = Found->Primitive;
-        if (UParticleSubUVComponent* ParticleComponent = Cast<UParticleSubUVComponent>(Primitive))
-        {
-            const TArray<FParticle>& Particles = ParticleComponent->GetParticlesForView();
-            PrimitiveSnapshot& Snapshot = *Found;
-            if (!Snapshot.bParticlesPrepared)
-            {
-                Snapshot.AliveParticleIndices.Reset();
-                Snapshot.AliveParticleIndices.Reserve(Particles.Num());
-                for (int32 Index = 0; Index < Particles.Num(); ++Index)
-                    if (Particles[Index].bAlive) Snapshot.AliveParticleIndices.Add(Index);
-                ParticleComponent->BeginViewSubmission();
-                Snapshot.bParticlesPrepared = true;
-            }
-            // 반투명은 모든 emitter를 합친 최종 Renderer만 정렬한다. 불투명은 Core 정렬을 유지하며 동률은 인덱스 순서다.
-            const FVector CameraLocation = GetEngineCameraLocation(ViewIndex);
-            const bool bOpaque = ParticleComponent->UsesOpaqueMaterial();
-            if (bOpaque)
-            {
-                SortInputs.Reset();
-                for (const int32 Index : Snapshot.AliveParticleIndices)
-                    SortInputs.Add({static_cast<ObjectId>(Index + 1), Particles[Index].Location});
-                SortParticlesByCameraDistance(SortInputs, Views.Cameras[ViewIndex].Transform.Location, SortedParticleIds);
-            }
-            for (int32 Order = 0; Order < Snapshot.AliveParticleIndices.Num(); ++Order)
-            {
-                const int32 ParticleIndex = bOpaque ? static_cast<int32>(SortedParticleIds[Order] - 1) : Snapshot.AliveParticleIndices[Order];
-                const FParticle& Particle = Particles[ParticleIndex];
-                const FMatrix ParticleWorld = BuildEngineBillboardMatrix(ViewIndex, Particle.Location, Particle.Scale, Particle.Scale);
-                const FVector Delta = Particle.Location - CameraLocation;
-                ParticleComponent->SubmitParticleToRenderQueue(OutQueue, ParticleIndex, ParticleWorld, Delta.Dot(Delta));
-            }
-        }
-        else if (UBillboardComponent* Billboard = Cast<UBillboardComponent>(Primitive))
-        {
-            const FVector Scale = Billboard->GetWorldScale3D();
-            Billboard->SubmitToRenderQueue(
-                OutQueue,
-                BuildEngineBillboardMatrix(ViewIndex, Billboard->GetWorldLocation(), Scale.Y, Scale.Z));
-        }
-        else
+        if (Primitive)
         {
             Primitive->SubmitToRenderQueue(OutQueue);
         }

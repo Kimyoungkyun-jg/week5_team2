@@ -29,7 +29,10 @@ public:
 	FQuat GetRelativeRotationQuat() const { return Transform.GetOrientation(); }
 
 	const FTransform& GetTransform() const { return Transform; }
-	void SetTransform(const FTransform& InTransform) { Transform = InTransform; }
+	void SetTransform(const FTransform& InTransform) { 
+		Transform = InTransform; 
+		bBoundsDirty = true; //위치가 바뀔때만 더티 마킹
+	}
 
 	// Attatch-To
 	USceneComponent* GetAttachParent() const { return AttachParent; }
@@ -45,10 +48,27 @@ public:
 	FVector GetWorldScale3D() const;
 	FMatrix GetWorldMatrix() const;
 
+	// 위치가 바뀌면 더티 마킹
+	void MarkBoundsDirty() { bBoundsDirty = true; }
+
+	//더티할 때만 새로 계산하고, 아니면 캐시된 박스 즉시 반환!
+	const FBox GetWorldBounds()
+	{
+		if (bBoundsDirty)
+		{
+			CachedWorldBounds = CalcBounds();
+			bBoundsDirty = false;
+		}
+		return CachedWorldBounds;
+	}
+
 protected:
 	FTransform Transform;
 
 	USceneComponent* AttachParent = nullptr; // Attach 부모 정보
 	TArray<USceneComponent*> AttachChildren;
 
+
+	bool bBoundsDirty = true; // 처음 생성 시에는 계산 필요
+	FBox CachedWorldBounds;
 };

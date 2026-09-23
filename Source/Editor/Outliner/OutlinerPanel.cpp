@@ -68,12 +68,18 @@ void FOutlinerPanel::DrawActors(ULevel* Level)
         { EPrimitiveType::Plane,  "Plane" }
     };
 
-    for (AActor* Actor : Actors)
+    ImGuiListClipper Clipper;
+    Clipper.Begin(Actors.Num()); // 총 5만 개라고 알려줌
+    while (Clipper.Step())
     {
-        if (!Actor)
-            continue;
-
-        DrawActorNode(Actor);
+        // 화면에 현재 보이는 20~30개 인덱스 구간만 루프를 돎!
+        for (int32 i = Clipper.DisplayStart; i < Clipper.DisplayEnd; ++i)
+        {
+            if (Actors[i])
+            {
+                DrawActorNode(Actors[i]);
+            }
+        }
     }
 
     if (PendingDeleteActor)

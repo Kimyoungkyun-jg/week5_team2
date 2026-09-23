@@ -2,6 +2,7 @@
 
 #include "ObjectSystem/Object.h"
 #include "ObjectSystem/Class.h"
+#include "UObject/TWeakObjectPtr.h"
 #include "GameFramework/Actor.h"
 #include "Component/PrimitiveComponent.h"
 #include "Component/TextRenderComponent.h"
@@ -30,6 +31,7 @@ public:
 	template <class T>
 	T* SpawnActor(FName InName = NAME_None, const FTransform* Transform = nullptr)
 	{
+
 		return CastChecked<T>(SpawnActor(T::StaticClass(), InName, Transform));
 	}
 
@@ -67,6 +69,10 @@ public:
 	void BeginPlay();
 	void EndPlay();
 
+	TArray<TWeakObjectPtr<UPrimitiveComponent>>& GetWorldPrimitiveComponents() {
+		return WorldPrimitiveComponents;
+	}
+
 private:
 	TQueue<AActor*> BeginPlayList;
 	
@@ -78,4 +84,7 @@ private:
 	ULevel* PersistentLevel = nullptr;
 	ULevel* CurrentLevel = nullptr;
 	TArray<ULevel*> Levels;
+
+	TArray<TWeakObjectPtr<UPrimitiveComponent>> WorldPrimitiveComponents;
+
 };

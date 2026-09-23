@@ -17,7 +17,7 @@ UObject* FObjectFactory::ConstructObject(UClass* Class, UObject* Outer, FName Na
 
     Object->SetName(Name);
 
-    LOG(Info, "Create {}", Class->Name);
+    // LOG(Info, "Create {}", Class->Name);
     //LOG(Info, "Total Allocation Bytes - {}", FEngineStatics::TotalAllocationBytes);
     //LOG(Info, "Total Allocation Count - {}", FEngineStatics::TotalAllocationCount);
 
@@ -29,42 +29,13 @@ FName FObjectFactory::MakeUniqueObjectName(const UClass* Class, UObject* Outer, 
     if (!Class)
         return FName();
 
-    // 이름을 따로 안 줬으면 Class 이름을 기본 이름으로 사용
+    // 기본 이름 지정
     if (BaseName == NAME_None)
     {
         BaseName = FName(Class->Name);
     }
 
-    FString BaseNameString = BaseName.ToString();
-
-    int32 Number = 0;
-
-    while (true)
-    {
-        FString CandidateName =  BaseNameString + "_" + std::to_string(Number);
-
-        bool bNameExists = false;
-
-        for (UObject* Object : GUObjectArray)
-        {
-            if (!Object)
-                continue;
-
-            if (Object->GetOuter() != Outer)
-                continue;
-
-            if (Object->GetName() == CandidateName)
-            {
-                bNameExists = true;
-                break;
-            }
-        }
-
-        if (!bNameExists)
-        {
-            return FName(CandidateName);
-        }
-
-        ++Number;
-    }
+    // 전역 카운터로 즉시 고유 이름 생성
+    static uint64 ObjectUniqueCounter = 0;
+    return FName(BaseName.ToString() + "_" + std::to_string(++ObjectUniqueCounter));
 }

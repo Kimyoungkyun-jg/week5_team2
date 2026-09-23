@@ -91,7 +91,7 @@ private:
 	TUniquePtr<FGizmo> Gizmo;
 	TUniquePtr<FOutline> Outline;
 	TUniquePtr<FOutlineRenderer> OutlineRenderer;
-	TUniquePtr<FSkyboxRenderer> SkyboxRenderer;
+
 
 	
 

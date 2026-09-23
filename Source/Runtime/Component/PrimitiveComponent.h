@@ -60,9 +60,16 @@ public:
 		return Data ? Data->AABB : Super::CalcLocalBounds();
 	}
 
+	
+
+	
+
 protected:
 	bool TraceMesh(const FRay& WorldRay, const FStaticMeshData& Mesh, const FMatrix& WorldMatrix, FHitResult& OutResult);
 	bool bVisible = true;
 
 	/*TArray<UMaterial* MaterialOverride = nullptr;*/
+
+
+
 };

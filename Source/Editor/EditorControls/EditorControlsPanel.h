@@ -22,6 +22,7 @@ public:
 	inline void SetWorld(UWorld* InWorld) { World = InWorld; }
 
 	float DeltaTime = 1.0f;
+	float CameraSpeed = 20.0f; // 기본 이동 속도
 	UWorld* World; // SpawnActor MainCamera
 
 	void AddActor(uint32 Index);

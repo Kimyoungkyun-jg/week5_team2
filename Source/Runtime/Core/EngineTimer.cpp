@@ -14,6 +14,7 @@ void EngineTimer::Tick()
 	DeltaTime = Elapsed.count();
 	PrevTime = Current;
 
-	if (DeltaTime > 0.1f) DeltaTime = 0.1f;
+	// 최대 델타타임 제한 해제
+	//if (DeltaTime > 0.1f) DeltaTime = 0.1f;
 	TotalTime += DeltaTime;
 }

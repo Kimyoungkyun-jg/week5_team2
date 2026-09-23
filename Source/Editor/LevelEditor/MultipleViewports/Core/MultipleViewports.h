@@ -121,10 +121,12 @@ void ComputeViewRects(const FSplitRatio& Ratio, FVector2 WindowSize, FRect OutRe
 // 축 정렬 Bounding Box의 중심과 반크기를 담는다.
 struct FAABB { FVector Center; FVector Extent; };
 
-// 렌더 대상의 식별자와 월드 행렬·월드 경계를 담는다.
+class UPrimitiveComponent;
+
+// 렌더 대상의 컴포넌트 포인터 월드 행렬 월드 경계를 담는다
 struct FRenderableObject
 {
-    ObjectId Id;
+    UPrimitiveComponent* Primitive = nullptr;
     FMatrix WorldMatrix{0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
     FAABB WorldBounds;
 };
@@ -136,8 +138,8 @@ struct FFrustumPlanes { FPlane Planes[6]; };
 FFrustumPlanes ExtractFrustumPlanes(const FMatrix& ViewProjection);
 // AABB의 projected radius를 이용해 절두체 포함 여부를 검사한다.
 bool IsAABBInFrustum(const FAABB& Bounds, const FFrustumPlanes& Frustum);
-// 같은 월드 스냅샷에서 절두체를 통과한 Object ID만 출력 버퍼에 쓴다.
-void CullForView(const TArray<FRenderableObject>& WorldObjects, const FFrustumPlanes& Frustum, TArray<ObjectId>& OutVisibleIds);
+// 같은 월드 스냅샷에서 절두체를 통과한 컴포넌트 포인터만 출력 버퍼에 쓴다
+void CullForView(const TArray<FRenderableObject>& WorldObjects, const FFrustumPlanes& Frustum, TArray<UPrimitiveComponent*>& OutVisiblePrimitives);
 
 // 삼각형의 월드 공간 세 꼭짓점을 담는다.
 struct FTriangle { FVector V0, V1, V2; };

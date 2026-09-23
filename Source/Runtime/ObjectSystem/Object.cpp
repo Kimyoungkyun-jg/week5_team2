@@ -12,6 +12,8 @@ TArray<UObject*> GUObjectArray;
 
 UObject::UObject()
 {
+	static uint32 NextSerialNumber = 1;
+	InternalSerialNumber = NextSerialNumber++;
 	ObjectUUID = FEngineStatics::GetUUID();
 	InternalIndex = GUObjectArray.Num();
 	GUObjectArray.Add(this);
@@ -20,6 +22,8 @@ UObject::UObject()
 
 UObject::UObject(bool bRegister)
 {
+	static uint32 NextSerialNumber = 1;
+	InternalSerialNumber = NextSerialNumber++;
 	bIsRegistered = bRegister;
 }
 

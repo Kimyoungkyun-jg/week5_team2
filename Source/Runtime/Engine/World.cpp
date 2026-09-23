@@ -66,6 +66,12 @@ AActor* UWorld::SpawnActor(UClass* Class, FName InName, const FTransform* Transf
 	if (NewActor->GetRootComponent())
 	{
 		NewActor->GetRootComponent()->SetTransform(SpawnTransform);
+
+		if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(NewActor->GetRootComponent()))
+		{
+			WorldPrimitiveComponents.Add(PrimComp);
+		}
+
 	}
 
 	// 4. Level->Actors에 등록
@@ -91,7 +97,7 @@ void UWorld::Tick(float DeltaTime)
 		{
 			Actor->Tick(DeltaTime);
 		}
-		PathTracker.Tick(Level->GetActors(), DeltaTime);
+
 	}
 
 	if (MainCamera)
@@ -180,26 +186,6 @@ bool UWorld::DestroyActor(AActor* Actor)
 
 	BeginPlayList = std::move(NewBeginPlayList);
 
-	// 2. PathTracker에서 제거
-	PathTracker.OnObjectDestroyed(Actor);
-
-	//// 3. PrimitiveComponents에서 제거
-	//for (UActorComponent* Component : Actor->Components)
-	//{
-	//	UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component);
-
-	//	if (!Primitive)
-	//		continue;
-
-	//	for (int32 i = PrimitiveComponents.Num() - 1; i >= 0; --i)
-	//	{
-	//		if (PrimitiveComponents[i] == Primitive)
-	//		{
-	//			PrimitiveComponents.RemoveAt(i, 1);
-	//			break;
-	//		}
-	//	}
-	//}
 
 	// 4. Level의 Actors에서 제거
 	for (int32 i = Level->Actors.Num() - 1; i >= 0; --i)

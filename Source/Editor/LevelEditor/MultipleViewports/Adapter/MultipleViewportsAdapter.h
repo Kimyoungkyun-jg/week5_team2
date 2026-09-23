@@ -128,21 +128,12 @@ private:
     bool ViewWireframe[4]{};
     FPickHit LastPick{};
 
-    // 이번 프레임의 엔진 객체와 파티클 준비 상태를 보관한다. 포인터는 다음 캡처 전까지 유효해야 한다.
-    struct PrimitiveSnapshot
-    {
-        UPrimitiveComponent* Primitive = nullptr;
-        bool bCaptured = false;
-        bool bParticlesPrepared = false;
-        TArray<int32> AliveParticleIndices;
-    };
-    TMap<ObjectId, PrimitiveSnapshot> PrimitiveById;
     // Host가 컬링 입력 버퍼를 소유하고 용량을 재사용한다.
     TArray<FRenderableObject> RenderObjects;
     // 불투명 파티클은 최종 렌더러가 거리 정렬하지 않아 기존 Core 정렬을 유지한다.
     TArray<FParticleSortInput> SortInputs;
     TArray<ObjectId> SortedParticleIds;
-    TArray<ObjectId> VisibleIds[4];
+    TArray<UPrimitiveComponent*> VisiblePrimitives[4];
     bool bCapturedBillboard = false;
     bool bCapturedParticle = false;
 };

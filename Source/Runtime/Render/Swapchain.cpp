@@ -22,7 +22,7 @@ FSwapchain::FSwapchain(FRenderDevice* InRenderDevice, FWindow* InWindow)
 	Desc.BufferCount = 2;
 	Desc.OutputWindow = InWindow->GetHandle();
 	Desc.Windowed = true;
-	Desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+	Desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD; // DXGI_SWAP_EFFECT_DISCARD 이걸 하면 프레임 제한 없어짐
 	Desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 
 	HRESULT hr = RenderDevice->GetFactory()->CreateSwapChain(RenderDevice->GetDevice(), &Desc, Swapchain.GetAddressOf());
@@ -76,7 +76,7 @@ void FSwapchain::Resize(int32 InWidth, int32 InHeight)
 
 void FSwapchain::SwapBuffers(uint32 SyncInterval, uint32 Flags)
 {
-	Swapchain->Present(1, 0);
+	Swapchain->Present(1,0);
 }
 
 void FSwapchain::ValidateRenderingInfo()

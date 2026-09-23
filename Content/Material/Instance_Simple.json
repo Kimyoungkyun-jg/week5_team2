@@ -1,0 +1,8 @@
+{
+    "Version": 1,
+    "Name": "Instance_Simple",
+    "AssetType": "Material",
+    "UPipelineID": "Pipeline/Instance_Simple.json",
+    "UTextureID": null,
+    "TextureSampler": { "FilterMode": "Bilinear", "WrapMode": "Wrap" }
+}

@@ -1,8 +1,0 @@
-{
-    "Version": 1,
-    "Name": "Spotlight",
-    "AssetType": "Material",
-    "UPipelineID": "Pipeline/Spotlight.json",
-    "UTextureID": null,
-    "TextureSampler": { "FilterMode": "Bilinear", "WrapMode": "Wrap" }
-}

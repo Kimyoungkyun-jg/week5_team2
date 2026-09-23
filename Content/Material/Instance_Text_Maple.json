@@ -1,8 +1,0 @@
-{
-    "Version": 1,
-    "Name": "Instance_Text_Maple",
-    "AssetType": "Material",
-    "UPipelineID": "Pipeline/Instance_Text.json",
-    "UTextureID": "Texture/Fonts/maplestorybold.json",
-    "TextureSampler": { "FilterMode": "Bilinear", "WrapMode": "Wrap" }
-}

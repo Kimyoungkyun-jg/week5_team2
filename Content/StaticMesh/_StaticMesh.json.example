@@ -1,6 +1,0 @@
-{
-    "Version": 1,
-    "Name": "Example_StaticMesh",
-    "AssetType": "StaticMesh",
-    "BinaryMeshFilePath": "StaticMesh/Example_Mesh.bin"
-}

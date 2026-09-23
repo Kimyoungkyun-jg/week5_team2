@@ -1,3 +1,5 @@
-[submodule "Source/ThirdParty/DirectXTK"]
-	path = Source/ThirdParty/DirectXTK
-	url = https://github.com/microsoft/DirectXTK.git
+[submodule "EngineProject/ThirdParty/ImGui"]
+path = Source/ThirdParty/ImGui
+url = https://github.com/ocornut/imgui
+branch = docking
+ignore = untracked

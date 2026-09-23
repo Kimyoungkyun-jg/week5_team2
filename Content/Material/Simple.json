@@ -1,8 +1,0 @@
-{
-    "Version": 1,
-    "Name": "Simple",
-    "AssetType": "Material",
-    "UPipelineID": "Pipeline/Simple_Solid.json",
-    "UTextureID": null,
-    "TextureSampler": { "FilterMode": "Bilinear", "WrapMode": "Wrap" }
-}

@@ -1,153 +1,178 @@
-workspace "week5_team2"
-    architecture "x86_64"
-    configurations { "Debug", "Release", "ObjViewer"  }
-    platforms { "x86", "x64" }
-    startproject "week5_team2"
-    system "windows"
-    systemversion "latest"
-    location "."
+workspace "Hitori"
+	architecture "x64"
+	startproject "HitoriEditor"
 
-    filter "platforms:x86"
-        architecture "x86"
-
-    filter "platforms:x64"
-        architecture "x86_64"
-
-    filter "action:vs2026"
-        toolset "msc-v145"
-
-    filter {}
-
-externalproject "DirectXTK_Desktop_2026"
-    location "Source/ThirdParty/DirectXTK"
-    uuid "E0B52AE7-E160-4D32-BF3F-910B785E5A8E"
-    kind "StaticLib"
-    language "C++"
-    configmap {
-        ["ObjViewer"] = "Release"
-    }
-
-project "week5_team2"
-    uuid "05383B45-2B78-451C-9197-8B61474A12BC"
-    kind "WindowedApp"
-    language "C++"
-    cppdialect "C++20"
-    characterset "Unicode"
-    staticruntime "Off"
-
-    files {
-	"**.h",
-	"**.cpp",
-        "Source/**.h",
-        "Source/**.hpp",
-        "Source/**.cpp",
-        "Shader/**.hlsl",
-        "Shader/**.hlsli"
-    }
-
-    removefiles {
-        "Source/ThirdParty/DirectXTK/**"
-    }
-
-    includedirs {
-        ".",
-        "Source",
-        "Source/ThirdParty/DirectXTK",
-        "Source/ThirdParty/DirectXTK/Inc",
-        "Source/ThirdParty/DirectXTK/Src"
-    }
-    
-    defines { "NOMINMAX", "_CONSOLE" }
-    
-    -- 동적 링크는 여기에 추가
-    links {
-        "DirectXTK_Desktop_2026",
-        "user32",
-        "d3d11",
-        "dxgi"
-    }
-
-    -- 미리 컴파일된 헤더로 컴파일 시간 최적화
-    pchheader "pch.h"
-    pchsource "Source/pch.cpp"
-
-    -- 모든 cpp 파일에 #include "pch.h" 삽입하여 굳이 작성 안해도 되게함
-    forceincludes { "pch.h" }
-
-    warnings "Default"
-    multiprocessorcompile "On"
-    buildoptions { "/utf-8", "/FS" }
-    linkoptions { "/DEBUG" }
-	
-	-- 프리 빌드, 포스트 빌드 스크립트
-	prebuildmessage "빌드 전처리 단계를 실행합니다..."
-	prebuildcommands {
-		'powershell -NoProfile -ExecutionPolicy Bypass -File "%{wks.location}Scripts/PreBuild.ps1"'
+	configurations
+	{
+		"Debug",
+		"Release",
+		"ObjViewer",
 	}
-	
-	postbuildmessage "빌드 후처리 단계를 실행합니다..."
-    postbuildcommands {
-		'powershell -NoProfile -ExecutionPolicy Bypass -File "%{wks.location}Scripts/PostBuild.ps1" -TargetDirectory "%{cfg.targetdir}"'
-    }
 
-    filter "configurations:Debug"
-        defines { "_DEBUG" }
-        symbols "On"
+	multiprocessorcompile "On"
 
-    filter "configurations:Release"
-        defines { "NDEBUG" }
-        --optimize "Full"
-        symbols "Off"
-        --linktimeoptimization "On"
-		
-		-- Release 빌드에서도 컴파일러/링커 최적화를 사용하지 않음
-		-- 최적화된 바이너리가 일부 안티바이러스에서 오진되는 문제를 피하기 위함
-		optimize "Off"
-		functionlevellinking "Off"
-		intrinsics "Off"
-		stringpooling "Off"
-		linktimeoptimization "Off"
+outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
-   filter "configurations:ObjViewer"
-        defines { "_OBJVIEWER", "NDEBUG" }
-        --symbols "On"
-		symbols "Off"
-		
-		-- Release 빌드에서도 컴파일러/링커 최적화를 사용하지 않음
-		-- 최적화된 바이너리가 일부 안티바이러스에서 오진되는 문제를 피하기 위함
-		optimize "Off"
-		functionlevellinking "Off"
-		intrinsics "Off"
-		stringpooling "Off"
-		linktimeoptimization "Off"
+IncludeDir = {}
+IncludeDir["ImGui"] = "Source/ThirdParty/ImGui"
+IncludeDir["stb"]   = "Source/ThirdParty/stb"
+IncludeDir["json"]  = "Source/ThirdParty/json"
 
-    filter "platforms:x86"
-        defines { "WIN32" }
-        targetdir "Binaries/Win32/%{cfg.buildcfg}"
-        objdir "Intermediate/%{prj.name}/Win32/%{cfg.buildcfg}"
+-- premake의 filter는 project()를 만나면 초기화된다.
+-- 두 프로젝트가 같은 런타임(/MDd vs /MD)으로 컴파일되지 않으면 링크가 실패하므로
+-- 공통 설정을 함수로 묶어 각 프로젝트에서 호출한다.
+function CommonSettings()
+	language   "C++"
+	cppdialect "C++20"
+	staticruntime "off"
+	characterset  "Unicode"
 
-    filter "platforms:x64"
-        targetdir "Binaries/x64/%{cfg.buildcfg}"
-        objdir "Intermediate/%{prj.name}/x64/%{cfg.buildcfg}"
+	targetdir ("Build/Bin/" .. outputdir)
+	objdir    ("Build/Intermediate/" .. outputdir)
+	-- 에셋·쉐이더를 상대 경로로 읽으므로 작업 디렉터리는 저장소 루트다.
+	debugdir  "%{wks.location}"
 
-    filter "files:Source/ThirdParty/Imgui/**.cpp"
-        warnings "Off"
-        enablepch "Off"
-        removeforceincludes { "pch.h" }
+	defines
+	{
+		"WIN32_LEAN_AND_MEAN",
+		"NOMINMAX",
+		"UNICODE",
+		"_UNICODE",
+	}
 
-    filter "files:**VS.hlsl"
-        shadertype "Vertex"
-        shadermodel "5.0"
-        shaderentry "MainVS"
-        shaderobjectfileoutput "%{wks.location}/Content/Shader/%{file.basename}.cso"
+	filter "files:**.hlsl"
+		excludefrombuild "On"
 
-    filter "files:**PS.hlsl"
-        shadertype "Pixel"
-        shadermodel "5.0"
-        shaderentry "MainPS"
-        shaderobjectfileoutput "%{wks.location}/Content/Shader/%{file.basename}.cso"
+	filter "system:windows"
+		systemversion "latest"
+		buildoptions { "/utf-8" }
+		defines { "ENGINE_PLATFORM_WINDOWS" }
 
-    filter "files:**.hlsli"
-        buildaction "None"
+	filter "configurations:Debug"
+		defines { "ENGINE_DEBUG", "_DEBUG" }
+		runtime  "Debug"
+		symbols  "on"
 
-    filter {}
+	filter "configurations:Release"
+		defines  { "ENGINE_RELEASE", "NDEBUG" }
+		runtime  "Release"
+		optimize "on"
+		symbols  "on"
+
+	-- 에디터 없이 OBJ 파일만 열어보는 Viewer 빌드
+	filter "configurations:ObjViewer"
+		defines  { "ENGINE_RELEASE", "NDEBUG", "OBJ_VIEWER" }
+		runtime  "Release"
+		optimize "on"
+		symbols  "on"
+
+	filter {}
+end
+
+
+-- 외부 라이브러리. 별도 프로젝트로 두면 에디터의 소스 루트가 Source/Editor 하나로 좁혀져
+-- Solution Explorer의 "모든 파일 표시"에서 폴더 구조가 그대로 보인다.
+project "ImGui"
+	location "Source/ThirdParty/ImGui"
+	kind     "StaticLib"
+	CommonSettings()
+
+	files
+	{
+		"%{IncludeDir.ImGui}/*.h",
+		"%{IncludeDir.ImGui}/*.cpp",
+		"%{IncludeDir.ImGui}/backends/imgui_impl_win32.*",
+		"%{IncludeDir.ImGui}/backends/imgui_impl_dx11.*",
+	}
+
+	includedirs
+	{
+		"%{IncludeDir.ImGui}",
+		"%{IncludeDir.ImGui}/backends",
+	}
+
+	links
+	{
+		"d3d11.lib",
+		"dxgi.lib",
+		"dxguid.lib",
+		"d3dcompiler.lib",
+	}
+
+
+-- 런타임. 에디터를 모른다. include 경로에 Source/Editor가 없는 것이 그 방벽이다.
+-- location이 소스 루트와 같아야 "모든 파일 표시"에서 폴더가 보인다.
+project "HitoriEngine"
+	location "Source/Runtime"
+	kind     "StaticLib"
+	CommonSettings()
+
+	pchheader "EnginePCH.h"
+	pchsource "Source/Runtime/EnginePCH.cpp"
+
+	files
+	{
+		"Source/Runtime/**.h",
+		"Source/Runtime/**.hpp",
+		"Source/Runtime/**.cpp",
+	}
+
+	includedirs
+	{
+		"Source/Runtime",
+		"%{IncludeDir.stb}",
+		"%{IncludeDir.json}",
+	}
+
+	links
+	{
+		"d3d11.lib",
+		"dxgi.lib",
+		"dxguid.lib",
+		"d3dcompiler.lib",
+	}
+
+
+-- 에디터 애플리케이션. ObjViewer 구성에서는 같은 exe가 뷰어로 빌드된다.
+project "HitoriEditor"
+	location "Source/Editor"
+	kind     "WindowedApp"
+	CommonSettings()
+
+	pchheader "EnginePCH.h"
+	pchsource "Source/Editor/EditorPCH.cpp"
+
+	links { "HitoriEngine", "ImGui" }
+
+	files
+	{
+		"Source/Editor/**.h",
+		"Source/Editor/**.cpp",
+		"Source/Programs/**.h",
+		"Source/Programs/**.cpp",
+		"Source/Editor/**.rc",   -- 창·exe 아이콘
+	}
+
+	includedirs
+	{
+		"Source",             -- "Editor/OutputLog/ConsolePanel.h"처럼 Source 기준 include를 쓴다
+		"Source/Runtime",
+		"Source/Programs",
+		"%{IncludeDir.ImGui}",
+		"%{IncludeDir.ImGui}/backends",
+		"%{IncludeDir.stb}",
+		"%{IncludeDir.json}",
+	}
+
+	links
+	{
+		"d3d11.lib",
+		"dxgi.lib",
+		"dxguid.lib",
+		"d3dcompiler.lib",
+	}
+
+	filter "configurations:ObjViewer"
+		targetname "ObjViewer"
+
+	filter {}

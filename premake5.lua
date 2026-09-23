@@ -1,8 +1,8 @@
-workspace "MyEngine"
+workspace "week5_team2"
     architecture "x86_64"
     configurations { "Debug", "Release", "ObjViewer"  }
     platforms { "x86", "x64" }
-    startproject "MyEngine"
+    startproject "week5_team2"
     system "windows"
     systemversion "latest"
     location "."
@@ -27,7 +27,7 @@ externalproject "DirectXTK_Desktop_2026"
         ["ObjViewer"] = "Release"
     }
 
-project "MyEngine"
+project "week5_team2"
     uuid "05383B45-2B78-451C-9197-8B61474A12BC"
     kind "WindowedApp"
     language "C++"

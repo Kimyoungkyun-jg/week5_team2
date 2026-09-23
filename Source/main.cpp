@@ -192,7 +192,7 @@ int WINAPI wWinMain(
 		UE_LOG_ERROR("[Fatal] %s", Error.what());
 		OutputDebugStringA(Error.what());
 		OutputDebugStringA("\n");
-		MessageBox(nullptr, WindowsUtil::ToWString(Error.what()).c_str(), L"MyEngine Fatal Error",
+		MessageBox(nullptr, WindowsUtil::ToWString(Error.what()).c_str(), L"week5_team2 Fatal Error",
 		            MB_OK | MB_ICONERROR);
 		return -1;
 	}
@@ -202,7 +202,7 @@ int WINAPI wWinMain(
 		UE_LOG_ERROR("[Fatal] %s", Message);
 		OutputDebugStringA(Message);
 		OutputDebugStringA("\n");
-		MessageBox(nullptr, WindowsUtil::ToWString(Message).c_str(), L"MyEngine Fatal Error",
+		MessageBox(nullptr, WindowsUtil::ToWString(Message).c_str(), L"week5_team2 Fatal Error",
 		            MB_OK | MB_ICONERROR);
 		return -1;
 	}
@@ -217,7 +217,7 @@ namespace
 		WindowClass.lpfnWndProc = WindowCallback;
 			
 		WindowClass.hInstance = Instance;
-		WindowClass.lpszClassName = L"MyEngine";
+		WindowClass.lpszClassName = L"week5_team2";
 
 		if (!RegisterClass(&WindowClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
 		{

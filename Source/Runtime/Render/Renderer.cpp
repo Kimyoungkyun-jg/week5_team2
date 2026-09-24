@@ -34,17 +34,29 @@ void FRenderer::RenderAll(TQueue<FRenderPacket>& InQueue, const FMatrix& ViewPro
 // 불투명 메시를 큐에서 직접 꺼내 즉시 렌더링
 void FRenderer::RenderOpaque(TQueue<FRenderPacket>& InQueue, const FMatrix& ViewProjection)
 {
+
+	EPSOType LastPSO = static_cast<EPSOType>(255);
 	while (InQueue.IsEmpty() == false)
 	{
 		const FRenderPacket& RenderPacket = InQueue.Peek();
 		if (RenderPacket.mesh != nullptr && RenderPacket.material != nullptr)
 		{
 			RenderCommand::BindMesh(RenderPacket.mesh);
-			BindMaterial(RenderPacket.material);
-
+			// 1. 매 프레임 첫 번째 사과: (255 != 0) 이므로 무조건 D3D11에 1회 바인딩!
+			// 2. 2번째 ~ 50,000번째 사과: (0 == 0) 이므로 49,999번은 완벽 스킵!
+			if (LastPSO != RenderPacket.material->PSOType)
+			{
+				LastPSO = RenderPacket.material->PSOType;
+				RenderCommand::BindPipelineState(FRenderResourceManager::GetPSO(LastPSO));
+			}
+			// 텍스처와 CBuffer 바인딩
+			for (int i = 0; i < RenderPacket.material->Textures.size(); i++)
+			{
+				RenderCommand::BindShaderResource(i, RenderPacket.material->Textures[i], EShaderBindFlagBits::Pixel);
+			}
+			RenderCommand::BindSamplerState(0, RenderPacket.material->SamplerState, EShaderBindFlagBits::Pixel);
 			UpdateMaterialParams(RenderPacket);
 			UpdatePerObjectConstants(RenderPacket, ViewProjection);
-
 			RenderCommand::DrawIndexed(
 				RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),
 				RenderPacket.StartIndex
@@ -67,13 +79,9 @@ void FRenderer::DrawPackets(uint32 Begin, uint32 End, const FMatrix& ViewProject
 // Material마다 Shader/Texture/Sampler/State 꽂기
 void FRenderer::BindMaterial(UMaterial* material)
 {
-	RenderCommand::BindShaderProgram(material->Shader);
-	RenderCommand::SetBlendState(material->BlendState);
-	// 반투명은 뒤에 그려지는 Grid·다른 반투명을 가리지 않도록 깊이를 쓰지 않는다.
-	const bool bTranslucent = material->BlendState != EBlendState::Opaque;
-	RenderCommand::SetDepthStencilState(bTranslucent && material->DepthStencilState == EDepthStencilState::Default
-		? EDepthStencilState::ReadOnly : material->DepthStencilState);
 
+	RenderCommand::BindPipelineState(FRenderResourceManager::GetPSO(material->PSOType));
+	// 머티리얼이 가진 텍스처 및 샘플러 바인딩
 	for (int i = 0; i < material->Textures.size(); i++)
 	{
 		RenderCommand::BindShaderResource(i, material->Textures[i], EShaderBindFlagBits::Pixel);
@@ -84,34 +92,43 @@ void FRenderer::BindMaterial(UMaterial* material)
 // b1 내용 채우고 꽂기
 void FRenderer::UpdateMaterialParams(const FRenderPacket& RenderPacket)
 {
-	switch (RenderPacket.material->ParamLayout)
+	switch (RenderPacket.material->PSOType)
 	{
-		case EMaterialParamLayout::StaticMesh:
+	case EPSOType::StaticMesh_Opaque:
+	case EPSOType::StaticMesh_Wireframe:
+	{
+		const float TotalTime = EngineTimer::GetTotalTime();
+		FStaticMeshMaterialParams Params{};
+		Params.BaseColor = RenderPacket.material->BaseColor;
+		Params.UVOffset = RenderPacket.material->UVScrollSpeed * TotalTime;
+		Params.bOpaque = 1.0f; // 오팩이므로 무조건 1.0f
+		RenderCommand::UpdateBufferData(RenderPacket.material->ParamBuffer.get(), &Params, sizeof(FStaticMeshMaterialParams));
+		RenderCommand::BindConstantBuffer(1, RenderPacket.material->ParamBuffer.get(), EShaderBindFlagBits::Pixel);
+		break;
+	}
+	case EPSOType::StaticMesh_Translucent:
+	{
+		const float TotalTime = EngineTimer::GetTotalTime();
+		FStaticMeshMaterialParams Params{};
+		Params.BaseColor = RenderPacket.material->BaseColor;
+		Params.UVOffset = RenderPacket.material->UVScrollSpeed * TotalTime;
+		Params.bOpaque = 0.0f; // 반투명이므로 0.0f
+		RenderCommand::UpdateBufferData(RenderPacket.material->ParamBuffer.get(), &Params, sizeof(FStaticMeshMaterialParams));
+		RenderCommand::BindConstantBuffer(1, RenderPacket.material->ParamBuffer.get(), EShaderBindFlagBits::Pixel);
+		break;
+	}
+	case EPSOType::Particle_AlphaBlend:
+	case EPSOType::Particle_Additive:
+	{
+		if (RenderPacket.material->ParamBuffer && RenderPacket.MaterialParamData != nullptr)
 		{
-			const float TotalTime = EngineTimer::GetTotalTime();
-
-			FStaticMeshMaterialParams Params{};
-			Params.BaseColor = RenderPacket.material->BaseColor;
-			Params.UVOffset = RenderPacket.material->UVScrollSpeed * TotalTime;
-			Params.bOpaque = RenderPacket.material->BlendState == EBlendState::Opaque ? 1.0f : 0.0f;
-
-			RenderCommand::UpdateBufferData(RenderPacket.material->ParamBuffer.get(), &Params, sizeof(FStaticMeshMaterialParams));
+			RenderCommand::UpdateBufferData(RenderPacket.material->ParamBuffer.get(), RenderPacket.MaterialParamData, RenderPacket.MaterialParamDataSize);
 			RenderCommand::BindConstantBuffer(1, RenderPacket.material->ParamBuffer.get(), EShaderBindFlagBits::Pixel);
-			break;
 		}
-		case EMaterialParamLayout::ParticleSubUV:
-		{
-			if (RenderPacket.material->ParamBuffer && RenderPacket.MaterialParamData != nullptr)
-			{
-				RenderCommand::UpdateBufferData(RenderPacket.material->ParamBuffer.get(), RenderPacket.MaterialParamData, RenderPacket.MaterialParamDataSize);
-				RenderCommand::BindConstantBuffer(1, RenderPacket.material->ParamBuffer.get(), EShaderBindFlagBits::Pixel);
-			}
-			break;
-		}
-		case EMaterialParamLayout::None:
-		{
-			break;
-		}
+		break;
+	}
+	default:
+		break;
 	}
 }
 

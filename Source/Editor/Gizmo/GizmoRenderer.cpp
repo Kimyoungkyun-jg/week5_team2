@@ -61,7 +61,7 @@ void FGizmoRenderer::OnRender(
 	default: return;
 	}
 
-	RenderCommand::BindPipelineState(PipelineState);
+	RenderCommand::BindPipelineState(&PipelineState);
 
 	const FMatrix ViewProjT = ViewProj.GetTransposed();
 	// const FVector GizmoLocation = Gizmo.GetLocation();

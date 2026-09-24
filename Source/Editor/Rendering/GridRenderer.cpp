@@ -206,7 +206,7 @@ void FGridRenderer::DrawWorldLines(uint32 VertexCount, const FMatrix& ViewProj, 
     RenderCommand::BindConstantBuffer(0, BatchGridConstantBuffer.get(), EShaderBindFlagBits::Vertex);
     RenderCommand::BindConstantBuffer(0, BatchGridConstantBuffer.get(), EShaderBindFlagBits::Pixel);
     RenderCommand::UpdateBufferData(BatchGridVertexBuffer.get(), BatchGridVertices, sizeof(FGridLineVertex) * VertexCount);
-    RenderCommand::BindPipelineState(BatchGridPipelineState);
+    RenderCommand::BindPipelineState(&BatchGridPipelineState);
     RenderCommand::BindVertexBuffer(BatchGridVertexBuffer.get());
     RenderCommand::Draw(VertexCount);
 }
@@ -323,7 +323,7 @@ void FGridRenderer::OnRenderPSGrid(const FMatrix& ViewProj, const FVector& Camer
     uint32 Count = 0;
     AddWorldLine(FVector(0, 0, -FrontZ), FVector(0, 0, 0), BackColor, 1.5f, Count);
     DrawWorldLines(Count, ViewProj, Viewport, FadeOrigin, FadeRadius);
-    RenderCommand::BindPipelineState(PSGridPipelineState);
+    RenderCommand::BindPipelineState(&PSGridPipelineState);
     RenderCommand::BindVertexBuffer(nullptr);
     RenderCommand::UpdateBufferData(PSGridConstantBuffer.get(), &Data, sizeof(Data));
     RenderCommand::BindConstantBuffer(0, PSGridConstantBuffer.get(), EShaderBindFlagBits::Vertex);

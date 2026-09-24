@@ -62,13 +62,13 @@ void FOutlineRenderer::OnRender(const FOutline& InOutline, const FMatrix& InView
 
 	// 1패스: 두께 0(확장 없음)으로 선택 메시 영역을 스텐실에 찍는다.
 	FOutlineData MaskConst = { World, NormalMatrix, ViewProj, FVector4(ViewportWidth, ViewportHeight, 0.0f, 0.0f) };
-	RenderCommand::BindPipelineState(MaskPipelineState);
+	RenderCommand::BindPipelineState(&MaskPipelineState);
 	RenderCommand::UpdateBufferData(ConstantBuffer.get(), &MaskConst, sizeof(MaskConst));
 	RenderCommand::DrawIndexed(IndexCount);
 
 	// 2패스: 확장 메시 중 스텐실 바깥 부분만 노란색으로 그린다.
 	FOutlineData OutlineConst = { World, NormalMatrix, ViewProj, FVector4(ViewportWidth, ViewportHeight, 2.0f, 0.0f) };
-	RenderCommand::BindPipelineState(OutlinePipelineState);
+	RenderCommand::BindPipelineState(&OutlinePipelineState);
 	RenderCommand::UpdateBufferData(ConstantBuffer.get(), &OutlineConst, sizeof(OutlineConst));
 	RenderCommand::DrawIndexed(IndexCount);
 

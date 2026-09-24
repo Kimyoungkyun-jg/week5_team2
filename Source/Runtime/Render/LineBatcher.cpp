@@ -128,7 +128,7 @@ void FLineBatcher::AddPath(const TArray<FVector>& Points, const FVector4& Color)
 
 void FLineBatcher::Flush()
 {
-	RenderCommand::BindPipelineState(PipelineState);
+	RenderCommand::BindPipelineState(&PipelineState);
 	RenderCommand::BindVertexBuffer(VertexBuffer.get());
 	RenderCommand::BindConstantBuffer(0, CB.get(), EShaderBindFlagBits::Vertex);
 

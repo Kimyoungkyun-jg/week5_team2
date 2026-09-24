@@ -57,7 +57,7 @@ void FSkyboxRenderer::OnRender(const FMatrix& ViewProjection, const FVector& Cam
 	Constants.InverseViewProjection = ViewProjection.Inverse().GetTransposed();
 	Constants.CameraPosition = CameraPosition;
 
-	RenderCommand::BindPipelineState(PipelineState);
+	RenderCommand::BindPipelineState(&PipelineState);
 	RenderCommand::UpdateBufferData(ConstantBuffer.get(), &Constants);
 	RenderCommand::BindConstantBuffer(0, ConstantBuffer.get(), EShaderBindFlagBits::Pixel);
 	RenderCommand::BindShaderResource(0, PanoramaTexture.get(), EShaderBindFlagBits::Pixel);

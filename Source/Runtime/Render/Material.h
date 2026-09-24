@@ -3,23 +3,14 @@
 #include "MaterialInterface.h"
 #include "Render/RenderStates.h"
 #include "Render/Texture2D.h"
+#include "Render/RenderResourceManager.h"
 
-class FShader;
-
-
-
-enum class EMaterialParamLayout
-{
-	None,
-	StaticMesh,
-	ParticleSubUV
-};
 
 struct FStaticMeshMaterialParams
 {
 	FVector4 BaseColor;
 	FVector2 UVOffset;
-	float bOpaque; // 1이면 PS가 알파를 1로 출력한다
+	float bOpaque; // 불투명 여부 플래그
 	float Padding;
 };
 
@@ -31,12 +22,9 @@ public:
 	UMaterial() = default;
 	virtual ~UMaterial() override = default;
 
-	EMaterialParamLayout ParamLayout = EMaterialParamLayout::None;
-	FShaderProgram* Shader;
+	EPSOType PSOType = EPSOType::StaticMesh_Opaque;
 	TArray<UTexture2D*> Textures;
 	TUniquePtr<FConstantBuffer> ParamBuffer;
-	EBlendState BlendState = EBlendState::Opaque;
-	EDepthStencilState DepthStencilState = EDepthStencilState::Default;
 	ESamplerState SamplerState = ESamplerState::LinearClamp;
 
 	FVector4 BaseColor = FVector4(1, 1, 1, 1);
@@ -44,16 +32,15 @@ public:
 
 	bool bIsInstance = false;
 
-	// 인스턴스가 복제된 원본. 인스턴스는 경로가 없어서, 저장할 때 원본을 따라가 기준 에셋을 찾는다
+	// 인스턴스가 복제된 원본 머티리얼
 	const UMaterial* Parent = nullptr;
 
-	// Source의 내용을 복사한 편집용 복제본을 만든다
+	// 원본 머티리얼 복제본 생성
 	static UMaterial* CreateInstance(const UMaterial* Source);
 
-	// 경로가 있는(=에셋으로 등록된) 가장 가까운 원본. 자신이 에셋이면 자신
+	// 최상위 에셋 머티리얼 반환
 	const UMaterial* GetBaseAsset() const;
 
 	static json SaveMaterial(const UMaterial* Material);
 	static UMaterial* LoadMaterial(const json& In);
-private:
-};
+};

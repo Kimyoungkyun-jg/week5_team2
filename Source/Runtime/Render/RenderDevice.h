@@ -13,7 +13,7 @@ class FIndexBuffer;
 class FConstantBuffer;
 class FTexture2D;
 class FTextureCube;
-struct FPipelineState;
+class FPipelineState;
 
 // Device, DeviceContext
 class FRenderDevice

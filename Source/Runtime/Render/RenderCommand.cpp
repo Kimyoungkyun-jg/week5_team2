@@ -74,13 +74,18 @@ TUniquePtr<FPixelShader> RenderCommand::CreatePixelShader(const FShaderByteCode&
 	return RenderDevice->CreatePixelShader(ByteCode);
 }
 
-void RenderCommand::BindPipelineState(const FPipelineState& PipelineState)
+void RenderCommand::BindPipelineState(const FPipelineState* PipelineState)
 {
-	BindShaderProgram(PipelineState.Shader);
-	SetPrimitiveTopology(PipelineState.Topology);
-	SetRasterizerState(PipelineState.RasterizerState);
-	SetBlendState(PipelineState.BlendState);
-	SetDepthStencilState(PipelineState.DepthStencilState);
+	if (!PipelineState)
+	{
+		return;
+	}
+
+	BindShaderProgram(PipelineState->Shader);
+	SetPrimitiveTopology(PipelineState->Topology);
+	SetRasterizerState(PipelineState->RasterizerState);
+	SetBlendState(PipelineState->BlendState);
+	SetDepthStencilState(PipelineState->DepthStencilState);
 }
 
 void RenderCommand::BindShaderProgram(FShaderProgram* Shader)

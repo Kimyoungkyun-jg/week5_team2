@@ -43,7 +43,7 @@ public:
 	static TUniquePtr<FVertexShader> CreateVertexShader(const FShaderByteCode& ByteCode);
 	static TUniquePtr<FPixelShader> CreatePixelShader(const FShaderByteCode& ByteCode);
 
-	static void BindPipelineState(const FPipelineState& PipelineState);
+	static void BindPipelineState(const FPipelineState* PipelineState);
 
 	static void BindMesh(UStaticMesh* Mesh);
 

@@ -30,17 +30,13 @@ UMaterial* UMaterial::CreateInstance(const UMaterial* Source)
 
 	UMaterial* Instance = FObjectFactory::ConstructObject<UMaterial>();
 
-	Instance->ParamLayout = Source->ParamLayout;
-	Instance->Shader = Source->Shader;
+	Instance->PSOType = Source->PSOType;
 	Instance->Textures = Source->Textures;
-	Instance->BlendState = Source->BlendState;
-	Instance->DepthStencilState = Source->DepthStencilState;
 	Instance->SamplerState = Source->SamplerState;
 	Instance->BaseColor = Source->BaseColor;
 	Instance->UVScrollSpeed = Source->UVScrollSpeed;
 
-	// ParamBuffer는 TUniquePtr라 복사할 수 없다.
-	// 원본이 갖고 있으면 같은 크기로 새로 만들어 준다. 내용은 매 프레임 갱신되므로 옮기지 않는다.
+	// 원본에 파라미터 버퍼가 있으면 동일 크기로 새로 생성
 	if (Source->ParamBuffer)
 	{
 		Instance->ParamBuffer = RenderCommand::CreateConstantBuffer(Source->ParamBuffer->GetBufferSize());
@@ -65,8 +61,7 @@ const UMaterial* UMaterial::GetBaseAsset() const
 	return nullptr;
 }
 
-// 머티리얼 하나를 JSON으로.
-// 에셋이면 경로만, 경로 없는 인스턴스면 "기준 에셋 + 텍스처 + 색"으로 풀어서 쓴다
+// 머티리얼 정보를 JSON으로 저장
 json UMaterial::SaveMaterial(const UMaterial* Material)
 {
 	json Out;
@@ -79,13 +74,13 @@ json UMaterial::SaveMaterial(const UMaterial* Material)
 
 	const UMaterial* Base = Material->GetBaseAsset();
 	Out["Base"] = Base ? Base->GetPath() : FString("DefaultMaterial");
+	Out["PSOType"] = static_cast<uint8>(Material->PSOType);
 	Out["BaseColor"] = Material->BaseColor;
 	Out["UVScrollSpeed"] = {
 		Material->UVScrollSpeed.X,
 		Material->UVScrollSpeed.Y
 	};
 	Out["SamplerState"] = Material->SamplerState == ESamplerState::LinearWrap ? "LinearWrap" : "LinearClamp";
-	Out["BlendState"] = Material->BlendState == EBlendState::AlphaBlend ? "AlphaBlend" : "Opaque";
 
 	json Textures = json::array();
 	for (UTexture2D* Texture : Material->Textures)
@@ -123,6 +118,20 @@ UMaterial* UMaterial::LoadMaterial(const json& In)
 		return nullptr;
 	}
 
+	if (In.contains("PSOType"))
+	{
+		Instance->PSOType = static_cast<EPSOType>(In["PSOType"].get<uint8>());
+	}
+	else if (In.contains("BlendState"))
+	{
+		// 구버전 씬 파일 호환 처리
+		const FString State = In["BlendState"].get<FString>();
+		if (State == "AlphaBlend")
+		{
+			Instance->PSOType = EPSOType::StaticMesh_Translucent;
+		}
+	}
+
 	if (In.contains("BaseColor"))
 	{
 		In["BaseColor"].get_to(Instance->BaseColor);
@@ -139,17 +148,12 @@ UMaterial* UMaterial::LoadMaterial(const json& In)
 	if (In.contains("UVScrollSpeed"))
 	{
 		const auto& UV = In["UVScrollSpeed"];
-		Instance->UVScrollSpeed = FVector2(UV[0].get<float>(),UV[1].get<float>());
+		Instance->UVScrollSpeed = FVector2(UV[0].get<float>(), UV[1].get<float>());
 	}
 	if (In.contains("SamplerState"))
 	{
 		const FString State = In["SamplerState"].get<FString>();
 		Instance->SamplerState = State == "LinearWrap" ? ESamplerState::LinearWrap : ESamplerState::LinearClamp;
-	}
-	if (In.contains("BlendState"))
-	{
-		const FString State = In["BlendState"].get<FString>();
-		Instance->BlendState = State == "AlphaBlend" ? EBlendState::AlphaBlend : EBlendState::Opaque;
 	}
 
 	return Instance;

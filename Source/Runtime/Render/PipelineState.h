@@ -4,9 +4,13 @@
 #include "RenderStates.h"
 
 
-struct FPipelineState
+class FPipelineState
 {
-	FPipelineState();
+public:
+	FPipelineState() = default;
+	FPipelineState(FShaderProgram* InShader, D3D11_PRIMITIVE_TOPOLOGY InTopology,
+		ERasterizerState InRS, EBlendState InBS, EDepthStencilState InDSS)
+		: Shader(InShader), Topology(InTopology), RasterizerState(InRS), BlendState(InBS), DepthStencilState(InDSS) {}
 	~FPipelineState() = default;
 
 	FShaderProgram* Shader = nullptr;

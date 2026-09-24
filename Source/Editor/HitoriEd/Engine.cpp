@@ -271,6 +271,7 @@ void FEditorApplication::RenderMultipleViewports()
 
 	TQueue<FRenderPacket> RenderQueue;
 	MultipleViewportsAdapter.BuildRenderQueue(0, RenderQueue);
+
 	RenderFrame(
 		0,
 		ViewportsPanel->GetRenderingInfo(0),
@@ -359,24 +360,8 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex, const FRenderingInfo
 	//SkyboxRenderer->OnRender(ViewProjection, ViewCameraLocation);
 	if (bDrawPrimitives)
 	{
-		RenderCommand::SetRasterizerState(SceneRasterizerState);
-		RenderCommand::SetBlendState(EBlendState::Opaque);
-		RenderCommand::SetDepthStencilState(EDepthStencilState::Default);
 
-		RenderCommand::SetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		// 반투명은 Grid 뒤에 합성되어야 하므로 불투명만 먼저 그린다.
 		Renderer->RenderOpaque(RenderQueue, ViewProjection);
-		// 장면 Wireframe이 Grid·Gizmo·UI로 전파되지 않도록 복원한다.
-		RenderCommand::SetRasterizerState(ERasterizerState::SolidBack);
-	}
-
-	if (bDrawPrimitives)
-	{
-		// Grid 파이프라인이 바꾼 상태를 장면 기준으로 되돌린 뒤 반투명을 먼 것부터 그린다.
-		RenderCommand::SetRasterizerState(SceneRasterizerState);
-		RenderCommand::SetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		Renderer->RenderTranslucent(ViewProjection);
-		RenderCommand::SetRasterizerState(ERasterizerState::SolidBack);
 	}
 
 	// 스텐실 기반이라 선택 대상의 가시성이 꺼져 있어도 외곽선만 그린다.

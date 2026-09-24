@@ -298,5 +298,5 @@ void UParticleSubUVComponent::SubmitParticleToRenderQueue(
 // 실제 재질의 블렌드 상태로 프레임 공통 정렬과 View별 정렬을 구분한다.
 bool UParticleSubUVComponent::UsesOpaqueMaterial() const
 {
-    return Material && Material->BlendState == EBlendState::Opaque;
+    return Material && Material->PSOType == EPSOType::StaticMesh_Opaque;
 }

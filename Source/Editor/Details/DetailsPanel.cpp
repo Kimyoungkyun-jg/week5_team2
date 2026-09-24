@@ -499,18 +499,32 @@ namespace
 					ImGui::TableSetColumnIndex(1);
 					ImGui::SetNextItemWidth(-1.0f);
 
-					const char* BlendItems[] = { "Opaque", "Alpha Blend" };
-					int BlendIndex = Effective ? static_cast<int>(Effective->BlendState) : static_cast<int>(EBlendState::Opaque);
-					if (ImGui::BeginCombo("##BlendState", BlendItems[BlendIndex]))
+					const char* RenderModes[] = { "Opaque", "Alpha Blend", "Wireframe" };
+					int CurrentIndex = 0;
+					if (Effective)
 					{
-						for (int i = 0; i < IM_ARRAYSIZE(BlendItems); ++i)
+						if (Effective->PSOType == EPSOType::StaticMesh_Translucent)
+							CurrentIndex = 1;
+						else if (Effective->PSOType == EPSOType::StaticMesh_Wireframe)
+							CurrentIndex = 2;
+						else
+							CurrentIndex = 0;
+					}
+					if (ImGui::BeginCombo("##RenderMode", RenderModes[CurrentIndex]))
+					{
+						for (int i = 0; i < IM_ARRAYSIZE(RenderModes); ++i)
 						{
-							if (ImGui::Selectable(BlendItems[i], BlendIndex == i))
+							if (ImGui::Selectable(RenderModes[i], CurrentIndex == i))
 							{
 								Override = EnsureMaterialOverride(MeshComponent, Slot, Effective, Override);
 								if (Override)
 								{
-									Override->BlendState = static_cast<EBlendState>(i);
+									if (i == 1)
+										Override->PSOType = EPSOType::StaticMesh_Translucent;
+									else if (i == 2)
+										Override->PSOType = EPSOType::StaticMesh_Wireframe;
+									else
+										Override->PSOType = EPSOType::StaticMesh_Opaque;
 									Effective = Override;
 								}
 							}

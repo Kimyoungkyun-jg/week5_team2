@@ -155,6 +155,7 @@ bool FEditorApplication::Init(HINSTANCE hInstance)
 	EditorControlsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
 
 	SettingsPanel->SetWorld(World);
+	SettingsPanel->SetTearingSupported(MainWindowSC->IsTearingSupported());
 	SettingsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
 
 	ViewportsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
@@ -433,7 +434,8 @@ void FEditorApplication::PresentFrame()
 
 	RenderCommand::EndRenderPass(MainWindowSC->GetRenderingInfo());
 
-	MainWindowSC->SwapBuffers();
+	// 에디터 성능 측정은 VSync의 60 FPS 제한을 받지 않는다.
+	MainWindowSC->SwapBuffers(0, 0);
 
 }
 

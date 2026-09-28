@@ -38,6 +38,9 @@ void FSettingsPanel::OnRender()
 	// 렌더링 옵션 (Toggles)
 	ImGui::SeparatorText("Rendering");
 
+	ImGui::TextDisabled(
+		"Editor VSync: Off | Tearing: %s",
+		bTearingSupported ? "Supported" : "Unavailable");
 	ImGui::TextDisabled("Fill mode is configured per viewport.");
 	ImGui::Checkbox("Draw Primitives", &Settings.bDrawPrimitives);
 	ImGui::Checkbox("Draw Bounding Box", &Settings.bDrawBoundingBox);

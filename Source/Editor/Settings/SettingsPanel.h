@@ -53,6 +53,7 @@ public:
 	const char* GetPanelName() const override { return "Settings"; }
 
 	void SetWorld(UWorld* InWorld) { World = InWorld; }
+	void SetTearingSupported(bool bValue) { bTearingSupported = bValue; }
 
 	const FEditorSettings& GetSettings() const { return Settings; }
 	// 실행 중 레이아웃 변경을 editor.ini 저장 대상과 동일한 설정 객체에 반영한다.
@@ -74,6 +75,7 @@ private:
     void ReadViewportSettings(FEditorSettings& Out) const;
     void ApplyViewportSettings();
     FMultipleViewportsAdapter* ViewportAdapter = nullptr;
+	bool bTearingSupported = false;
 	UWorld* World;
 	FEditorSettings Settings;
 };

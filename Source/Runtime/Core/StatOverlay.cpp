@@ -70,7 +70,7 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 
 	if (Tokens.Num() < 2)
 	{
-		OutMessage = "Usage: stat <fps|memory|all|none>";
+		OutMessage = "Usage: stat <fps|memory|occlusion|all|none>";
 		return true;
 	}
 
@@ -85,7 +85,7 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 
 	if (EqualsIgnoreCase(Arg, "all"))
 	{
-		Flags = EStatFlags::FPS | EStatFlags::Memory;
+		Flags = EStatFlags::FPS | EStatFlags::Memory | EStatFlags::Occlusion;
 		OutMessage = "stat all: all overlays enabled";
 		return true;
 	}
@@ -95,10 +95,12 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 		Target = EStatFlags::FPS;
 	else if (EqualsIgnoreCase(Arg, "memory"))
 		Target = EStatFlags::Memory;
+	else if (EqualsIgnoreCase(Arg, "occlusion"))
+		Target = EStatFlags::Occlusion;
 
 	if (Target == EStatFlags::None)
 	{
-		OutMessage = std::format("stat: unknown stat '{}'. Available: fps, memory, all, none", Arg);
+		OutMessage = std::format("stat: unknown stat '{}'. Available: fps, memory, occlusion, all, none", Arg);
 		return true;
 	}
 

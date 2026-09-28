@@ -94,6 +94,7 @@ bool FEditorApplication::Init(HINSTANCE hInstance)
 	// 필요한 Panel들 추가후 raw pointer 반환(소유권 = EditorUI)
 	DetailsPanel = EditorUI->AddEditorPanel<FDetailsPanel>();
 	EditorControlsPanel = EditorUI->AddEditorPanel<FEditorControlsPanel>();
+	SettingsPanel = EditorUI->AddEditorPanel<FSettingsPanel>();
 	ViewportsPanel = EditorUI->AddEditorPanel<FViewportsPanel>();
 
 
@@ -152,6 +153,9 @@ bool FEditorApplication::Init(HINSTANCE hInstance)
 	EditorControlsPanel->SetWorld(World);
 	EditorControlsPanel->SetGizmo(Gizmo.get());
 	EditorControlsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
+
+	SettingsPanel->SetWorld(World);
+	SettingsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
 
 	ViewportsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
 	bIsRunning = true;
@@ -296,7 +300,7 @@ void FEditorApplication::EndFrame()
 {
 	PresentFrame();
 	// UI 변경 후 설정을 복사해 종료 시 카메라 수명에 의존하지 않는다.
-	//SettingsPanel->CaptureViewportSettings();
+	SettingsPanel->CaptureViewportSettings();
 }
 
 // 입력 View의 Ray와 피킹으로 Gizmo·공유 선택을 갱신한다.
@@ -342,15 +346,15 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex, const FRenderingInfo
 {
 	RenderCommand::BeginRenderPass(ViewRenderingInfo);
 
-	FEditorSettings DefaultSettings; // 기본 그리드 간격 사용
+	const FEditorSettings& EditorSettings = SettingsPanel->GetSettings();
 	GridRenderer->OnRenderPSGrid(
 		ViewProjection,
 		ViewCameraLocation,
-		DefaultSettings,
+		EditorSettings,
 		ViewRenderingInfo.ViewportSetting
 	);
 
-	const bool bDrawPrimitives = true;
+	const bool bDrawPrimitives = EditorSettings.bDrawPrimitives;
 
 	// 삼각형 연결은 유지하고 View별 Fill Mode만 선택한다.
 	const ERasterizerState SceneRasterizerState = MultipleViewportsAdapter.IsViewWireframe(ViewIndex)

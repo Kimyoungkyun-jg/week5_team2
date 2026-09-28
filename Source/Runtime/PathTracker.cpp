@@ -3,7 +3,7 @@
 #include "ObjectSystem/Object.h"
 
 #include "GameFramework//Actor.h"
-#include "Render/LineBatcher.h"
+#include "Rendering/LineBatcher.h"
 
 void FPathTracker::SetPathRenderingEnabled(bool bEnable)
 {

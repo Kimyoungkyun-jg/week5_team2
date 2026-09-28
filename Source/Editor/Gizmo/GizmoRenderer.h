@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Render/Renderer.h"
-#include "Render/PipelineState.h"
+#include "Rendering/Renderer.h"
+#include "Rendering/PipelineState.h"
 #include "Editor/Gizmo/Gizmo.h"
 
 class UCameraComponent;

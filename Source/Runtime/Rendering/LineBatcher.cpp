@@ -5,7 +5,7 @@
 #include "RenderCommand.h"
 #include "RenderResourceManager.h"
 
-#include "UObject/UObjectIterator.h"
+#include "ObjectSystem/UObjectIterator.h"
 
 FLineBatcher::~FLineBatcher()
 {

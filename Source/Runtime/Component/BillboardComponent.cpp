@@ -5,7 +5,7 @@
 #include "Serialization/TypeSerializer.h"
 
 #include "GameFramework/Actor.h"
-#include "Engine/World.h"
+#include "World/World.h"
 
 // Billboard 컴포넌트의 초기 상태를 구성한다.
 UBillboardComponent::UBillboardComponent()

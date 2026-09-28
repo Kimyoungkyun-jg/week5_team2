@@ -3,8 +3,8 @@
 #include "Core/Types.h"
 #include "Core/EngineStatics.h"
 #include "Core/NameTypes.h"
-#include "UObject/ObjectMacros.h"
-#include "UObject/UObjectHash.h"
+#include "ObjectSystem/ObjectMacros.h"
+#include "ObjectSystem/UObjectHash.h"
 #include "Serialization/Archive.h"
 
 class UClass;

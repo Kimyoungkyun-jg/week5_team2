@@ -1,14 +1,14 @@
 #include "EnginePCH.h"
 #include "Component/ParticleSubUVComponent.h"
 #include "Asset/AssetManager.h"
-#include "Render/RenderCommand.h"
+#include "Rendering/RenderCommand.h"
 
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 
 #include "BillboardComponent.h"
 
-#include "Engine/World.h"
+#include "World/World.h"
 
 const float UParticleSubUVComponent::MAX_NORMALIZED_VALUE = 1.0f;
 

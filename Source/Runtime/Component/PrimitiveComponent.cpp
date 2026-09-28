@@ -1,8 +1,8 @@
 #include "EnginePCH.h"
 #include "PrimitiveComponent.h"
-#include "../Render/Renderer.h"
+#include "../Rendering/Renderer.h"
 #include "Asset/AssetManager.h"
-#include "Render/RenderCommand.h"
+#include "Rendering/RenderCommand.h"
 
 namespace
 {

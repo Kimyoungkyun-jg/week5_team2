@@ -1,8 +1,8 @@
 #pragma once
 
 #include <d3d11.h>
-#include "Render/Renderer.h"
-#include "Render/PipelineState.h"
+#include "Rendering/Renderer.h"
+#include "Rendering/PipelineState.h"
 
 struct FPSGridData
 {

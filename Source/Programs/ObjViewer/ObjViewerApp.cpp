@@ -3,8 +3,8 @@
 
 #include "Asset/AssetManager.h"
 #include "Input/InputSystem.h"
-#include "Render/RenderCommand.h"
-#include "Render/RenderResourceManager.h"
+#include "Rendering/RenderCommand.h"
+#include "Rendering/RenderResourceManager.h"
 
 #include "Core/Application.h"
 

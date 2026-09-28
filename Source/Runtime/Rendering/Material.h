@@ -1,9 +1,9 @@
 #pragma once
 
 #include "MaterialInterface.h"
-#include "Render/RenderStates.h"
-#include "Render/Texture2D.h"
-#include "Render/RenderResourceManager.h"
+#include "Rendering/RenderStates.h"
+#include "Rendering/Texture2D.h"
+#include "Rendering/RenderResourceManager.h"
 
 
 struct FStaticMeshMaterialParams

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Render/Renderer.h"
-#include "Render/PipelineState.h"
+#include "Rendering/Renderer.h"
+#include "Rendering/PipelineState.h"
 #include "Editor/Rendering/Outline.h"
 
 // Outline의 월드·투영 행렬과 View별 픽셀 크기·확장 두께를 담는다.

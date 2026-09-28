@@ -1,8 +1,8 @@
 #pragma once
 
 #include "Asset/RenderAsset.h"
-#include "Render/Buffer.h"
-#include "Render/StaticMeshData.h"
+#include "Rendering/Buffer.h"
+#include "Rendering/StaticMeshData.h"
 
 class UStaticMesh : public URenderAsset
 {

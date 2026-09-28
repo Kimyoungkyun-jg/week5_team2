@@ -3,7 +3,7 @@
 #include <format>
 #include "Editor/EditorUI/EditorPanel.h"
 
-#include "Engine/World.h"
+#include "World/World.h"
 
 struct FTransform;
 

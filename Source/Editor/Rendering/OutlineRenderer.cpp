@@ -1,8 +1,8 @@
 #include "EnginePCH.h"
-#include "Editor/Rendering/OutLineRenderer.h"
+#include "Editor/Rendering/OutlineRenderer.h"
 #include "Asset/AssetManager.h"
-#include "Render/RenderCommand.h"
-#include "Render/RenderResourceManager.h"
+#include "Rendering/RenderCommand.h"
+#include "Rendering/RenderResourceManager.h"
 
 // 스텐실 마스크·외곽선 두 패스의 Shader와 상수 버퍼를 준비한다.
 // 두 패스 모두 깊이 테스트를 끄므로 다른 물체에 가려져도 외곽선이 보인다.

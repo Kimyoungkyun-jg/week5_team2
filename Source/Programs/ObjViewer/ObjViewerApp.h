@@ -1,11 +1,11 @@
 #pragma once
 
 #include "Core/Window.h"
-#include "Render/RenderDevice.h"
-#include "Render/RenderPacket.h"
-#include "Render/Renderer.h"
-#include "Render/Swapchain.h"
-#include "Render/Texture2D.h"
+#include "Rendering/RenderDevice.h"
+#include "Rendering/RenderPacket.h"
+#include "Rendering/Renderer.h"
+#include "Rendering/Swapchain.h"
+#include "Rendering/Texture2D.h"
 
 #include "Core/Application.h"
 

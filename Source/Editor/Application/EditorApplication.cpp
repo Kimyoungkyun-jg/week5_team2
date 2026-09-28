@@ -1,6 +1,6 @@
 #include "EnginePCH.h"
 
-#include "Editor/HitoriEd/Engine.h"
+#include "Editor/Application/EditorApplication.h"
 
 #include "Core/EngineStatics.h"
 #include "Core/EngineTimer.h"
@@ -9,24 +9,24 @@
 
 #include "ObjectSystem/ObjectFactory.h"
 
-#include "Render/GeometryGenerator.h"
+#include "Rendering/GeometryGenerator.h"
 
-#include "Engine/World.h"
-#include "Engine/Level.h"
+#include "World/World.h"
+#include "World/Level.h"
 
-#include "Render/Renderer.h"
+#include "Rendering/Renderer.h"
 
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/Actor/LightActor.h"
 
 #include "Asset/AssetManager.h"
-#include "Render/RenderResourceManager.h"
+#include "Rendering/RenderResourceManager.h"
 
-#include "Render/RenderCommand.h"
+#include "Rendering/RenderCommand.h"
 #include "Editor/Outliner/OutlinerPanel.h"
-#include "Editor/HitoriEd/EditorFileUtils.h"
-#include "UObject/UObjectIterator.h"
+#include "Editor/Application/EditorFileUtils.h"
+#include "ObjectSystem/UObjectIterator.h"
 
 #include "Core/EngineLog.h"
 #include "Serialization/JsonArchive.h"

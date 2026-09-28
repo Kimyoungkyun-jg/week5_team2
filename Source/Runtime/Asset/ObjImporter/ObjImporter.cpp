@@ -7,8 +7,8 @@
 #include <filesystem>
 
 #include "Core/EngineLog.h"
-#include "Render/StaticMeshData.h"
-#include "Render/Vertex.h"
+#include "Rendering/StaticMeshData.h"
+#include "Rendering/Vertex.h"
 #include "Container/Map.h"
 #include "Container/StringView.h"
 #include "Asset/ObjImporter/StaticMeshBake.h"

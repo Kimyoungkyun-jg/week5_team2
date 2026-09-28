@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Render/Vertex.h"
+#include "Rendering/Vertex.h"
 #include "StaticMeshData.h"
 
 class FGeometryGenerator

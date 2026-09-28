@@ -1,8 +1,8 @@
 #include "EnginePCH.h"
 #include "Editor/Outliner/OutlinerPanel.h"
 
-#include "Engine/Level.h"
-#include "Engine/World.h"
+#include "World/Level.h"
+#include "World/World.h"
 
 #include "Component/ActorComponent.h"
 #include "Component/PrimitiveComponent.h"

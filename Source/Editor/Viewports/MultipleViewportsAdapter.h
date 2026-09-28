@@ -1,11 +1,11 @@
 #pragma once
 
-#include "Editor/LevelEditor/MultipleViewports/Adapter/MultipleViewportsAdapterTypes.h"
+#include "Editor/Viewports/MultipleViewportsAdapterTypes.h"
 
 #include "Collision/Ray.h"
 #include "Container/Queue.h"
 #include "Math/Matrix.h"
-#include "Render/RenderPacket.h"
+#include "Rendering/RenderPacket.h"
 
 #include "Container/Map.h"
 #include "Container/Array.h"

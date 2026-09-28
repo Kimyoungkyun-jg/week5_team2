@@ -1,6 +1,6 @@
 #include "EnginePCH.h"
 
-#include "Editor/LevelEditor/MultipleViewports/Adapter/MultipleViewportsAdapter.h"
+#include "Editor/Viewports/MultipleViewportsAdapter.h"
 
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
@@ -9,9 +9,9 @@
 #include "Component/ParticleSubUVComponent.h"
 #include "Editor/Outliner/OutlinerPanel.h"
 #include "Editor/Rendering/GridRenderer.h"
-#include "Engine/World.h"
+#include "World/World.h"
 #include "Input/InputSystem.h"
-#include "UObject/UObjectIterator.h"
+#include "ObjectSystem/UObjectIterator.h"
 
 #include <algorithm>
 #include <cassert>

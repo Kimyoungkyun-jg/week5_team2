@@ -1,9 +1,9 @@
 #include "EnginePCH.h"
 #include "Editor/Viewports/ViewportsPanel.h"
-#include "Editor/LevelEditor/MultipleViewports/Adapter/MultipleViewportsAdapter.h"
+#include "Editor/Viewports/MultipleViewportsAdapter.h"
 
 #include "Core/StatOverlay.h"
-#include "Render/RenderCommand.h"
+#include "Rendering/RenderCommand.h"
 
 #include <algorithm>
 #include <cassert>

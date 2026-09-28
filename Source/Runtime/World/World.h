@@ -2,12 +2,12 @@
 
 #include "ObjectSystem/Object.h"
 #include "ObjectSystem/Class.h"
-#include "UObject/TWeakObjectPtr.h"
+#include "ObjectSystem/TWeakObjectPtr.h"
 #include "GameFramework/Actor.h"
 #include "Component/PrimitiveComponent.h"
 #include "Component/TextRenderComponent.h"
 #include "Math/Transform.h"
-#include "Render/Renderer.h"
+#include "Rendering/Renderer.h"
 #include "PathTracker.h"
 
 #include "Camera/CameraActor.h"

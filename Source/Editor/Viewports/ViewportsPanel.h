@@ -1,8 +1,8 @@
 #pragma once
 
 #include "Editor/EditorUI/EditorPanel.h"
-#include "Editor/LevelEditor/MultipleViewports/Adapter/MultipleViewportsAdapterTypes.h"
-#include "Render/RenderingInfo.h"
+#include "Editor/Viewports/MultipleViewportsAdapterTypes.h"
+#include "Rendering/RenderingInfo.h"
 class FMultipleViewportsAdapter;
 
 class FViewportsPanel : public IEditorPanel

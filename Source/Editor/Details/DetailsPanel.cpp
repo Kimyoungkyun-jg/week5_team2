@@ -2,15 +2,15 @@
 #include "Editor/Details/DetailsPanel.h"
 
 #include "imgui_internal.h"
-#include "Editor/HitoriEd/EditorDragDrop.h"
+#include "Editor/Application/EditorDragDrop.h"
 #include "Component/PrimitiveComponent.h"
 #include "Component/StaticMeshComponent.h"
 #include "Component/TextRenderComponent.h"
 #include "Asset/AssetManager.h"
-#include "Render/Material.h"
-#include "Render/Texture2D.h"
+#include "Rendering/Material.h"
+#include "Rendering/Texture2D.h"
 #include "Text/Font.h"
-#include "UObject/UObjectIterator.h"
+#include "ObjectSystem/UObjectIterator.h"
 #include "GameFramework/Actor.h"
 
 namespace

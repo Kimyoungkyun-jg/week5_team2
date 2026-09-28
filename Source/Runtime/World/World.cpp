@@ -10,7 +10,7 @@
 #include "Camera/CameraComponent.h"
 #include "Input/InputSystem.h"
 
-#include "UObject/UObjectIterator.h"
+#include "ObjectSystem/UObjectIterator.h"
 
 #include "Collision/Ray.h"
 #include "Component/BillboardComponent.h"

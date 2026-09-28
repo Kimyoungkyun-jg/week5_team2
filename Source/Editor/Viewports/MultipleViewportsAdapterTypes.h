@@ -1,5 +1,5 @@
 #pragma once
-#include "Editor/LevelEditor/MultipleViewports/Core/MultipleViewports.h"
+#include "Editor/Viewports/MultipleViewports.h"
 
 // Quad View 사이에서 렌더링과 입력이 비워지는 Splitter gutter의 화면 픽셀 폭이다.
 inline constexpr float SplitterThickness = 6.0f;

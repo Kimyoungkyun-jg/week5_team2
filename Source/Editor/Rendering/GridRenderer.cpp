@@ -1,15 +1,15 @@
 #include "EnginePCH.h"
 #include "Editor/Rendering/GridRenderer.h"
-#include "Render/Vertex.h"
+#include "Rendering/Vertex.h"
 #include "Asset/AssetManager.h"
-#include "Render/RenderCommand.h"
+#include "Rendering/RenderCommand.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
 
 #include "Editor/Settings/SettingsPanel.h"
-#include "Render/RenderResourceManager.h"
+#include "Rendering/RenderResourceManager.h"
 
 namespace
 {

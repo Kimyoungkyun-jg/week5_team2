@@ -4,14 +4,14 @@
 #include "Core/Window.h"
 #include "Core/Types.h"
 
-#include "Engine/World.h"
-#include "Render/Renderer.h"
-#include "Render/RenderDevice.h"
-#include "Render/Swapchain.h"
+#include "World/World.h"
+#include "Rendering/Renderer.h"
+#include "Rendering/RenderDevice.h"
+#include "Rendering/Swapchain.h"
 #include "Editor/EditorUI/ImGuiRenderer.h"
 #include "Editor/Rendering/GridRenderer.h"
 #include "Editor/Gizmo/GizmoRenderer.h"
-#include "Render/LineBatcher.h"
+#include "Rendering/LineBatcher.h"
 
 #include "Editor/EditorUI/EditorUI.h"
 #include "Editor/OutputLog/OutputLogPanel.h"
@@ -19,14 +19,14 @@
 #include "Editor/EditorControls/EditorControlsPanel.h"
 #include "Editor/Settings/SettingsPanel.h"
 #include "Editor/Viewports/ViewportsPanel.h"
-#include "Editor/LevelEditor/MultipleViewports/Adapter/MultipleViewportsAdapter.h"
+#include "Editor/Viewports/MultipleViewportsAdapter.h"
 #include "Editor/ContentDrawer/ContentDrawerPanel.h"
 
 #include "Editor/Rendering/Outline.h"
-#include "Editor/Rendering/OutLineRenderer.h"
+#include "Editor/Rendering/OutlineRenderer.h"
 #include "Editor/Outliner/OutlinerPanel.h"
 
-#include "Render/SkyboxRenderer.h"
+#include "Rendering/SkyboxRenderer.h"
 
 //Temp
 #include "Text/Font.h"

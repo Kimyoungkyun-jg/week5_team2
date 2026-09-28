@@ -11,14 +11,6 @@ FMatrixRegister::FMatrixRegister()
 	R[3] = VectorSIMD::SetZero();
 }
 
-FMatrixRegister::FMatrixRegister(FVectorRegister R0, FVectorRegister R1, FVectorRegister R2, FVectorRegister R3)
-{
-	R[0] = R0;
-	R[1] = R1;
-	R[2] = R2;
-	R[3] = R3;
-}
-
 FMatrixRegister FMatrixRegister::Transpose() const
 {
 	FMatrixRegister Result = *this;
@@ -150,20 +142,3 @@ FMatrix FMatrixRegister::ToFMatrix() const
 	return Result;
 }
 
-FMatrixRegister FMatrixRegister::Load(const FMatrix& M)
-{
-	FMatrixRegister Result;
-
-	Result.R[0] = VectorSIMD::Load(M.M[0]);
-	Result.R[1] = VectorSIMD::Load(M.M[1]);
-	Result.R[2] = VectorSIMD::Load(M.M[2]);
-	Result.R[3] = VectorSIMD::Load(M.M[3]);
-
-	return Result;
-}
-
-FMatrixRegister FMatrixRegister::Identity()
-{
-	FMatrixRegister Result(VectorSIMD::SetVal(1, 0, 0, 0), VectorSIMD::SetVal(0, 1, 0, 0), VectorSIMD::SetVal(0, 0, 1, 0), VectorSIMD::SetVal(0, 0, 0, 1));
-	return Result;
-}

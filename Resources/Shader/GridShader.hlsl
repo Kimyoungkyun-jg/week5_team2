@@ -1,6 +1,6 @@
 cbuffer GridCB : register(b0)
 {
-    float4x4 ViewProj;
+    row_major matrix ViewProj;
     float3 CameraPos;
     int CellSize;
     float SubCellSize;

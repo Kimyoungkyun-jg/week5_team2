@@ -32,7 +32,7 @@ public:
 	// 큐를 정렬해 불투명 패킷만 그린다. 반투명은 RenderTranslucent 호출 전까지 보관한다.
 	void RenderOpaque(TQueue<FRenderPacket>& InQueue, const FMatrix& ViewProjection);
 	// TArray 기반 불투명 패킷 고속 렌더링
-	void RenderOpaque(const TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection);
+	void RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection);
 
 	// RenderOpaque가 보관한 반투명 패킷을 먼 것부터 그린다.
 	void RenderTranslucent(const FMatrix& ViewProjection);
@@ -64,5 +64,5 @@ private:
 	void DrawPackets(uint32 Begin, uint32 End, const FMatrix& ViewProjection);
 	void BindMaterial(UMaterial* material, ID3D11DeviceContext* Context = nullptr);
 	void UpdateMaterialParams(UMaterial* material);
-	void UpdatePerObjectConstants(const FRenderPacket& RenderPacket, const FMatrix& ViewProjection);
+	void UpdatePerObjectConstants(const FRenderPacket& RenderPacket, const FMatrixRegister& ViewProjection);
 };

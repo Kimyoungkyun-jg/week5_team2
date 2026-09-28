@@ -58,6 +58,9 @@ function CommonSettings()
 		runtime  "Release"
 		optimize "on"
 		symbols  "on"
+		-- LTCG: 컴파일 /GL + 링크 /LTCG. .cpp 파일 경계를 넘는 인라인을 허용한다.
+		-- (premake 5.0.0-beta8 문법. 예전 flags { "LinkTimeOptimization" }는 이 버전에서 쓰지 않는다)
+		linktimeoptimization "On"
 
 	-- 에디터 없이 OBJ 파일만 열어보는 Viewer 빌드
 	filter "configurations:ObjViewer"

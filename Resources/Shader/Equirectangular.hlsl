@@ -1,7 +1,7 @@
 cbuffer TransformBuffer : register(b0)
 {
-    matrix World;
-    matrix ViewProjection;
+    row_major matrix World;
+    row_major matrix ViewProjection;
 };
 
 struct VSInput

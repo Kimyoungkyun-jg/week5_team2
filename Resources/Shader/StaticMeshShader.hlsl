@@ -1,7 +1,7 @@
 cbuffer constants : register(b0)
 {
-    matrix MVP;
-    matrix World;
+    row_major matrix MVP;
+    row_major matrix World;
 };
 
 cbuffer MaterialParams : register(b1)

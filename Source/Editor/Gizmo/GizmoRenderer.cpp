@@ -64,7 +64,7 @@ void FGizmoRenderer::OnRender(
 
 	RenderCommand::BindPipelineState(&PipelineState);
 
-	const FMatrix ViewProjT = ViewProj.GetTransposed();
+	// GizmoShader cbuffer가 row_major이므로 행렬을 전치 없이 그대로 올린다.
 	// const FVector GizmoLocation = Gizmo.GetLocation();
 	const int HoveredAxis = Gizmo.GetHoveredAxis();
 
@@ -92,8 +92,8 @@ void FGizmoRenderer::OnRender(
 		}
 
 		FGizmoData Data{};
-		Data.World = World.GetTransposed();
-		Data.ViewProj = ViewProjT;
+		Data.World = World;
+		Data.ViewProj = ViewProj;
 		Data.Color = (i == HoveredAxis)
 			? FVector4(1.0f, 1.0f, 0.0f, 1.0f)     // hover 시 노랑
 			: AxisDataArray[i].Color;
@@ -107,8 +107,8 @@ void FGizmoRenderer::OnRender(
 		Transform.Rotation = FRotator(0.0f, 0.0f, 0.0f);
 
 		FGizmoData SphereData{};
-		SphereData.World = Transform.GetLocalMatrix().GetTransposed();
-		SphereData.ViewProj = ViewProjT;
+		SphereData.World = Transform.GetLocalMatrix();
+		SphereData.ViewProj = ViewProj;
 		SphereData.Color = (6 == HoveredAxis)
 			? FVector4(1.0f, 1.0f, 0.0f, 1.0f)     // hover 시 노랑
 			: AxisDataArray[6].Color;
@@ -132,8 +132,8 @@ void FGizmoRenderer::OnRender(
 		FMatrix Trans = FMatrix::MakeTranslation(GizmoLocation);
 
 		FGizmoData Data{};
-		Data.World = (Scale * Rot * Trans).GetTransposed();
-		Data.ViewProj = ViewProjT;
+		Data.World = Scale * Rot * Trans;
+		Data.ViewProj = ViewProj;
 		Data.Color = (6 == HoveredAxis)
 			? FVector4(1.0f, 1.0f, 0.0f, 1.0f)     // hover 시 노랑
 			: AxisDataArray[6].Color;

@@ -800,11 +800,38 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
 
     const int32 TotalPrimitives = VisiblePrimitives[ViewIndex].Num();
     if (TotalPrimitives == 0)
+  const PreparedView& ViewInfo = PrepareView(ViewIndex);
+  CullForView(RenderObjects, ViewInfo.Frustum, VisiblePrimitives[ViewIndex]);
+
+  const int32 TotalPrimitives = VisiblePrimitives[ViewIndex].Num();
+  if (TotalPrimitives == 0)
+    return;
+
+  const FMatrix& VP = ViewInfo.EngineViewProjection;
+  const FMatrixRegister VPReg = FMatrixRegister::Load(VP);
+  const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+  const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
+  const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
+
+  std::vector<TArray<FRenderPacket>> LocalPackets(NumJobs);
+
+  FFiberJobManager::Get().ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
+  {
+    const int32 JobIndex = Start / ChunkSize;
+    LocalPackets[JobIndex].Reserve(End - Start);
+
+    for (int32 i = Start; i < End; ++i)
     {
         OcclusionStats[ViewIndex].RenderPackets = 0;
         return;
     }
 
+    // 파이버 워커에서 SIMD로 MVP를 계산한다. row_major 업로드이므로 전치하지 않는다.
+    for (int32 k = 0; k < LocalPackets[JobIndex].Num(); ++k)
+    {
+      FRenderPacket& Packet = LocalPackets[JobIndex][k];
+      const FMatrixRegister Model = FMatrixRegister::Load(Packet.model);
+      (Model * VPReg).Store(Packet.MVP);
     const FMatrix& VP = View.EngineViewProjection;
     const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
     const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;

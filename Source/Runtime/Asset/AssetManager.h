@@ -39,10 +39,9 @@ public:
 	void CreateParticleMaterial();
 	void Shutdown();
 
-	template <typename T>
-	static T* GetAssetByPath(const FString& Path)
+	template <typename T> static T* GetAssetByKey(const FString& Key)
 	{
-		URenderAsset** Found = Get().AssetMap.FindOrNull(Path);
+		URenderAsset** Found = Get().AssetMap.FindOrNull(Key);
 
 		if (Found == nullptr || *Found == nullptr || !(*Found)->IsA<T>())
 		{

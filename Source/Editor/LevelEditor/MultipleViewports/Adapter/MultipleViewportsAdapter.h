@@ -12,6 +12,7 @@
 #include "Container/Array.h"
 
 class FOutlinerPanel;
+class FLineBatcher;
 class UPrimitiveComponent;
 class UWorld;
 
@@ -98,6 +99,7 @@ public:
         assert(ViewIndex >= 0 && ViewIndex < 4);
         return OcclusionStats[ViewIndex];
     }
+    void AppendSoftwareOcclusionDebugBounds(FLineBatcher& LineBatcher) const;
 
     // View별 가시 ID를 엔진 컴포넌트로 역매핑해 렌더 큐를 구성한다.
     void BuildRenderQueue(int32 ViewIndex, TQueue<FRenderPacket>& OutQueue);

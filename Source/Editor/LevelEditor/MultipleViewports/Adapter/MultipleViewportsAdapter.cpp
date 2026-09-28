@@ -13,6 +13,7 @@
 #include "Engine/World.h"
 #include "Input/InputSystem.h"
 #include "Render/Material.h"
+#include "Render/LineBatcher.h"
 #include "UObject/UObjectIterator.h"
 
 #include <algorithm>
@@ -675,6 +676,23 @@ void FMultipleViewportsAdapter::BuildRenderQueue(const int32 ViewIndex, TQueue<F
         }
     }
     OcclusionStats[ViewIndex].RenderPackets = OutQueue.Num();
+}
+
+void FMultipleViewportsAdapter::AppendSoftwareOcclusionDebugBounds(FLineBatcher& LineBatcher) const
+{
+    for (const FSoftwareOcclusionDebugBounds& Entry : SoftwareOcclusion.GetDebugBounds())
+    {
+        FVector4 Color;
+        switch (Entry.State)
+        {
+        case ESoftwareOcclusionDebugState::Occluded: Color = {1.0f, 0.1f, 0.1f, 1.0f}; break;
+        case ESoftwareOcclusionDebugState::Fallback: Color = {1.0f, 1.0f, 0.1f, 1.0f}; break;
+        case ESoftwareOcclusionDebugState::StaticVisible: Color = {0.1f, 0.4f, 1.0f, 1.0f}; break;
+        case ESoftwareOcclusionDebugState::DynamicVisible: Color = {1.0f, 0.5f, 0.1f, 1.0f}; break;
+        default: Color = {0.1f, 1.0f, 0.1f, 1.0f}; break;
+        }
+        LineBatcher.AddBox({Entry.Bounds.Center - Entry.Bounds.Extent, Entry.Bounds.Center + Entry.Bounds.Extent}, Color);
+    }
 }
 
 // 클릭한 View의 Ray를 World에 전달하고 Component의 최근접 교차 결과를 보관한다.

@@ -369,6 +369,13 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex, const FRenderingInfo
 		Renderer->RenderOpaque(RenderQueue, ViewProjection);
 	}
 
+	if (MultipleViewportsAdapter.GetSoftwareOcclusionSettings().bDebugBounds)
+	{
+		LineBatcher->BeginFrame();
+		MultipleViewportsAdapter.AppendSoftwareOcclusionDebugBounds(*LineBatcher);
+		LineBatcher->OnRender(ViewProjection);
+	}
+
 	// 스텐실 기반이라 선택 대상의 가시성이 꺼져 있어도 외곽선만 그린다.
 	if (Outline->GetTarget())
 	{

@@ -122,6 +122,7 @@ void ComputeViewRects(const FSplitRatio& Ratio, FVector2 WindowSize, FRect OutRe
 struct FAABB { FVector Center; FVector Extent; };
 
 class UPrimitiveComponent;
+struct FStaticMeshData;
 
 // 렌더 대상의 컴포넌트 포인터 월드 행렬 월드 경계를 담는다
 struct FRenderableObject
@@ -129,6 +130,11 @@ struct FRenderableObject
     UPrimitiveComponent* Primitive = nullptr;
     FMatrix WorldMatrix{0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
     FAABB WorldBounds;
+    const FStaticMeshData* StaticMeshData = nullptr;
+    uint64 BoundsRevision = 0;
+    uint32 StableIndex = 0;
+    bool bCanBeOccluded = false;
+    bool bCanOcclude = false;
 };
 
 // View 절두체를 이루는 여섯 개의 정규화 평면을 담는다.

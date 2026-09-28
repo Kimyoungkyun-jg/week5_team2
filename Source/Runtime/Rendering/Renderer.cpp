@@ -12,6 +12,8 @@
 
 #include <algorithm>
 
+#include "Job/FiberJobManager.h"
+
 bool FRenderer::Init()
 {
 	Temp = RenderCommand::CreateConstantBuffer(sizeof(FPerObjectConstants));
@@ -19,7 +21,29 @@ bool FRenderer::Init()
 	return true;
 }
 
-// 카메라의 ViewProjection을 공통 렌더 경로로 전달한다.
+// 지연 워커 초기화
+void FRenderer::EnsureDeferredWorkers()
+{
+	if (DeferredWorkers.Num() > 0)
+	{
+		return;
+	}
+
+	uint32 WorkerCount = FFiberJobManager::Get().GetNumWorkers();
+	if (WorkerCount == 0)
+	{
+		WorkerCount = (std::max)(1u, std::thread::hardware_concurrency());
+	}
+
+	DeferredWorkers.SetNum(WorkerCount);
+	for (uint32 Index = 0; Index < WorkerCount; ++Index)
+	{
+		DeferredWorkers[Index].Context = RenderCommand::CreateDeferredContext();
+		DeferredWorkers[Index].PerObjectCB = RenderCommand::CreateConstantBuffer(sizeof(FPerObjectConstants));
+	}
+}
+
+// 기존 단일 카메라의 ViewProjection으로 렌더 큐 전체를 그린다.
 void FRenderer::RenderAll(TQueue<FRenderPacket>& InQueue, UCameraComponent* CameraComponent)
 {
 	RenderAll(InQueue, CameraComponent->GetViewProjectionMatrix());
@@ -54,7 +78,7 @@ void FRenderer::RenderOpaque(TQueue<FRenderPacket>& InQueue, const FMatrix& View
 			if (LastMaterial != RenderPacket.material)
 			{
 				BindMaterial(RenderPacket.material);
-				UpdateMaterialParams(RenderPacket);
+				UpdateMaterialParams(RenderPacket.material);
 				LastMaterial = RenderPacket.material;
 			}
 
@@ -69,43 +93,168 @@ void FRenderer::RenderOpaque(TQueue<FRenderPacket>& InQueue, const FMatrix& View
 	}
 }
 
-// TArray 기반 불투명 메시 고속 렌더링
+// TArray 기반 불투명 메시 지연 컨텍스트 병렬 렌더링
 void FRenderer::RenderOpaque(const TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection)
 {
-	if (InPackets.Num() == 0)
+	const int32 TotalPackets = InPackets.Num();
+	if (TotalPackets == 0)
 	{
 		return;
 	}
 
-	RenderCommand::BindConstantBuffer(0, Temp.get(), EShaderBindFlagBits::Vertex);
+	EnsureDeferredWorkers();
 
-	const UStaticMesh* LastMesh = nullptr;
-	const UMaterial* LastMaterial = nullptr;
-
-	for (const FRenderPacket& RenderPacket : InPackets)
+	// 머티리얼 파라미터 사전 일괄 갱신
+	TArray<UMaterial*> UniqueMaterials;
+	UniqueMaterials.Reserve(8);
+	for (const FRenderPacket& Packet : InPackets)
 	{
-		if (RenderPacket.mesh != nullptr && RenderPacket.material != nullptr)
+		if (Packet.material && std::find(UniqueMaterials.begin(), UniqueMaterials.end(), Packet.material) == UniqueMaterials.end())
 		{
-			if (LastMesh != RenderPacket.mesh)
-			{
-				RenderCommand::BindMesh(RenderPacket.mesh);
-				LastMesh = RenderPacket.mesh;
-			}
-
-			if (LastMaterial != RenderPacket.material)
-			{
-				BindMaterial(RenderPacket.material);
-				UpdateMaterialParams(RenderPacket);
-				LastMaterial = RenderPacket.material;
-			}
-
-			UpdatePerObjectConstants(RenderPacket, ViewProjection);
-
-			RenderCommand::DrawIndexed(
-				RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),
-				RenderPacket.StartIndex
-			);
+			UniqueMaterials.Add(Packet.material);
 		}
+	}
+	for (UMaterial* Mat : UniqueMaterials)
+	{
+		UpdateMaterialParams(Mat);
+	}
+
+	const int32 NumWorkers = DeferredWorkers.Num();
+	if (TotalPackets <= 500 || NumWorkers <= 1)
+	{
+		// 단일 스레드 직접 렌더 경로
+		RenderCommand::BindConstantBuffer(0, Temp.get(), EShaderBindFlagBits::Vertex);
+
+		const UStaticMesh* LastMesh = nullptr;
+		const UMaterial* LastMaterial = nullptr;
+
+		for (const FRenderPacket& RenderPacket : InPackets)
+		{
+			if (RenderPacket.mesh != nullptr && RenderPacket.material != nullptr)
+			{
+				if (LastMesh != RenderPacket.mesh)
+				{
+					RenderCommand::BindMesh(RenderPacket.mesh);
+					LastMesh = RenderPacket.mesh;
+				}
+
+				if (LastMaterial != RenderPacket.material)
+				{
+					BindMaterial(RenderPacket.material);
+					LastMaterial = RenderPacket.material;
+				}
+
+				UpdatePerObjectConstants(RenderPacket, ViewProjection);
+
+				RenderCommand::DrawIndexed(
+					RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),
+					RenderPacket.StartIndex
+				);
+			}
+		}
+		return;
+	}
+
+	// 현재 바인딩된 렌더 타깃과 뷰포트 정보 획득
+	ID3D11RenderTargetView* RTVs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = { nullptr };
+	ID3D11DepthStencilView* DSV = nullptr;
+	RenderCommand::GetRenderDevice()->GetContext()->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, RTVs, &DSV);
+
+	UINT NumRTVs = 0;
+	for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
+	{
+		if (RTVs[i])
+		{
+			NumRTVs = i + 1;
+		}
+	}
+
+	UINT NumViewports = 1;
+	D3D11_VIEWPORT Viewport{};
+	RenderCommand::GetRenderDevice()->GetContext()->RSGetViewports(&NumViewports, &Viewport);
+
+	const int32 ChunkSize = (TotalPackets + NumWorkers - 1) / NumWorkers;
+	const int32 NumJobs = (TotalPackets + ChunkSize - 1) / ChunkSize;
+
+	std::vector<ComPtr<ID3D11CommandList>> CommandLists(NumJobs);
+
+	FFiberJobManager::Get().ParallelFor(TotalPackets, ChunkSize, [&](int32 Start, int32 End)
+	{
+		const int32 JobIndex = Start / ChunkSize;
+		if (JobIndex >= DeferredWorkers.Num())
+		{
+			return;
+		}
+
+		ID3D11DeviceContext* Context = DeferredWorkers[JobIndex].Context.Get();
+		FConstantBuffer* WorkerCB = DeferredWorkers[JobIndex].PerObjectCB.get();
+
+		Context->OMSetRenderTargets(NumRTVs, RTVs, DSV);
+		Context->RSSetViewports(NumViewports, &Viewport);
+
+		RenderCommand::BindConstantBuffer(0, WorkerCB, EShaderBindFlagBits::Vertex, Context);
+
+		const UStaticMesh* LastMesh = nullptr;
+		const UMaterial* LastMaterial = nullptr;
+
+		for (int32 i = Start; i < End; ++i)
+		{
+			const FRenderPacket& RenderPacket = InPackets[i];
+			if (RenderPacket.mesh != nullptr && RenderPacket.material != nullptr)
+			{
+				if (LastMesh != RenderPacket.mesh)
+				{
+					RenderCommand::BindMesh(RenderPacket.mesh, Context);
+					LastMesh = RenderPacket.mesh;
+				}
+
+				if (LastMaterial != RenderPacket.material)
+				{
+					BindMaterial(RenderPacket.material, Context);
+					LastMaterial = RenderPacket.material;
+				}
+
+				FPerObjectConstants Constants;
+				Constants.MVP = RenderPacket.MVP;
+				Constants.World = RenderPacket.model;
+				RenderCommand::UpdateBufferData(WorkerCB, &Constants, sizeof(FPerObjectConstants), Context);
+
+				RenderCommand::DrawIndexed(
+					RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),
+					RenderPacket.StartIndex,
+					0,
+					Context
+				);
+			}
+		}
+
+		Context->FinishCommandList(FALSE, CommandLists[JobIndex].GetAddressOf());
+	});
+
+	// 메인 스레드에서 커맨드 리스트 순차 실행
+	for (int32 i = 0; i < NumJobs; ++i)
+	{
+		if (CommandLists[i])
+		{
+			RenderCommand::ExecuteCommandList(CommandLists[i].Get(), false);
+		}
+	}
+
+	// 실행 후 메인 즉시 컨텍스트의 렌더 타깃과 뷰포트 상태 복구
+	RenderCommand::GetRenderDevice()->GetContext()->OMSetRenderTargets(NumRTVs, RTVs, DSV);
+	RenderCommand::GetRenderDevice()->GetContext()->RSSetViewports(NumViewports, &Viewport);
+
+	// 획득한 렌더 타깃 참조 해제
+	for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
+	{
+		if (RTVs[i])
+		{
+			RTVs[i]->Release();
+		}
+	}
+	if (DSV)
+	{
+		DSV->Release();
 	}
 }
 
@@ -119,55 +268,50 @@ void FRenderer::DrawPackets(uint32 Begin, uint32 End, const FMatrix& ViewProject
 {
 }
 
-// Material마다 Shader/Texture/Sampler/State 꽂기
-void FRenderer::BindMaterial(UMaterial* material)
+// 머티리얼 바인딩
+void FRenderer::BindMaterial(UMaterial* material, ID3D11DeviceContext* Context)
 {
-
-	RenderCommand::BindPipelineState(FRenderResourceManager::GetPSO(material->PSOType));
-	// 머티리얼이 가진 텍스처 및 샘플러 바인딩
+	RenderCommand::BindPipelineState(FRenderResourceManager::GetPSO(material->PSOType), Context);
 	for (int i = 0; i < material->Textures.size(); i++)
 	{
-		RenderCommand::BindShaderResource(i, material->Textures[i], EShaderBindFlagBits::Pixel);
+		RenderCommand::BindShaderResource(i, material->Textures[i], EShaderBindFlagBits::Pixel, Context);
 	}
-	RenderCommand::BindSamplerState(0, material->SamplerState, EShaderBindFlagBits::Pixel);
+	RenderCommand::BindSamplerState(0, material->SamplerState, EShaderBindFlagBits::Pixel, Context);
+	if (material->ParamBuffer)
+	{
+		RenderCommand::BindConstantBuffer(1, material->ParamBuffer.get(), EShaderBindFlagBits::Pixel, Context);
+	}
 }
 
-// b1 내용 채우고 꽂기
-void FRenderer::UpdateMaterialParams(const FRenderPacket& RenderPacket)
+// 머티리얼 파라미터 버퍼 갱신
+void FRenderer::UpdateMaterialParams(UMaterial* material)
 {
-	switch (RenderPacket.material->PSOType)
+	if (!material || !material->ParamBuffer)
+	{
+		return;
+	}
+
+	switch (material->PSOType)
 	{
 	case EPSOType::StaticMesh_Opaque:
 	case EPSOType::StaticMesh_Wireframe:
 	{
 		const float TotalTime = EngineTimer::GetTotalTime();
 		FStaticMeshMaterialParams Params{};
-		Params.BaseColor = RenderPacket.material->BaseColor;
-		Params.UVOffset = RenderPacket.material->UVScrollSpeed * TotalTime;
-		Params.bOpaque = 1.0f; // 오팩이므로 무조건 1.0f
-		RenderCommand::UpdateBufferData(RenderPacket.material->ParamBuffer.get(), &Params, sizeof(FStaticMeshMaterialParams));
-		RenderCommand::BindConstantBuffer(1, RenderPacket.material->ParamBuffer.get(), EShaderBindFlagBits::Pixel);
+		Params.BaseColor = material->BaseColor;
+		Params.UVOffset = material->UVScrollSpeed * TotalTime;
+		Params.bOpaque = 1.0f;
+		RenderCommand::UpdateBufferData(material->ParamBuffer.get(), &Params, sizeof(FStaticMeshMaterialParams));
 		break;
 	}
 	case EPSOType::StaticMesh_Translucent:
 	{
 		const float TotalTime = EngineTimer::GetTotalTime();
 		FStaticMeshMaterialParams Params{};
-		Params.BaseColor = RenderPacket.material->BaseColor;
-		Params.UVOffset = RenderPacket.material->UVScrollSpeed * TotalTime;
-		Params.bOpaque = 0.0f; // 반투명이므로 0.0f
-		RenderCommand::UpdateBufferData(RenderPacket.material->ParamBuffer.get(), &Params, sizeof(FStaticMeshMaterialParams));
-		RenderCommand::BindConstantBuffer(1, RenderPacket.material->ParamBuffer.get(), EShaderBindFlagBits::Pixel);
-		break;
-	}
-	case EPSOType::Particle_AlphaBlend:
-	case EPSOType::Particle_Additive:
-	{
-		if (RenderPacket.material->ParamBuffer && RenderPacket.MaterialParamData != nullptr)
-		{
-			RenderCommand::UpdateBufferData(RenderPacket.material->ParamBuffer.get(), RenderPacket.MaterialParamData, RenderPacket.MaterialParamDataSize);
-			RenderCommand::BindConstantBuffer(1, RenderPacket.material->ParamBuffer.get(), EShaderBindFlagBits::Pixel);
-		}
+		Params.BaseColor = material->BaseColor;
+		Params.UVOffset = material->UVScrollSpeed * TotalTime;
+		Params.bOpaque = 0.0f;
+		RenderCommand::UpdateBufferData(material->ParamBuffer.get(), &Params, sizeof(FStaticMeshMaterialParams));
 		break;
 	}
 	default:
@@ -189,7 +333,7 @@ void FRenderer::UpdatePerObjectConstants(const FRenderPacket& RenderPacket, cons
 		Constants.MVP = (RenderPacket.model * ViewProjection).GetTransposed();
 	}
 
-	Constants.World = RenderPacket.model.GetTransposed();
+	Constants.World = RenderPacket.model;
 
 	RenderCommand::UpdateBufferData(Temp.get(), &Constants);
 }

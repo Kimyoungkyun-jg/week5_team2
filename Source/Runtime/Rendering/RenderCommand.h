@@ -43,43 +43,48 @@ public:
 	static TUniquePtr<FVertexShader> CreateVertexShader(const FShaderByteCode& ByteCode);
 	static TUniquePtr<FPixelShader> CreatePixelShader(const FShaderByteCode& ByteCode);
 
-	static void BindPipelineState(const FPipelineState* PipelineState);
+	static ComPtr<ID3D11DeviceContext> CreateDeferredContext();
+	static void ExecuteCommandList(ID3D11CommandList* CommandList, bool bRestoreState = false);
+	static FRenderDevice* GetRenderDevice() { return RenderDevice; }
 
-	static void BindMesh(UStaticMesh* Mesh);
+	static void BindPipelineState(const FPipelineState* PipelineState, ID3D11DeviceContext* Context = nullptr);
 
-	static void BindShaderProgram(FShaderProgram* Shader);
+	static void BindMesh(UStaticMesh* Mesh, ID3D11DeviceContext* Context = nullptr);
 
-	static void Draw(uint32 VertexCount, uint32 StartIndexLocation = 0);
-	static void DrawIndexed(uint32 IndexCount, uint32 StartIndexLocation = 0, int32 BaseVertexLocation = 0);
-	static void DrawInstance(uint32 IndexCount, uint32 StartIndexLocation = 0, int32 BaseVertexLocation = 0);
+	static void BindShaderProgram(FShaderProgram* Shader, ID3D11DeviceContext* Context = nullptr);
+
+	static void Draw(uint32 VertexCount, uint32 StartIndexLocation = 0, ID3D11DeviceContext* Context = nullptr);
+	static void DrawIndexed(uint32 IndexCount, uint32 StartIndexLocation = 0, int32 BaseVertexLocation = 0, ID3D11DeviceContext* Context = nullptr);
+	static void DrawInstance(uint32 IndexCount, uint32 StartIndexLocation = 0, int32 BaseVertexLocation = 0, ID3D11DeviceContext* Context = nullptr);
 
 	template <typename T>
-	static void UpdateBufferData(FBuffer* InBuffer, T* Data)
+	static void UpdateBufferData(FBuffer* InBuffer, T* Data, ID3D11DeviceContext* Context = nullptr)
 	{
-		UpdateBufferData(InBuffer, Data, sizeof(T));
+		UpdateBufferData(InBuffer, Data, sizeof(T), Context);
 	}
-	static void UpdateBufferData(FBuffer* InBuffer, const void* Data, uint32 DataSize);
+	static void UpdateBufferData(FBuffer* InBuffer, const void* Data, uint32 DataSize, ID3D11DeviceContext* Context = nullptr);
 
-	static void BindVertexBuffer(FVertexBuffer* VertexBuffer);
-	static void BindIndexBuffer(FIndexBuffer* IndexBuffer);
-	static void BindConstantBuffer(uint32 Slot, FConstantBuffer* ConstantBuffer, EShaderBindFlagBits FlagBits);
-	static void BindShaderResource(uint32 Slot, FTexture2D* Texture2D, EShaderBindFlagBits FlagBits);
-	static void BindShaderResource(uint32 Slot, UTexture2D* Texture2D, EShaderBindFlagBits FlagBits);
+	static void BindVertexBuffer(FVertexBuffer* VertexBuffer, ID3D11DeviceContext* Context = nullptr);
+	static void BindIndexBuffer(FIndexBuffer* IndexBuffer, ID3D11DeviceContext* Context = nullptr);
+	static void BindConstantBuffer(uint32 Slot, FConstantBuffer* ConstantBuffer, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context = nullptr);
+	static void BindShaderResource(uint32 Slot, FTexture2D* Texture2D, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context = nullptr);
+	static void BindShaderResource(uint32 Slot, UTexture2D* Texture2D, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context = nullptr);
 
 	static void BeginRenderPass(const FRenderingInfo& RenderingInfo);
 	static void EndRenderPass(const FRenderingInfo& RenderingInfo);
 	static void ClearDepthStencil(FTexture2D* DepthStencilTexture, float Depth = 1.0f, uint8 Stencil = 0);
 
-	static void SetViewport(uint32 InX, uint32 InY, uint32 InWidth, uint32 InHeight);
+	static void SetViewport(uint32 InX, uint32 InY, uint32 InWidth, uint32 InHeight, ID3D11DeviceContext* Context = nullptr);
 
-	static void SetRasterizerState(ERasterizerState State);
-	static void SetBlendState(EBlendState State);
-	static void SetDepthStencilState(EDepthStencilState State);
-	static void BindSamplerState(uint32 Slot, ESamplerState SamplerState, EShaderBindFlagBits FlagBits);
+	static void SetRasterizerState(ERasterizerState State, ID3D11DeviceContext* Context = nullptr);
+	static void SetBlendState(EBlendState State, ID3D11DeviceContext* Context = nullptr);
+	static void SetDepthStencilState(EDepthStencilState State, ID3D11DeviceContext* Context = nullptr);
+	static void BindSamplerState(uint32 Slot, ESamplerState SamplerState, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context = nullptr);
 
-	inline static void SetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY Topology)
+	inline static void SetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY Topology, ID3D11DeviceContext* Context = nullptr)
 	{
-		RenderDevice->GetContext()->IASetPrimitiveTopology(Topology);
+		ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+		Ctx->IASetPrimitiveTopology(Topology);
 	}
 
 	//inline static void BindTexture(uint32 Slot, UTexture2D* Texture2D, EShaderBindFlagBits FlagBits);

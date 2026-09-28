@@ -400,7 +400,7 @@ void CullForView(const TArray<FRenderableObject>& WorldObjects, const FFrustumPl
     OutVisiblePrimitives.Reset();
     if (WorldObjects.Num() == 0) return;
 
-    const int32 ChunkSize = 1000;
+    const int32 ChunkSize = 6250;
     const int32 NumJobs = (WorldObjects.Num() + ChunkSize - 1) / ChunkSize;
 
     std::vector<TArray<UPrimitiveComponent*>> LocalResults(NumJobs);

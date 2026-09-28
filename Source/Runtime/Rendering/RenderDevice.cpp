@@ -52,6 +52,15 @@ FRenderDevice::~FRenderDevice()
 {
 }
 
+// 지연 컨텍스트 생성
+ComPtr<ID3D11DeviceContext> FRenderDevice::CreateDeferredContext()
+{
+	ComPtr<ID3D11DeviceContext> DeferredContext;
+	HRESULT hr = Device->CreateDeferredContext(0, DeferredContext.GetAddressOf());
+	assert(SUCCEEDED(hr));
+	return DeferredContext;
+}
+
 
 TUniquePtr<FVertexBuffer> FRenderDevice::CreateStaticVertexBuffer(const void* InVertices, uint32 InSize, uint32 Stride)
 {

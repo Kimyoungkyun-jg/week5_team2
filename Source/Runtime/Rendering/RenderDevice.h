@@ -26,6 +26,8 @@ public:
 	ID3D11DeviceContext* GetContext() const { return DeviceContext.Get(); }
 	IDXGIFactory* GetFactory() const { return DXGIFactory.Get(); }
 
+	ComPtr<ID3D11DeviceContext> CreateDeferredContext();
+
 	TUniquePtr<FVertexBuffer> CreateStaticVertexBuffer(const void* InVertices, uint32 InSize, uint32 Stride);
 	TUniquePtr<FIndexBuffer> CreateStaticIndexBuffer(const uint32* InIndices, uint32 MaxIndexCount);
 

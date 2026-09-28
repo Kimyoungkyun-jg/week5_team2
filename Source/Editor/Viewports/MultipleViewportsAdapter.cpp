@@ -483,25 +483,50 @@ void FMultipleViewportsAdapter::UpdateInput(const float DeltaTime,
 }
 
 // 현재 World의 가시 컴포넌트에서 경계와 컴포넌트 포인터를 캡처한다
-void FMultipleViewportsAdapter::CaptureWorld(UWorld &World) {
-  const auto &Primitives = World.GetWorldPrimitiveComponents();
-  RenderObjects.Reset();
-  RenderObjects.Reserve(Primitives.Num());
-  bCapturedBillboard = false;
-  bCapturedParticle = false;
-
-  // 등록된 컴포넌트 순회
-  for (const auto &WeakPrimitive : Primitives) {
-    UPrimitiveComponent *Primitive = WeakPrimitive.Get();
-    if (!Primitive || !Primitive->IsVisible())
-      continue;
-
-    // 바운딩 박스와 컴포넌트 포인터 등록
-    FRenderableObject RenderObject{};
-    RenderObject.Primitive = Primitive;
-    RenderObject.WorldBounds = MakeWorldBounds(Primitive->GetWorldBounds());
-    RenderObjects.Add(RenderObject);
-  }
+void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
+    const auto& Primitives = World.GetWorldPrimitiveComponents();
+    RenderObjects.Reset();
+    bCapturedBillboard = false;
+    bCapturedParticle = false;
+    
+    const int32 TotalPrimitives = Primitives.Num();
+    if (TotalPrimitives == 0)
+        return;
+    
+    const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+    const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
+    const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
+    
+    // 워커별 독립 저장 공간 (경합 방지)
+    std::vector<TArray<FRenderableObject>> LocalResults(NumJobs);
+    
+    FFiberJobManager::Get().ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
+        {
+            const int32 JobIndex = Start / ChunkSize;
+            LocalResults[JobIndex].Reserve(End - Start);
+    
+            // 워커가 담당 구역(Start ~ End)만 순회
+            for (int32 i = Start; i < End; ++i)
+            {
+                UPrimitiveComponent* Primitive = Primitives[i].Get();
+                if (!Primitive || !Primitive->IsVisible())
+                    continue;
+    
+                FRenderableObject RenderObject{};
+                
+                RenderObject.Primitive = Primitive;
+                RenderObject.WorldBounds = MakeWorldBounds(Primitive->GetWorldBounds());
+                
+                LocalResults[JobIndex].Add(RenderObject);
+            }
+        });
+    
+    // 메인 스레드에서 결과 일괄 취합
+    RenderObjects.Reserve(TotalPrimitives);
+    for (int32 i = 0; i < NumJobs; ++i)
+    {
+        RenderObjects.Append(LocalResults[i]);
+    }
 }
 
 // 유효 Rect와 Single 대상 인덱스 또는 Quad 모드로 View 활성 여부를 판정한다.
@@ -720,7 +745,8 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
     return;
 
   const FMatrix& VP = ViewInfo.EngineViewProjection;
-  const int32 ChunkSize = 1000;
+  const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+  const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
   const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
 
   std::vector<TArray<FRenderPacket>> LocalPackets(NumJobs);
@@ -739,14 +765,23 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
       }
     }
 
-    // 워커 파이버가 모델과 뷰프로젝션 행렬 곱셈을 병렬 수행
+    // 파이버 워커가 모델과 뷰프로젝션 행렬 곱셈 및 전치 병렬 수행
     for (int32 k = 0; k < LocalPackets[JobIndex].Num(); ++k)
     {
       LocalPackets[JobIndex][k].MVP = (LocalPackets[JobIndex][k].model * VP).GetTransposed();
+      LocalPackets[JobIndex][k].model = LocalPackets[JobIndex][k].model.GetTransposed();
     }
   });
 
-  OutPackets.Reserve(TotalPrimitives);
+  // 패킷 총량 계산 및 일괄 취합
+  int32 TotalPacketCount = 0;
+  for (int32 j = 0; j < NumJobs; ++j)
+  {
+    TotalPacketCount += LocalPackets[j].Num();
+  }
+
+  OutPackets.Reset();
+  OutPackets.Reserve(TotalPacketCount);
   for (int32 j = 0; j < NumJobs; ++j)
   {
     OutPackets.Append(LocalPackets[j]);
@@ -795,25 +830,6 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
         LastPick.HitPoint = Hit.ImpactPoint;
     }
     return LastPick;
-
-  // 렌더와 같은 함수로 각 Billboard의 위치·크기에 맞는 View 행렬을 만든다.
-  const auto ResolveBillboardTransform =
-      [](const UBillboardComponent &Billboard, const void *Context) -> FMatrix {
-    const auto &Adapter =
-        *static_cast<const FMultipleViewportsAdapter *>(Context);
-    const FVector Scale = Billboard.GetWorldScale3D();
-    return Adapter.BuildEngineBillboardMatrix(Adapter.GetActiveViewIndex(),
-                                              Billboard.GetWorldLocation(),
-                                              Scale.Y, Scale.Z);
-  };
-  FHitResult Hit;
-  if (World.LineTraceSingle(Ray, Hit, ResolveBillboardTransform, this)) {
-    LastPick.bHit = true;
-    LastPick.Id = Hit.HitComponent->GetUUID();
-    LastPick.Distance = Hit.Distance;
-    LastPick.HitPoint = Hit.ImpactPoint;
-  }
-  return LastPick;
 }
 
 // 렌더 캡처 목록에 없는 컴포넌트도 Hit ID로 찾아 Owner를 선택한다. 삭제된 ID는

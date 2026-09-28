@@ -52,8 +52,17 @@ private:
 
 	FLOAT ClearColor[4] = { 0.3f, 0.3f, 0.3f, 1.0f };
 
+	// 워커 전용 지연 컨텍스트와 상수 버퍼
+	struct FDeferredWorker
+	{
+		ComPtr<ID3D11DeviceContext> Context;
+		TUniquePtr<FConstantBuffer> PerObjectCB;
+	};
+	TArray<FDeferredWorker> DeferredWorkers;
+
+	void EnsureDeferredWorkers();
 	void DrawPackets(uint32 Begin, uint32 End, const FMatrix& ViewProjection);
-	void BindMaterial(UMaterial* material);
-	void UpdateMaterialParams(const FRenderPacket& RenderPacket);
+	void BindMaterial(UMaterial* material, ID3D11DeviceContext* Context = nullptr);
+	void UpdateMaterialParams(UMaterial* material);
 	void UpdatePerObjectConstants(const FRenderPacket& RenderPacket, const FMatrix& ViewProjection);
 };

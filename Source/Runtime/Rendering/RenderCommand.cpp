@@ -74,102 +74,121 @@ TUniquePtr<FPixelShader> RenderCommand::CreatePixelShader(const FShaderByteCode&
 	return RenderDevice->CreatePixelShader(ByteCode);
 }
 
-void RenderCommand::BindPipelineState(const FPipelineState* PipelineState)
+ComPtr<ID3D11DeviceContext> RenderCommand::CreateDeferredContext()
+{
+	assert(RenderDevice);
+	return RenderDevice->CreateDeferredContext();
+}
+
+void RenderCommand::ExecuteCommandList(ID3D11CommandList* CommandList, bool bRestoreState)
+{
+	assert(RenderDevice);
+	RenderDevice->GetContext()->ExecuteCommandList(CommandList, bRestoreState ? TRUE : FALSE);
+}
+
+void RenderCommand::BindPipelineState(const FPipelineState* PipelineState, ID3D11DeviceContext* Context)
 {
 	if (!PipelineState)
 	{
 		return;
 	}
 
-	BindShaderProgram(PipelineState->Shader);
-	SetPrimitiveTopology(PipelineState->Topology);
-	SetRasterizerState(PipelineState->RasterizerState);
-	SetBlendState(PipelineState->BlendState);
-	SetDepthStencilState(PipelineState->DepthStencilState);
+	BindShaderProgram(PipelineState->Shader, Context);
+	SetPrimitiveTopology(PipelineState->Topology, Context);
+	SetRasterizerState(PipelineState->RasterizerState, Context);
+	SetBlendState(PipelineState->BlendState, Context);
+	SetDepthStencilState(PipelineState->DepthStencilState, Context);
 }
 
-void RenderCommand::BindShaderProgram(FShaderProgram* Shader)
+void RenderCommand::BindShaderProgram(FShaderProgram* Shader, ID3D11DeviceContext* Context)
 {
-	RenderDevice->GetContext()->VSSetShader(Shader->VertexShader->GetShader(), nullptr, 0);
-	RenderDevice->GetContext()->PSSetShader(Shader->PixelShader->GetShader(), nullptr, 0);
-	RenderDevice->GetContext()->IASetInputLayout(Shader->VertexShader->GetLayout());
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->VSSetShader(Shader->VertexShader->GetShader(), nullptr, 0);
+	Ctx->PSSetShader(Shader->PixelShader->GetShader(), nullptr, 0);
+	Ctx->IASetInputLayout(Shader->VertexShader->GetLayout());
 }
 
-void RenderCommand::BindMesh(UStaticMesh* Mesh)
+void RenderCommand::BindMesh(UStaticMesh* Mesh, ID3D11DeviceContext* Context)
 {
-	BindVertexBuffer(Mesh->VertexBuffer.get());
-	BindIndexBuffer(Mesh->IndexBuffer.get());
+	BindVertexBuffer(Mesh->VertexBuffer.get(), Context);
+	BindIndexBuffer(Mesh->IndexBuffer.get(), Context);
 }
 
-void RenderCommand::Draw(uint32 VertexCount, uint32 StartIndexLocation)
+void RenderCommand::Draw(uint32 VertexCount, uint32 StartIndexLocation, ID3D11DeviceContext* Context)
 {
-	RenderDevice->GetContext()->Draw(VertexCount, StartIndexLocation);
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->Draw(VertexCount, StartIndexLocation);
 }
 
-void RenderCommand::DrawIndexed(uint32 IndexCount, uint32 StartIndexLocation, int32 BaseVertexLocation)
+void RenderCommand::DrawIndexed(uint32 IndexCount, uint32 StartIndexLocation, int32 BaseVertexLocation, ID3D11DeviceContext* Context)
 {
-	RenderDevice->GetContext()->DrawIndexed(IndexCount, StartIndexLocation, BaseVertexLocation);
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->DrawIndexed(IndexCount, StartIndexLocation, BaseVertexLocation);
 }
 
-void RenderCommand::DrawInstance(uint32 IndexCount, uint32 StartIndexLocation, int32 BaseVertexLocation)
+void RenderCommand::DrawInstance(uint32 IndexCount, uint32 StartIndexLocation, int32 BaseVertexLocation, ID3D11DeviceContext* Context)
 {
-	//RenderDevice->GetContext()->DrawInstanced();
+	// 인스턴싱 드로우
 }
 
-void RenderCommand::UpdateBufferData(FBuffer* InBuffer, const void* Data, uint32 DataSize)
+void RenderCommand::UpdateBufferData(FBuffer* InBuffer, const void* Data, uint32 DataSize, ID3D11DeviceContext* Context)
 {
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
 	ID3D11Buffer* Buffer = InBuffer->GetBuffer();
 
 	D3D11_MAPPED_SUBRESOURCE MappedResource;
-	RenderDevice->GetContext()->Map(Buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
+	Ctx->Map(Buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
 	std::memcpy(MappedResource.pData, Data, DataSize);
-	RenderDevice->GetContext()->Unmap(Buffer, 0);
+	Ctx->Unmap(Buffer, 0);
 }
 
-void RenderCommand::BindVertexBuffer(FVertexBuffer* VertexBuffer)
+void RenderCommand::BindVertexBuffer(FVertexBuffer* VertexBuffer, ID3D11DeviceContext* Context)
 {
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
 	ID3D11Buffer* Buffer = VertexBuffer ? VertexBuffer->GetBuffer() : nullptr;
 
 	uint32 Offset = 0;
 	uint32 Stride = VertexBuffer ? VertexBuffer->GetStride() : 0;
-	RenderDevice->GetContext()->IASetVertexBuffers(0, 1, &Buffer, &Stride, &Offset);
+	Ctx->IASetVertexBuffers(0, 1, &Buffer, &Stride, &Offset);
 }
 
-void RenderCommand::BindIndexBuffer(FIndexBuffer* IndexBuffer)
+void RenderCommand::BindIndexBuffer(FIndexBuffer* IndexBuffer, ID3D11DeviceContext* Context)
 {
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
 	ID3D11Buffer* Buffer = IndexBuffer ? IndexBuffer->GetBuffer() : nullptr;
 
 	uint32 Offset = 0;
-	RenderDevice->GetContext()->IASetIndexBuffer(Buffer, DXGI_FORMAT_R32_UINT, Offset);
+	Ctx->IASetIndexBuffer(Buffer, DXGI_FORMAT_R32_UINT, Offset);
 }
 
-void RenderCommand::BindConstantBuffer(uint32 Slot, FConstantBuffer* ConstantBuffer, EShaderBindFlagBits FlagBits)
+void RenderCommand::BindConstantBuffer(uint32 Slot, FConstantBuffer* ConstantBuffer, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context)
 {
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
 	ID3D11Buffer* Buffer = ConstantBuffer->GetBuffer();
 	if (HasFlag(FlagBits, EShaderBindFlagBits::Vertex))
-		RenderDevice->GetContext()->VSSetConstantBuffers(Slot, 1, &Buffer);
+		Ctx->VSSetConstantBuffers(Slot, 1, &Buffer);
 	if (HasFlag(FlagBits, EShaderBindFlagBits::Pixel))
-		RenderDevice->GetContext()->PSSetConstantBuffers(Slot, 1, &Buffer);
-
+		Ctx->PSSetConstantBuffers(Slot, 1, &Buffer);
 }
 
-void RenderCommand::BindShaderResource(uint32 Slot, FTexture2D* Texture2D, EShaderBindFlagBits FlagBits)
+void RenderCommand::BindShaderResource(uint32 Slot, FTexture2D* Texture2D, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context)
 {
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
 	ID3D11ShaderResourceView* SRV = Texture2D->GetSRV();
 	if (HasFlag(FlagBits, EShaderBindFlagBits::Vertex))
 	{
-		RenderDevice->GetContext()->VSSetShaderResources(Slot, 1, &SRV);
+		Ctx->VSSetShaderResources(Slot, 1, &SRV);
 	}
 
 	if (HasFlag(FlagBits, EShaderBindFlagBits::Pixel))
 	{
-		RenderDevice->GetContext()->PSSetShaderResources(Slot, 1, &SRV);
+		Ctx->PSSetShaderResources(Slot, 1, &SRV);
 	}
 }
 
-void RenderCommand::BindShaderResource(uint32 Slot, UTexture2D* Texture2D, EShaderBindFlagBits FlagBits)
+void RenderCommand::BindShaderResource(uint32 Slot, UTexture2D* Texture2D, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context)
 {
-	BindShaderResource(Slot, Texture2D->GetResource(), FlagBits);
+	BindShaderResource(Slot, Texture2D->GetResource(), FlagBits, Context);
 }
 
 void RenderCommand::BeginRenderPass(const FRenderingInfo& RenderingInfo)
@@ -219,8 +238,9 @@ void RenderCommand::ClearDepthStencil(FTexture2D* DepthStencilTexture, float Dep
 	RenderDevice->GetContext()->ClearDepthStencilView(DepthStencilTexture->GetDSV(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, Depth, Stencil);
 }
 
-void RenderCommand::SetViewport(uint32 InX, uint32 InY, uint32 InWidth, uint32 InHeight)
+void RenderCommand::SetViewport(uint32 InX, uint32 InY, uint32 InWidth, uint32 InHeight, ID3D11DeviceContext* Context)
 {
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
 	D3D11_VIEWPORT Viewport;
 	Viewport.TopLeftX = (float)InX;
 	Viewport.TopLeftY = (float)InY;
@@ -229,35 +249,39 @@ void RenderCommand::SetViewport(uint32 InX, uint32 InY, uint32 InWidth, uint32 I
 	Viewport.MinDepth = 0.0f;
 	Viewport.MaxDepth = 1.0f;
 
-	RenderDevice->GetContext()->RSSetViewports(1, &Viewport);
+	Ctx->RSSetViewports(1, &Viewport);
 }
 
-void RenderCommand::SetRasterizerState(ERasterizerState State)
+void RenderCommand::SetRasterizerState(ERasterizerState State, ID3D11DeviceContext* Context)
 {
-	RenderDevice->GetContext()->RSSetState(RenderDevice->GetRasterizerState(State));
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->RSSetState(RenderDevice->GetRasterizerState(State));
 }
 
-void RenderCommand::SetBlendState(EBlendState State)
+void RenderCommand::SetBlendState(EBlendState State, ID3D11DeviceContext* Context)
 {
-	RenderDevice->GetContext()->OMSetBlendState(RenderDevice->GetBlendState(State), nullptr, 0xffffffff);
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->OMSetBlendState(RenderDevice->GetBlendState(State), nullptr, 0xffffffff);
 }
 
-void RenderCommand::SetDepthStencilState(EDepthStencilState State)
+void RenderCommand::SetDepthStencilState(EDepthStencilState State, ID3D11DeviceContext* Context)
 {
-	RenderDevice->GetContext()->OMSetDepthStencilState(RenderDevice->GetDepthStencilState(State), 0);
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->OMSetDepthStencilState(RenderDevice->GetDepthStencilState(State), 0);
 }
 
-void RenderCommand::BindSamplerState(uint32 Slot, ESamplerState SamplerState, EShaderBindFlagBits FlagBits)
+void RenderCommand::BindSamplerState(uint32 Slot, ESamplerState SamplerState, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context)
 {
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
 	ID3D11SamplerState* Sampler = RenderDevice->GetSamplerState(SamplerState);
 	if (HasFlag(FlagBits, EShaderBindFlagBits::Vertex))
 	{
-		RenderDevice->GetContext()->VSSetSamplers(Slot, 1, &Sampler);
+		Ctx->VSSetSamplers(Slot, 1, &Sampler);
 	}
 
 	if (HasFlag(FlagBits, EShaderBindFlagBits::Pixel))
 	{
-		RenderDevice->GetContext()->PSSetSamplers(Slot, 1, &Sampler);
+		Ctx->PSSetSamplers(Slot, 1, &Sampler);
 	}
 }
 

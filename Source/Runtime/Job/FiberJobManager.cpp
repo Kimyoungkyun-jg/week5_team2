@@ -36,7 +36,24 @@ void FFiberJobManager::Initialize(uint32_t InNumWorkers, uint32_t InNumFibers, u
 
 	bIsRunning.store(true);
 	FiberStackSize = InFiberStackSize;
-	NumFibers = InNumFibers;
+
+	// 사용 가능한 하드웨어 스레드 수 산출
+	if (InNumWorkers == 0)
+	{
+		uint32_t HardwareThreads = std::thread::hardware_concurrency();
+		if (HardwareThreads == 0)
+		{
+			HardwareThreads = 4;
+		}
+		// 메인 스레드 제외 최대 코어 활용
+		NumWorkers = (HardwareThreads > 1) ? (HardwareThreads - 1) : 1;
+	}
+	else
+	{
+		NumWorkers = InNumWorkers;
+	}
+
+	NumFibers = (std::max)(InNumFibers, NumWorkers * 4);
 
 	// 메인 스레드 파이버 변환
 	if (!IsThreadAFiber())
@@ -60,17 +77,6 @@ void FFiberJobManager::Initialize(uint32_t InNumWorkers, uint32_t InNumFibers, u
 				FiberPool.push_back(Fiber);
 			}
 		}
-	}
-
-	// 워커 스레드 수 산출
-	if (InNumWorkers == 0)
-	{
-		uint32_t HardwareThreads = std::thread::hardware_concurrency();
-		NumWorkers = (HardwareThreads > 1) ? (HardwareThreads - 1) : 1;
-	}
-	else
-	{
-		NumWorkers = InNumWorkers;
 	}
 
 	// 워커 스레드 생성

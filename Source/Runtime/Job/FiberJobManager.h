@@ -20,6 +20,9 @@ public:
 	// 잡 매니저 종료
 	void Shutdown();
 
+	// 워커 스레드 수 반환
+	uint32_t GetNumWorkers() const { return NumWorkers; }
+
 	// 일감 등록
 	void RunJob(const FFiberJob& InJob);
 	void RunJobs(const FFiberJob* InJobs, uint32_t InNumJobs, FFiberCounter* InCounter = nullptr);

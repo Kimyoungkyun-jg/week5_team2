@@ -46,6 +46,7 @@
 
 // 렌더 자원·월드·에디터와 MultipleViewports 연결을 초기화한다.
 bool FEditorApplication::Init(HINSTANCE hInstance) {
+  // 사용 가능한 최대 코어를 워커로 사용
   FFiberJobManager::Get().Initialize(8);
 
   EditorUI = MakeUnique<FEditorUI>();

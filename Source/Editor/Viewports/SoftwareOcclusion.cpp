@@ -3,6 +3,7 @@
 
 #include "Component/PrimitiveComponent.h"
 #include "Rendering/StaticMeshData.h"
+#include "Job/FiberJobManager.h"
 
 #include <algorithm>
 #include <array>
@@ -1051,12 +1052,40 @@ void FSoftwareOcclusionCuller::Cull(
 
     if (Settings.Mode == ESoftwareOcclusionMode::Disabled || bWireframe || ViewWidth <= 0 || ViewHeight <= 0)
     {
-        for (const FRenderableObject& Object : Objects)
+        const int32 TotalObjects = Objects.Num();
+        if (TotalObjects > 0)
         {
-            if (Object.Primitive && IsAABBInFrustum(Object.WorldBounds, Frustum))
-                OutVisible.Add(Object.Primitive);
-            else if (Object.Primitive)
-                ++OutStats.FrustumRejected;
+            const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+            const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
+            const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
+
+            std::vector<TArray<UPrimitiveComponent*>> LocalVisible(NumJobs);
+            std::vector<uint32> LocalRejected(NumJobs, 0);
+
+            // 절두체 검사 병렬 수행
+            FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
+            {
+                const int32 JobIndex = Start / ChunkSize;
+                LocalVisible[JobIndex].Reserve(End - Start);
+                for (int32 Index = Start; Index < End; ++Index)
+                {
+                    const FRenderableObject& Object = Objects[Index];
+                    if (Object.Primitive && IsAABBInFrustum(Object.WorldBounds, Frustum))
+                    {
+                        LocalVisible[JobIndex].Add(Object.Primitive);
+                    }
+                    else if (Object.Primitive)
+                    {
+                        ++LocalRejected[JobIndex];
+                    }
+                }
+            });
+
+            for (int32 JobIndex = 0; JobIndex < NumJobs; ++JobIndex)
+            {
+                OutVisible.Append(LocalVisible[JobIndex]);
+                OutStats.FrustumRejected += LocalRejected[JobIndex];
+            }
         }
         OutStats.FinalVisible = static_cast<uint32>(OutVisible.Num());
         OutStats.CullMs = static_cast<float>((NowSeconds() - CullStartSeconds) * 1000.0);
@@ -1099,28 +1128,79 @@ void FSoftwareOcclusionCuller::Cull(
     }
     else
     {
-        CandidateIndices.Reset();
-        CandidateIndices.Reserve(Objects.Num());
-        for (int32 Index = 0; Index < Objects.Num(); ++Index)
+        const int32 TotalObjects = Objects.Num();
+        const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+        const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
+        const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
+
+        std::vector<TArray<uint32>> LocalCandidates(NumJobs);
+        std::vector<uint32> LocalRejected(NumJobs, 0);
+
+        // 절두체 검사 병렬 수행
+        FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
         {
-            if (Objects[Index].Primitive && IsAABBInFrustum(Objects[Index].WorldBounds, Frustum))
-                CandidateIndices.Add(static_cast<uint32>(Index));
-            else if (Objects[Index].Primitive)
-                ++OutStats.FrustumRejected;
-        }
-        std::sort(CandidateIndices.begin(), CandidateIndices.end(), [&](const uint32 A, const uint32 B)
-        {
-            return DistanceSquaredToBounds(Objects[A].WorldBounds) < DistanceSquaredToBounds(Objects[B].WorldBounds);
-        });
-        for (const uint32 Index : CandidateIndices)
-        {
-            bool bStatic = false;
-            if (Objects[Index].bCanBeOccluded)
+            const int32 JobIndex = Start / ChunkSize;
+            LocalCandidates[JobIndex].Reserve(End - Start);
+            for (int32 Index = Start; Index < End; ++Index)
             {
-                const auto Found = ObjectStates.find(Objects[Index].Primitive->GetUUID());
-                bStatic = Found != ObjectStates.end() && !Found->second.bDynamic;
+                if (Objects[Index].Primitive && IsAABBInFrustum(Objects[Index].WorldBounds, Frustum))
+                {
+                    LocalCandidates[JobIndex].Add(static_cast<uint32>(Index));
+                }
+                else if (Objects[Index].Primitive)
+                {
+                    ++LocalRejected[JobIndex];
+                }
             }
-            ProcessObject(Objects[Index], bStatic, true, true, OutVisible);
+        });
+
+        CandidateIndices.Reset();
+        CandidateIndices.Reserve(TotalObjects);
+        for (int32 JobIndex = 0; JobIndex < NumJobs; ++JobIndex)
+        {
+            CandidateIndices.Append(LocalCandidates[JobIndex]);
+            OutStats.FrustumRejected += LocalRejected[JobIndex];
+        }
+
+        struct FCandidateDistance
+        {
+            uint32 Index;
+            float DistSq;
+        };
+
+        const int32 TotalCandidates = CandidateIndices.Num();
+        TArray<FCandidateDistance> CandidateDistances;
+        CandidateDistances.SetNum(TotalCandidates, false);
+
+        if (TotalCandidates > 0)
+        {
+            const int32 DistChunkSize = (TotalCandidates + NumWorkers - 1) / NumWorkers;
+            // 거리 계산 병렬 수행
+            FFiberJobManager::Get().ParallelFor(TotalCandidates, DistChunkSize, [&](int32 Start, int32 End)
+            {
+                for (int32 i = Start; i < End; ++i)
+                {
+                    const uint32 ObjIdx = CandidateIndices[i];
+                    CandidateDistances[i] = { ObjIdx, DistanceSquaredToBounds(Objects[ObjIdx].WorldBounds) };
+                }
+            });
+
+            std::sort(CandidateDistances.begin(), CandidateDistances.end(), [](const FCandidateDistance& A, const FCandidateDistance& B)
+            {
+                return A.DistSq < B.DistSq;
+            });
+
+            for (const FCandidateDistance& Item : CandidateDistances)
+            {
+                const uint32 Index = Item.Index;
+                bool bStatic = false;
+                if (Objects[Index].bCanBeOccluded)
+                {
+                    const auto Found = ObjectStates.find(Objects[Index].Primitive->GetUUID());
+                    bStatic = Found != ObjectStates.end() && !Found->second.bDynamic;
+                }
+                ProcessObject(Objects[Index], bStatic, true, true, OutVisible);
+            }
         }
     }
 
@@ -1141,12 +1221,37 @@ void FSoftwareOcclusionCuller::Cull(
                 static_cast<float>(Tiles.Num());
         }
     }
-    OutVisible.Reserve(Objects.Num());
-    for (const FRenderableObject& Object : Objects)
+
+    const int32 TotalObjects = Objects.Num();
+    if (TotalObjects > 0)
     {
-        if (Object.Primitive && VisibilityFlags.IsValidIndex(static_cast<int32>(Object.StableIndex)) &&
-            VisibilityFlags[Object.StableIndex] != 0)
-            OutVisible.Add(Object.Primitive);
+        const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+        const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
+        const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
+
+        std::vector<TArray<UPrimitiveComponent*>> LocalVisible(NumJobs);
+
+        // 가시성 결과 병렬 수집
+        FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
+        {
+            const int32 JobIndex = Start / ChunkSize;
+            LocalVisible[JobIndex].Reserve(End - Start);
+            for (int32 Index = Start; Index < End; ++Index)
+            {
+                const FRenderableObject& Object = Objects[Index];
+                if (Object.Primitive && VisibilityFlags.IsValidIndex(static_cast<int32>(Object.StableIndex)) &&
+                    VisibilityFlags[Object.StableIndex] != 0)
+                {
+                    LocalVisible[JobIndex].Add(Object.Primitive);
+                }
+            }
+        });
+
+        OutVisible.Reserve(TotalObjects);
+        for (int32 JobIndex = 0; JobIndex < NumJobs; ++JobIndex)
+        {
+            OutVisible.Append(LocalVisible[JobIndex]);
+        }
     }
     OutStats.FinalVisible = static_cast<uint32>(OutVisible.Num());
     OutStats.CullMs = static_cast<float>((NowSeconds() - CullStartSeconds) * 1000.0);

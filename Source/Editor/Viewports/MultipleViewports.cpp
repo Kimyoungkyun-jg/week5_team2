@@ -394,39 +394,6 @@ bool IsAABBInFrustum(const FAABB& Bounds, const FFrustumPlanes& Frustum)
 }
 
 
-// 절두체 검사에 통과한 컴포넌트 포인터를 모은다
-void CullForView(const TArray<FRenderableObject>& WorldObjects, const FFrustumPlanes& Frustum, TArray<UPrimitiveComponent*>& OutVisiblePrimitives)
-{
-    OutVisiblePrimitives.Reset();
-    if (WorldObjects.Num() == 0) return;
-
-    const int32 ChunkSize = 6250;
-    const int32 NumJobs = (WorldObjects.Num() + ChunkSize - 1) / ChunkSize;
-
-    std::vector<TArray<UPrimitiveComponent*>> LocalResults(NumJobs);
-
-    FFiberJobManager::Get().ParallelFor(WorldObjects.Num(), ChunkSize, [&](int32 Start, int32 End)
-
-        {
-            int32 JobIndex = Start / ChunkSize;
-            LocalResults[JobIndex].Reserve(End - Start);
-            // 기존의 검사 루프를 워커들이 Start ~ End 구역만 나눠서 실행
-            for (int32 i = Start; i < End; ++i)
-            {
-                const FRenderableObject& Object = WorldObjects[i];
-                if (Object.Primitive && IsAABBInFrustum(Object.WorldBounds, Frustum))
-                {
-                    LocalResults[JobIndex].Add(Object.Primitive);
-                }
-            }
-        });
-
-
-    for (int32 i = 0; i < NumJobs; ++i)
-    {
-        OutVisiblePrimitives.Append(LocalResults[i]);
-    }
-}
 
 // Ray와 월드 AABB가 교차하는 대상만 Narrow Phase 후보로 모은다.
 void FindPickCandidates(const FRay& WorldRay, const TArray<FPickableObject>& Objects, TArray<ObjectId>& OutCandidates)

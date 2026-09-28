@@ -486,49 +486,86 @@ void FMultipleViewportsAdapter::UpdateInput(const float DeltaTime,
   Views.Cameras[ActiveViewIndex] = UpdatedCamera;
 }
 
-// 현재 World의 가시 컴포넌트에서 경계와 컴포넌트 포인터를 캡처한다
+// 현재 월드의 가시 컴포넌트에서 경계와 컴포넌트 정보를 수집한다
 void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
     const auto& Primitives = World.GetWorldPrimitiveComponents();
     RenderObjects.Reset();
     bCapturedBillboard = false;
     bCapturedParticle = false;
-   
-    // 등록된 컴포넌트 순회
-    uint32 StableIndex = 0;
-    for (const auto& WeakPrimitive : Primitives)
-    {
-        UPrimitiveComponent* Primitive = WeakPrimitive.Get();
-        if (!Primitive || !Primitive->IsVisible()) continue;
-        
-        // 바운딩 박스와 컴포넌트 포인터 등록
-        FRenderableObject RenderObject{};
-        RenderObject.Primitive = Primitive;
-        RenderObject.WorldMatrix = Primitive->GetWorldMatrix();
-        RenderObject.WorldBounds = MakeWorldBounds(Primitive->GetWorldBounds());
-        RenderObject.BoundsRevision = Primitive->GetBoundsRevision();
-        RenderObject.StableIndex = StableIndex++;
 
-        if (UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(Primitive))
+    const int32 TotalPrimitives = Primitives.Num();
+    if (TotalPrimitives <= 0)
+    {
+        SoftwareOcclusion.SynchronizeObjects(RenderObjects);
+        return;
+    }
+
+    const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+    const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
+    const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
+
+    std::vector<TArray<FRenderableObject>> LocalObjects(NumJobs);
+
+    // 컴포넌트 정보 병렬 수집
+    FFiberJobManager::Get().ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
+    {
+        const int32 JobIndex = Start / ChunkSize;
+        LocalObjects[JobIndex].Reserve(End - Start);
+        for (int32 Index = Start; Index < End; ++Index)
         {
-            RenderObject.StaticMeshData = StaticMeshComponent->GetMeshData();
-            RenderObject.bCanBeOccluded = RenderObject.StaticMeshData != nullptr &&
-                !RenderObject.StaticMeshData->Vertices.IsEmpty() && !RenderObject.StaticMeshData->Indices.IsEmpty();
-            RenderObject.bCanOcclude = RenderObject.bCanBeOccluded && !RenderObject.StaticMeshData->Sections.IsEmpty();
-            if (RenderObject.bCanOcclude)
+            UPrimitiveComponent* Primitive = Primitives[Index].Get();
+            if (!Primitive || !Primitive->IsVisible())
             {
-                for (const FStaticMeshSection& Section : RenderObject.StaticMeshData->Sections)
+                continue;
+            }
+
+            FRenderableObject RenderObject{};
+            RenderObject.Primitive = Primitive;
+            RenderObject.WorldMatrix = Primitive->GetWorldMatrix();
+            RenderObject.WorldBounds = MakeWorldBounds(Primitive->GetWorldBounds());
+            RenderObject.BoundsRevision = Primitive->GetBoundsRevision();
+
+            if (UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(Primitive))
+            {
+                RenderObject.StaticMeshData = StaticMeshComponent->GetMeshData();
+                RenderObject.bCanBeOccluded = RenderObject.StaticMeshData != nullptr &&
+                    !RenderObject.StaticMeshData->Vertices.IsEmpty() && !RenderObject.StaticMeshData->Indices.IsEmpty();
+                RenderObject.bCanOcclude = RenderObject.bCanBeOccluded && !RenderObject.StaticMeshData->Sections.IsEmpty();
+                if (RenderObject.bCanOcclude)
                 {
-                    UMaterial* Material = StaticMeshComponent->GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
-                    if (!Material || Material->PSOType != EPSOType::StaticMesh_Opaque)
+                    for (const FStaticMeshSection& Section : RenderObject.StaticMeshData->Sections)
                     {
-                        RenderObject.bCanOcclude = false;
-                        break;
+                        UMaterial* Material = StaticMeshComponent->GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
+                        if (!Material || Material->PSOType != EPSOType::StaticMesh_Opaque)
+                        {
+                            RenderObject.bCanOcclude = false;
+                            break;
+                        }
                     }
                 }
             }
+            LocalObjects[JobIndex].Add(RenderObject);
         }
-        RenderObjects.Add(RenderObject);
+    });
+
+    int32 TotalValid = 0;
+    for (int32 JobIndex = 0; JobIndex < NumJobs; ++JobIndex)
+    {
+        TotalValid += LocalObjects[JobIndex].Num();
     }
+    RenderObjects.Reserve(TotalValid);
+
+    // 수집된 객체 병합 및 순서 식별자 부여
+    uint32 StableIndex = 0;
+    for (int32 JobIndex = 0; JobIndex < NumJobs; ++JobIndex)
+    {
+        for (FRenderableObject& Object : LocalObjects[JobIndex])
+        {
+            Object.StableIndex = StableIndex++;
+            RenderObjects.Add(std::move(Object));
+        }
+    }
+
     SoftwareOcclusion.SynchronizeObjects(RenderObjects);
 }
 
@@ -721,10 +758,19 @@ void FMultipleViewportsAdapter::BuildRenderQueue(
   OutQueue.Reset();
   if (!IsViewActive(ViewIndex))
     return;
-  {
-    CullForView(RenderObjects, PrepareView(ViewIndex).Frustum,
-                VisiblePrimitives[ViewIndex]);
-  }
+  const PreparedView& View = PrepareView(ViewIndex);
+  const FViewCamera RenderCamera = GetRenderCamera(ViewIndex);
+  SoftwareOcclusion.Cull(
+      ViewIndex,
+      RenderObjects,
+      View.Frustum,
+      View.EngineViewProjection,
+      RenderCamera.Transform.Location,
+      (std::max)(1, static_cast<int32>(ViewRects[ViewIndex].Width)),
+      (std::max)(1, static_cast<int32>(ViewRects[ViewIndex].Height)),
+      IsViewWireframe(ViewIndex),
+      VisiblePrimitives[ViewIndex],
+      OcclusionStats[ViewIndex]);
   for (UPrimitiveComponent *Primitive : VisiblePrimitives[ViewIndex]) {
     if (Primitive) {
       Primitive->SubmitToRenderQueue(OutQueue);

@@ -2,7 +2,7 @@
 #include "TextRenderComponent.h"
 
 #include "Asset/AssetManager.h"
-#include "Engine/World.h"
+#include "World/World.h"
 
 #include "Text/TextRenderer.h"
 

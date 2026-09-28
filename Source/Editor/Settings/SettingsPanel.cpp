@@ -1,11 +1,11 @@
 #include "EnginePCH.h"
 #include "Editor/Settings/SettingsPanel.h"
-#include "Editor/LevelEditor/MultipleViewports/Adapter/MultipleViewportsAdapter.h"
+#include "Editor/Viewports/MultipleViewportsAdapter.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Core/StatOverlay.h"
 
-#include "Engine/World.h"
+#include "World/World.h"
 
 // 종료 시 렌더·에디터·뷰포트 설정을 함께 저장한다.
 FSettingsPanel::~FSettingsPanel()

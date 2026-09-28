@@ -1,20 +1,21 @@
 #include "EnginePCH.h"
 #include "AssetManager.h"
-#include "Render/Buffer.h"
-#include "Render/Material.h"
+#include "Rendering/Buffer.h"
+#include "Rendering/Mesh.h"
+#include "Rendering/Material.h"
 
-#include "Render/Vertex.h"
-#include "Render/Texture2D.h"
-#include "Render/RenderCommand.h"
+#include "Rendering/Vertex.h"
+#include "Rendering/Texture2D.h"
+#include "Rendering/RenderCommand.h"
 
-#include "Render/RenderResourceManager.h"
+#include "Rendering/RenderResourceManager.h"
 
 #include "Asset/ObjImporter/ObjImporter.h"
 
-#include "Render/GeometryGenerator.h"
+#include "Rendering/GeometryGenerator.h"
 #include "ObjectSystem/ObjectFactory.h"
 
-#include "Render/ImageLoader.h"
+#include "Rendering/ImageLoader.h"
 
 
 namespace

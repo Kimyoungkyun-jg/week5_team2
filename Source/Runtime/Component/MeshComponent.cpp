@@ -2,8 +2,8 @@
 #include "MeshComponent.h"
 
 #include "Asset/AssetManager.h"
-#include "Render/Material.h"
-#include "Render/Texture2D.h"
+#include "Rendering/Material.h"
+#include "Rendering/Texture2D.h"
 #include "Serialization/TypeSerializer.h"
 
 

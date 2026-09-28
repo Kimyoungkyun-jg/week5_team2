@@ -3,8 +3,8 @@
 
 #include "Camera/CameraComponent.h"
 
-#include "Render/RenderCommand.h"
-#include "Render/RenderResourceManager.h"
+#include "Rendering/RenderCommand.h"
+#include "Rendering/RenderResourceManager.h"
 
 #include "Font.h"
 

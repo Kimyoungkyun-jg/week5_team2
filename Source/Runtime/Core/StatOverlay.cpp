@@ -70,7 +70,7 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 
 	if (Tokens.Num() < 2)
 	{
-		OutMessage = "Usage: stat <fps|memory|occlusion|all|none>";
+		OutMessage = "Usage: stat <fps|memory|picking|occlusion|all|none>";
 		return true;
 	}
 
@@ -85,7 +85,7 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 
 	if (EqualsIgnoreCase(Arg, "all"))
 	{
-		Flags = EStatFlags::FPS | EStatFlags::Memory | EStatFlags::Occlusion;
+		Flags = EStatFlags::FPS | EStatFlags::Memory | EStatFlags::Picking | EStatFlags::Occlusion;
 		OutMessage = "stat all: all overlays enabled";
 		return true;
 	}
@@ -95,12 +95,14 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 		Target = EStatFlags::FPS;
 	else if (EqualsIgnoreCase(Arg, "memory"))
 		Target = EStatFlags::Memory;
+	else if (EqualsIgnoreCase(Arg, "picking"))
+		Target = EStatFlags::Picking;
 	else if (EqualsIgnoreCase(Arg, "occlusion"))
 		Target = EStatFlags::Occlusion;
 
 	if (Target == EStatFlags::None)
 	{
-		OutMessage = std::format("stat: unknown stat '{}'. Available: fps, memory, occlusion, all, none", Arg);
+		OutMessage = std::format("stat: unknown stat '{}'. Available: fps, memory, picking, occlusion, all, none", Arg);
 		return true;
 	}
 
@@ -133,4 +135,11 @@ uint64 FStatOverlay::GetProcessWorkingSetBytes()
 	if (!GetProcessMemoryInfo(GetCurrentProcess(), &Counters, sizeof(Counters)))
 		return 0;
 	return static_cast<uint64>(Counters.WorkingSetSize);
+}
+
+void FStatOverlay::RecordPickingTime(double Milliseconds)
+{
+	LastPickingTimeMs = Milliseconds;
+	TotalPickingTimeMs += Milliseconds;
+	++TotalPickCount;
 }

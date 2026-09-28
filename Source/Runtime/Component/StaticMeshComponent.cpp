@@ -1,7 +1,7 @@
 #include "EnginePCH.h"
 #include "StaticMeshComponent.h"
 #include "Asset/AssetManager.h"
-#include "Render/RenderCommand.h"
+#include "Rendering/RenderCommand.h"
 
 
 // StaticMesh 컴포넌트를 초기화한다.

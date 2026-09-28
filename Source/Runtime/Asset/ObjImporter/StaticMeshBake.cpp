@@ -5,7 +5,7 @@
 #include <fstream>
 #include <type_traits>
 
-#include "Render/StaticMeshData.h"
+#include "Rendering/StaticMeshData.h"
 #include "Core/EngineLog.h"
 
 static_assert(sizeof(FVertexPNCT) == 48);

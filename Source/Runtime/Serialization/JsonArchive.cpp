@@ -1,13 +1,13 @@
 #include "EnginePCH.h"
 #include "JsonArchive.h"
 
-#include "Engine/World.h"
-#include "Engine/Level.h"
+#include "World/World.h"
+#include "World/Level.h"
 #include "Core/EngineStatics.h"
 #include "Component/PrimitiveComponent.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Actor/StaticMeshActor.h"
-#include "UObject/UObjectHash.h"
+#include "ObjectSystem/UObjectHash.h"
 
 namespace
 {

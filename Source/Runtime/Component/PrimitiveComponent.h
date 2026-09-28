@@ -1,10 +1,10 @@
 #pragma once
 
 #include "SceneComponent.h"
-#include "../Render/Shader.h"
-#include "../Render/Mesh.h"
-#include "Render/RenderPacket.h"
-#include "Render/GeometryGenerator.h"
+#include "../Rendering/Shader.h"
+#include "../Rendering/Mesh.h"
+#include "Rendering/RenderPacket.h"
+#include "Rendering/GeometryGenerator.h"
 #include "Collision/HitResult.h"
 
 enum class EPrimitiveType

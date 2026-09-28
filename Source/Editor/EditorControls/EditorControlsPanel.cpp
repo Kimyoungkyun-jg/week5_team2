@@ -1,11 +1,11 @@
 #include "EnginePCH.h"
 
 #include "Editor/EditorControls/EditorControlsPanel.h"
-#include "Editor/LevelEditor/MultipleViewports/Adapter/MultipleViewportsAdapter.h"
+#include "Editor/Viewports/MultipleViewportsAdapter.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 
-#include "Engine/World.h"
+#include "World/World.h"
 
 #include "Input/InputSystem.h"
 

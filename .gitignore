@@ -449,3 +449,4 @@ editor.ini
 
 # 셰이더 컴파일 캐시 (실행 시 자동 생성)
 /Intermediate/
+imgui.ini

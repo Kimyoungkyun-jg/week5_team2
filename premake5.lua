@@ -110,6 +110,41 @@ project "HitoriEngine"
 	pchheader "EnginePCH.h"
 	pchsource "Source/Runtime/EnginePCH.cpp"
 
+	-- Group larger subsystems while keeping class and file names aligned.
+	vpaths
+	{
+		["ObjectSystem"] = { "Source/Runtime/ObjectSystem/**" },
+		["World"] = { "Source/Runtime/World/**" },
+		["Core/Names"] = { "Source/Runtime/Core/Name*" },
+		["Core/Profiling"] = { "Source/Runtime/Core/StatOverlay.*", "Source/Runtime/Core/ScopeCycleCounter.*" },
+		["Platform"] = { "Source/Runtime/Core/Window.*", "Source/Runtime/Core/EntryPoint.*" },
+		["Rendering"] =
+		{
+			"Source/Runtime/Rendering/Renderer.*", "Source/Runtime/Rendering/RenderPacket.*",
+			"Source/Runtime/Rendering/RenderCommand.*", "Source/Runtime/Rendering/RenderingInfo.*",
+			"Source/Runtime/Rendering/RenderUtil.*", "Source/Runtime/Rendering/LineBatcher.*",
+			"Source/Runtime/Rendering/SkyboxRenderer.*",
+		},
+		["Rendering/Device"] =
+		{
+			"Source/Runtime/Rendering/RenderDevice.*", "Source/Runtime/Rendering/Swapchain.*",
+			"Source/Runtime/Rendering/PipelineState.*", "Source/Runtime/Rendering/RenderStates.*",
+			"Source/Runtime/Rendering/RenderEnums.*",
+		},
+		["Rendering/Resources"] =
+		{
+			"Source/Runtime/Rendering/Buffer.*", "Source/Runtime/Rendering/Shader.*",
+			"Source/Runtime/Rendering/Texture*", "Source/Runtime/Rendering/RenderResourceManager.*",
+			"Source/Runtime/Rendering/ImageLoader.*",
+		},
+		["Rendering/Materials"] = { "Source/Runtime/Rendering/Material*" },
+		["Rendering/Geometry"] =
+		{
+			"Source/Runtime/Rendering/Mesh.*", "Source/Runtime/Rendering/StaticMeshData.*",
+			"Source/Runtime/Rendering/Vertex.*", "Source/Runtime/Rendering/GeometryGenerator.*",
+		},
+	}
+
 	files
 	{
 		"Source/Runtime/**.h",
@@ -141,6 +176,20 @@ project "HitoriEditor"
 
 	pchheader "EnginePCH.h"
 	pchsource "Source/Editor/EditorPCH.cpp"
+
+	vpaths
+	{
+		["Application"] = { "Source/Editor/Application/**", "Source/Editor/EditorEntryPoint.cpp" },
+		["UI"] = { "Source/Editor/EditorUI/**" },
+		["Panels"] =
+		{
+			"Source/Editor/ContentDrawer/**", "Source/Editor/Details/**",
+			"Source/Editor/EditorControls/**", "Source/Editor/Outliner/**",
+			"Source/Editor/OutputLog/**", "Source/Editor/Settings/**",
+		},
+		["Viewports"] = { "Source/Editor/Viewports/**" },
+		["Tools/ObjViewer"] = { "Source/Programs/ObjViewer/**" },
+	}
 
 	links { "HitoriEngine", "ImGui" }
 

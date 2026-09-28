@@ -1,7 +1,7 @@
 // CPU는 월드 좌표를 보내고 기존 Grid와 같은 행렬 규약으로 GPU에서 VP를 적용한다.
 cbuffer GridLineCB : register(b0)
 {
-    float4x4 ViewProj;
+    row_major matrix ViewProj;
     float2 ViewportSize;
     float2 Padding;
     float4 FadeOriginAndRadius;

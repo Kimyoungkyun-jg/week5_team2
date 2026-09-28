@@ -3,7 +3,7 @@
 
 cbuffer SkyboxConstants : register(b0)
 {
-    matrix InverseViewProjection;
+    row_major matrix InverseViewProjection;
     float3 CameraPosition;
     float  Padding;
 };

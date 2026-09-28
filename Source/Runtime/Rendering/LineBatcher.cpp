@@ -139,7 +139,8 @@ void FLineBatcher::OnRender(const FMatrix& ViewProjection)
 {
 	//BuildVertexBuffer();
 
-	FMatrix VP = ViewProjection.GetTransposed();
+	// BoundingBoxShader cbuffer가 row_major이므로 전치 없이 올린다.
+	FMatrix VP = ViewProjection;
 	RenderCommand::UpdateBufferData(VertexBuffer.get(), VertexBufferBase, sizeof(FVertex) * VertexCount);
 	RenderCommand::UpdateBufferData(CB.get(), &VP, sizeof(FMatrix));
 

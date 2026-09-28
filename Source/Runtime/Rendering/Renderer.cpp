@@ -71,6 +71,7 @@ void FRenderer::RenderOpaque(TQueue<FRenderPacket>& InQueue, const FMatrix& View
 	const UStaticMesh* LastMesh = nullptr;
 	const UMaterial* LastMaterial = nullptr;
 
+	FMatrixRegister VP = FMatrixRegister::Load(ViewProjection);
 	while (InQueue.IsEmpty() == false)
 	{
 		const FRenderPacket& RenderPacket = InQueue.Peek();
@@ -89,7 +90,7 @@ void FRenderer::RenderOpaque(TQueue<FRenderPacket>& InQueue, const FMatrix& View
 				LastMaterial = RenderPacket.material;
 			}
 
-			UpdatePerObjectConstants(RenderPacket, ViewProjection);
+			UpdatePerObjectConstants(RenderPacket, VP);
 
 			RenderCommand::DrawIndexed(
 				RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),
@@ -153,7 +154,10 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 					LastMaterial = RenderPacket.material;
 				}
 
-				UpdatePerObjectConstants(RenderPacket, ViewProjection);
+				FPerObjectConstants Constants;
+				Constants.MVP = RenderPacket.MVP;
+				Constants.World = RenderPacket.model;
+				RenderCommand::UpdateBufferData(Temp.get(), &Constants);
 
 				RenderCommand::DrawIndexed(
 					RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),
@@ -203,7 +207,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 		RenderCommand::BindConstantBuffer(0, WorkerCB, EShaderBindFlagBits::Vertex, Context);
 
-		const UStaticMesh* LastMesh = nullptr;
+		const UStaticMesh* LastMesh  = nullptr;
 		const UMaterial* LastMaterial = nullptr;
 
 		for (int32 i = Start; i < End; ++i)
@@ -329,20 +333,13 @@ void FRenderer::UpdateMaterialParams(UMaterial* material)
 }
 
 // b0 MVP 채우고 꽂기
-void FRenderer::UpdatePerObjectConstants(const FRenderPacket& RenderPacket, const FMatrix& ViewProjection)
+void FRenderer::UpdatePerObjectConstants(const FRenderPacket& RenderPacket, const FMatrixRegister& ViewProjection)
 {
 	FPerObjectConstants Constants;
 
-	if (RenderPacket.MVP.M[3][3] != 0.0f)
-	{
-		Constants.MVP = RenderPacket.MVP;
-	}
-	else
-	{
-		Constants.MVP = (RenderPacket.model * ViewProjection).GetTransposed();
-	}
-
-	Constants.World = RenderPacket.model;
+	const FMatrixRegister Model = FMatrixRegister::Load(RenderPacket.model);
+	(Model * ViewProjection).Store(Constants.MVP);   // MVP: 레지스터에서 목적지로 바로
+	Model.Store(Constants.World);                   // World: 이미 올린 model 재사용
 
 	RenderCommand::UpdateBufferData(Temp.get(), &Constants);
 }

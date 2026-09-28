@@ -206,8 +206,9 @@ void FTextRenderer::OnRender(const FString& Text, const FMatrix& WorldMatrix, fl
 	RenderCommand::UpdateBufferData(IndexBuffer.get(), Indices.GetData(), sizeof(uint32) * Indices.Num());
 
 	TextTransformData TransData;
-	TransData.World = WorldMatrix.GetTransposed();
-	TransData.ViewProj = ViewProjection.GetTransposed();
+	// TextShader cbuffer가 row_major이므로 전치 없이 올린다.
+	TransData.World = WorldMatrix;
+	TransData.ViewProj = ViewProjection;
 
 	MSDFData MSDFData;
 	MSDFData.ScreenPx = Atlas.DistanceRange;

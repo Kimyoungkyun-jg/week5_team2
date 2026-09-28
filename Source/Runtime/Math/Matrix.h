@@ -62,7 +62,7 @@ public:
 
 /* Operator */
 
-	FMatrix& operator = (const FMatrix& Other);
+	FMatrix& operator = (const FMatrix& Other) = default;
 	FMatrix operator - ();
 
 	const float* operator[] (int32 Index) const;

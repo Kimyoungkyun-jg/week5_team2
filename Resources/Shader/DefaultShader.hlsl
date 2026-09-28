@@ -1,6 +1,6 @@
 cbuffer constants : register(b0)
 {
-    matrix MVP;
+    row_major matrix MVP;
 };
 
 struct VS_INPUT

@@ -52,10 +52,13 @@ void FOutlineRenderer::OnRender(const FOutline& InOutline, const FMatrix& InView
 	RenderCommand::BindMesh(InOutline.GetMesh());
 	RenderCommand::BindConstantBuffer(0, ConstantBuffer.get(), EShaderBindFlagBits::Vertex);
 
+	// OutlineShader cbuffer가 row_major이므로 World·ViewProj는 전치 없이 올린다.
 	const FMatrix OriginalWorld = InOutline.GetWorldMatrix();
-	const FMatrix World = OriginalWorld.GetTransposed();
-	const FMatrix NormalMatrix = OriginalWorld.Inverse();
-	const FMatrix ViewProj = InViewProj.GetTransposed();
+	const FMatrix World = OriginalWorld;
+	// 법선은 역전치 (W^-1)^T로 변환해야 한다. 이 전치는 업로드 규약이 아니라 계산의 일부라서 유지한다.
+	// (예전에는 column_major 업로드가 이 전치를 대신해 주고 있었다.)
+	const FMatrix NormalMatrix = OriginalWorld.Inverse().GetTransposed();
+	const FMatrix ViewProj = InViewProj;
 	const float ViewportWidth = static_cast<float>(Viewport.Width);
 	const float ViewportHeight = static_cast<float>(Viewport.Height);
 	const uint32 IndexCount = InOutline.GetMesh()->IndexBuffer->GetIndexCount();

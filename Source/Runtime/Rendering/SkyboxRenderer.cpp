@@ -53,8 +53,8 @@ void FSkyboxRenderer::OnRender(const FMatrix& ViewProjection, const FVector& Cam
 	if (!IsValid()) return;
 
 	FSkyboxConstants Constants;
-	// 업로드할 때 전치한다. HLSL은 mul(벡터, 행렬) 규약을 쓴다 (Renderer.cpp와 동일).
-	Constants.InverseViewProjection = ViewProjection.Inverse().GetTransposed();
+	// SkyboxShader cbuffer가 row_major이므로 전치 없이 올린다. HLSL은 mul(벡터, 행렬) 규약을 쓴다.
+	Constants.InverseViewProjection = ViewProjection.Inverse();
 	Constants.CameraPosition = CameraPosition;
 
 	RenderCommand::BindPipelineState(&PipelineState);

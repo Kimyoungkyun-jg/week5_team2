@@ -745,6 +745,7 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
     return;
 
   const FMatrix& VP = ViewInfo.EngineViewProjection;
+  const FMatrixRegister VPReg = FMatrixRegister::Load(VP);
   const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
   const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
   const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
@@ -765,11 +766,12 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
       }
     }
 
-    // 파이버 워커가 모델과 뷰프로젝션 행렬 곱셈 및 전치 병렬 수행
+    // 파이버 워커에서 SIMD로 MVP를 계산한다. row_major 업로드이므로 전치하지 않는다.
     for (int32 k = 0; k < LocalPackets[JobIndex].Num(); ++k)
     {
-      LocalPackets[JobIndex][k].MVP = (LocalPackets[JobIndex][k].model * VP).GetTransposed();
-      LocalPackets[JobIndex][k].model = LocalPackets[JobIndex][k].model.GetTransposed();
+      FRenderPacket& Packet = LocalPackets[JobIndex][k];
+      const FMatrixRegister Model = FMatrixRegister::Load(Packet.model);
+      (Model * VPReg).Store(Packet.MVP);
     }
   });
 

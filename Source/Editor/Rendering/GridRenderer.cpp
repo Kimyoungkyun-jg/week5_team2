@@ -199,7 +199,8 @@ void FGridRenderer::DrawWorldLines(uint32 VertexCount, const FMatrix& ViewProj, 
 {
     if (VertexCount == 0 || Viewport.Width == 0 || Viewport.Height == 0) return;
     FBatchGridData Data{};
-    Data.ViewProjection = ViewProj.GetTransposed();
+    // GridShaderBatch cbuffer가 row_major이므로 전치 없이 올린다.
+    Data.ViewProjection = ViewProj;
     Data.ViewportSize = FVector2(static_cast<float>(Viewport.Width), static_cast<float>(Viewport.Height));
     Data.FadeOriginAndRadius = FVector4(FadeOrigin, FadeRadius);
     RenderCommand::UpdateBufferData(BatchGridConstantBuffer.get(), &Data, sizeof(Data));
@@ -310,7 +311,8 @@ void FGridRenderer::OnRenderPSGrid(const FMatrix& ViewProj, const FVector& Camer
     const FVector FadeOrigin(CameraPos.X, CameraPos.Y, 0);
     const float FadeRadius = std::clamp(std::fabs(CameraPos.Z) * 25.0f, 5.0f, 50.0f);
     FPSGridData Data{};
-    Data.invViewProj = ViewProj.GetTransposed();
+    // GridShader cbuffer가 row_major이므로 전치 없이 올린다. (필드명과 달리 역행렬이 아닌 VP)
+    Data.invViewProj = ViewProj;
     Data.CameraPos = CameraPos;
     Data.CellSize = std::max(1, InEditorSettings.GridSpacing);
     Data.SubCellSize = Data.CellSize * 0.1f;

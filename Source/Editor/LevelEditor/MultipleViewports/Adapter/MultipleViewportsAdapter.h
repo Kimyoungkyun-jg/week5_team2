@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Editor/LevelEditor/MultipleViewports/Adapter/MultipleViewportsAdapterTypes.h"
+#include "Editor/LevelEditor/MultipleViewports/Core/SoftwareOcclusion.h"
 
 #include "Collision/Ray.h"
 #include "Container/Queue.h"
@@ -20,6 +21,7 @@ class FMultipleViewportsAdapter
 public:
     // 엔진 메인 카메라 설정을 읽고 네 View의 초기 상태와 프리셋을 구성한다.
     void InitializeFromWorld(UWorld& World);
+    void ResetSoftwareOcclusionScene() { SoftwareOcclusion.ResetScene(); }
 
     // 현재 Single·Quad 레이아웃 모드를 설정한다.
     void SetLayoutMode(ELayoutMode Mode) { Views.Mode = Mode; }
@@ -89,6 +91,14 @@ public:
     // 최근 World 스냅샷에 Particle이 포함됐는지 반환한다.
     bool HasCapturedParticle() const { return bCapturedParticle; }
 
+    void SetSoftwareOcclusionSettings(const FSoftwareOcclusionSettings& Value) { SoftwareOcclusion.SetSettings(Value); }
+    const FSoftwareOcclusionSettings& GetSoftwareOcclusionSettings() const { return SoftwareOcclusion.GetSettings(); }
+    const FSoftwareOcclusionStats& GetSoftwareOcclusionStats(int32 ViewIndex) const
+    {
+        assert(ViewIndex >= 0 && ViewIndex < 4);
+        return OcclusionStats[ViewIndex];
+    }
+
     // View별 가시 ID를 엔진 컴포넌트로 역매핑해 렌더 큐를 구성한다.
     void BuildRenderQueue(int32 ViewIndex, TQueue<FRenderPacket>& OutQueue);
     // 활성 View Ray를 World·Component 피킹으로 전달하고 마지막 결과를 보관한다.
@@ -134,6 +144,8 @@ private:
     TArray<FParticleSortInput> SortInputs;
     TArray<ObjectId> SortedParticleIds;
     TArray<UPrimitiveComponent*> VisiblePrimitives[4];
+    FSoftwareOcclusionCuller SoftwareOcclusion;
+    FSoftwareOcclusionStats OcclusionStats[4]{};
     bool bCapturedBillboard = false;
     bool bCapturedParticle = false;
 };

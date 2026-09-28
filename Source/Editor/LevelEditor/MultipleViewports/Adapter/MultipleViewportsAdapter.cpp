@@ -5,12 +5,14 @@
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Component/PrimitiveComponent.h"
+#include "Component/StaticMeshComponent.h"
 #include "Component/BillboardComponent.h"
 #include "Component/ParticleSubUVComponent.h"
 #include "Editor/Outliner/OutlinerPanel.h"
 #include "Editor/Rendering/GridRenderer.h"
 #include "Engine/World.h"
 #include "Input/InputSystem.h"
+#include "Render/Material.h"
 #include "UObject/UObjectIterator.h"
 
 #include <algorithm>
@@ -155,6 +157,7 @@ FQuat MakeCameraRotation(const float YawDegrees, const float PitchDegrees)
 // 메인 카메라 투영값을 공유하고 네 View의 기본 프리셋 상태를 만든다.
 void FMultipleViewportsAdapter::InitializeFromWorld(UWorld& World)
 {
+    SoftwareOcclusion.ResetScene();
     UCameraComponent* MainCamera = World.GetMainCamera() ? World.GetMainCamera()->GetCameraComponent() : nullptr;
     assert(MainCamera != nullptr);
 
@@ -452,6 +455,7 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World)
     bCapturedParticle = false;
    
     // 등록된 컴포넌트 순회
+    uint32 StableIndex = 0;
     for (const auto& WeakPrimitive : Primitives)
     {
         UPrimitiveComponent* Primitive = WeakPrimitive.Get();
@@ -460,9 +464,33 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World)
         // 바운딩 박스와 컴포넌트 포인터 등록
         FRenderableObject RenderObject{};
         RenderObject.Primitive = Primitive;
+        RenderObject.WorldMatrix = Primitive->GetWorldMatrix();
         RenderObject.WorldBounds = MakeWorldBounds(Primitive->GetWorldBounds());
+        RenderObject.BoundsRevision = Primitive->GetBoundsRevision();
+        RenderObject.StableIndex = StableIndex++;
+
+        if (UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(Primitive))
+        {
+            RenderObject.StaticMeshData = StaticMeshComponent->GetMeshData();
+            RenderObject.bCanBeOccluded = RenderObject.StaticMeshData != nullptr &&
+                !RenderObject.StaticMeshData->Vertices.IsEmpty() && !RenderObject.StaticMeshData->Indices.IsEmpty();
+            RenderObject.bCanOcclude = RenderObject.bCanBeOccluded && !RenderObject.StaticMeshData->Sections.IsEmpty();
+            if (RenderObject.bCanOcclude)
+            {
+                for (const FStaticMeshSection& Section : RenderObject.StaticMeshData->Sections)
+                {
+                    UMaterial* Material = StaticMeshComponent->GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
+                    if (!Material || Material->PSOType != EPSOType::StaticMesh_Opaque)
+                    {
+                        RenderObject.bCanOcclude = false;
+                        break;
+                    }
+                }
+            }
+        }
         RenderObjects.Add(RenderObject);
     }
+    SoftwareOcclusion.SynchronizeObjects(RenderObjects);
 }
 
 // 유효 Rect와 Single 대상 인덱스 또는 Quad 모드로 View 활성 여부를 판정한다.
@@ -627,9 +655,18 @@ void FMultipleViewportsAdapter::BuildRenderQueue(const int32 ViewIndex, TQueue<F
 {
     OutQueue.Reset();
     if (!IsViewActive(ViewIndex)) return;
-    {
-        CullForView(RenderObjects, PrepareView(ViewIndex).Frustum, VisiblePrimitives[ViewIndex]);
-    }
+    const PreparedView& View = PrepareView(ViewIndex);
+    const FViewCamera RenderCamera = GetRenderCamera(ViewIndex);
+    SoftwareOcclusion.Cull(
+        RenderObjects,
+        View.Frustum,
+        View.EngineViewProjection,
+        RenderCamera.Transform.Location,
+        std::max(1, static_cast<int32>(ViewRects[ViewIndex].Width)),
+        std::max(1, static_cast<int32>(ViewRects[ViewIndex].Height)),
+        IsViewWireframe(ViewIndex),
+        VisiblePrimitives[ViewIndex],
+        OcclusionStats[ViewIndex]);
     for (UPrimitiveComponent* Primitive : VisiblePrimitives[ViewIndex])
     {
         if (Primitive)
@@ -637,6 +674,7 @@ void FMultipleViewportsAdapter::BuildRenderQueue(const int32 ViewIndex, TQueue<F
             Primitive->SubmitToRenderQueue(OutQueue);
         }
     }
+    OcclusionStats[ViewIndex].RenderPackets = OutQueue.Num();
 }
 
 // 클릭한 View의 Ray를 World에 전달하고 Component의 최근접 교차 결과를 보관한다.

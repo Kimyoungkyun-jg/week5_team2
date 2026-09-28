@@ -490,6 +490,7 @@ void FEditorApplication::CreateNewScene()
 		return;
 
 	ResetSceneSelection();
+	MultipleViewportsAdapter.ResetSoftwareOcclusionScene();
 }
 
 // 씬 불러오기가 성공하면 에디터 선택 상태를 초기화한다.
@@ -499,6 +500,7 @@ void FEditorApplication::OpenScene()
 		return;
 
 	ResetSceneSelection();
+	MultipleViewportsAdapter.ResetSoftwareOcclusionScene();
 }
 
 // 공통 파일 유틸리티로 현재 씬을 저장한다.

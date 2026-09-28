@@ -4,6 +4,8 @@
 #include <thread>
 #include <mutex>
 #include <queue>
+#include <condition_variable>
+#include <algorithm>
 
 // 파이버 기반 잡 시스템 관리자
 class FFiberJobManager
@@ -25,8 +27,50 @@ public:
 	// 카운터 완료 대기
 	void WaitForCounter(FFiberCounter* InCounter, int32_t InTargetValue = 0);
 
-	// 유효 파이버 반환
-	void ReturnFiber(void* InFiber);
+	// 병렬 분할 실행 템플릿
+	template<typename FuncType>
+	void ParallelFor(int32_t TotalCount, int32_t ChunkSize, const FuncType& Function)
+	{
+		if (TotalCount <= 0) return;
+		if (ChunkSize <= 0) ChunkSize = 1;
+
+		int32_t NumJobs = (TotalCount + ChunkSize - 1) / ChunkSize;
+		if (NumJobs <= 1)
+		{
+			Function(0, TotalCount);
+			return;
+		}
+
+		struct FParallelTask
+		{
+			const FuncType* Func;
+			int32_t Start;
+			int32_t End;
+
+			static void Execute(void* InData)
+			{
+				FParallelTask* Task = static_cast<FParallelTask*>(InData);
+				const FuncType& Lambda = *Task->Func;
+				Lambda(Task->Start, Task->End);
+			}
+		};
+
+		std::vector<FParallelTask> Tasks(NumJobs);
+		std::vector<FFiberJob> Jobs(NumJobs);
+		FFiberCounter Counter;
+
+		for (int32_t Index = 0; Index < NumJobs; ++Index)
+		{
+			int32_t Start = Index * ChunkSize;
+			int32_t End = (std::min)(Start + ChunkSize, TotalCount);
+
+			Tasks[Index] = { &Function, Start, End };
+			Jobs[Index] = { &FParallelTask::Execute, &Tasks[Index], &Counter };
+		}
+
+		RunJobs(Jobs.data(), NumJobs, &Counter);
+		WaitForCounter(&Counter, 0);
+	}
 
 	// 내부 파이버 실행 진입점
 	void FiberWorkerLoop();
@@ -44,6 +88,9 @@ private:
 	// 놀고 있는 파이버 획득
 	void* PopFreeFiber();
 
+	// 파이버 풀에 반환
+	void ReturnFiber(void* InFiber);
+
 private:
 	std::atomic<bool> bIsRunning{ false };
 	uint32_t NumWorkers = 0;
@@ -56,6 +103,7 @@ private:
 
 	std::queue<FFiberJob> JobQueue;
 	std::mutex JobQueueMutex;
+	std::condition_variable WakeCondition;
 
 	thread_local static void* ThreadFiber;
 };

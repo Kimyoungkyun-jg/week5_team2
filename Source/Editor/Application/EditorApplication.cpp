@@ -38,9 +38,14 @@
 #include "Serialization/JsonArchive.h"
 #include "Serialization/DefaultSceneLoader.h"
 
+#include "Job/FiberJobManager.h"
+
 // 렌더 자원·월드·에디터와 MultipleViewports 연결을 초기화한다.
 bool FEditorApplication::Init(HINSTANCE hInstance)
 {
+	FFiberJobManager::Get().Initialize(8);
+
+
 	EditorUI = MakeUnique<FEditorUI>();
 	EditorUI->Init();
 
@@ -303,6 +308,8 @@ void FEditorApplication::EndFrame()
 	PresentFrame();
 	// UI 변경 후 설정을 복사해 종료 시 카메라 수명에 의존하지 않는다.
 	//SettingsPanel->CaptureViewportSettings();
+
+
 }
 
 // 입력 View의 Ray와 피킹으로 Gizmo·공유 선택을 갱신한다.
@@ -452,6 +459,8 @@ void FEditorApplication::Shutdown()
 
 	ImGuiRenderer->Shutdown();
 	RenderDevice->Shutdown();
+
+	FFiberJobManager::Get().Shutdown();
 }
 
 // 메인 창 크기에 맞춰 Swapchain을 갱신한다.

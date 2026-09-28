@@ -89,17 +89,29 @@ void FFiberJobManager::Initialize(uint32_t InNumWorkers, uint32_t InNumFibers, u
 				ThreadFiber = GetCurrentFiber();
 			}
 
-			// 파이버 실행 전환
-			void* Fiber = PopFreeFiber();
-			while (!Fiber && bIsRunning.load())
+			// 워커 메인 루프
+			while (bIsRunning.load(std::memory_order_relaxed))
 			{
-				std::this_thread::yield();
-				Fiber = PopFreeFiber();
-			}
+				// 일감이 생길 때까지 대기
+				{
+					std::unique_lock<std::mutex> Lock(JobQueueMutex);
+					WakeCondition.wait(Lock, [this]()
+					{
+						return !JobQueue.empty() || !bIsRunning.load(std::memory_order_relaxed);
+					});
+				}
 
-			if (Fiber)
-			{
-				SwitchToFiber(Fiber);
+				if (!bIsRunning.load(std::memory_order_relaxed))
+				{
+					break;
+				}
+
+				// 놀고 있는 파이버로 전환하여 일감 처리
+				void* Fiber = PopFreeFiber();
+				if (Fiber)
+				{
+					SwitchToFiber(Fiber);
+				}
 			}
 		});
 	}
@@ -112,6 +124,8 @@ void FFiberJobManager::Shutdown()
 	{
 		return;
 	}
+
+	WakeCondition.notify_all();
 
 	// 워커 스레드 합류
 	for (std::thread& Worker : Workers)
@@ -165,6 +179,8 @@ void FFiberJobManager::RunJobs(const FFiberJob* InJobs, uint32_t InNumJobs, FFib
 			JobQueue.push(Job);
 		}
 	}
+
+	WakeCondition.notify_all();
 }
 
 // 카운터 완료 대기
@@ -192,25 +208,8 @@ void FFiberJobManager::WaitForCounter(FFiberCounter* InCounter, int32_t InTarget
 		}
 		else
 		{
-			// 일감이 없으면 대기 파이버 등록 후 다른 파이버 전환
-			void* CurrentFiberHandle = GetCurrentFiber();
-			if (CurrentFiberHandle)
-			{
-				InCounter->AddWaitingFiber(CurrentFiberHandle);
-				void* FreeFiber = PopFreeFiber();
-				if (FreeFiber)
-				{
-					SwitchToFiber(FreeFiber);
-				}
-				else
-				{
-					std::this_thread::yield();
-				}
-			}
-			else
-			{
-				std::this_thread::yield();
-			}
+			// 일감이 남아있지 않으면 양보
+			std::this_thread::yield();
 		}
 	}
 }
@@ -242,44 +241,26 @@ void FFiberJobManager::FiberWorkerLoop()
 
 			if (Job.Counter)
 			{
-				int32_t Remain = Job.Counter->Value.fetch_sub(1, std::memory_order_acq_rel) - 1;
-				if (Remain == 0)
-				{
-					// 카운터 완료 시 대기 파이버 복귀
-					while (Job.Counter->Lock.test_and_set(std::memory_order_acquire)) {}
-					int32_t WaitCount = Job.Counter->WaitingCount.load(std::memory_order_relaxed);
-					for (int32_t Index = 0; Index < WaitCount; ++Index)
-					{
-						void* WaitFiber = Job.Counter->WaitingFibers[Index];
-						if (WaitFiber)
-						{
-							ReturnFiber(WaitFiber);
-						}
-					}
-					Job.Counter->WaitingCount.store(0, std::memory_order_relaxed);
-					Job.Counter->Lock.clear(std::memory_order_release);
-				}
+				Job.Counter->Value.fetch_sub(1, std::memory_order_release);
 			}
 		}
 		else
 		{
-			// 남은 일감이 없으면 풀로 복귀
+			// 일감이 없으면 파이버를 풀에 반환하고 원래 스레드로 복귀
 			void* CurrentFiberHandle = GetCurrentFiber();
 			ReturnFiber(CurrentFiberHandle);
 
-			void* NextFiber = PopFreeFiber();
-			if (NextFiber && NextFiber != CurrentFiberHandle)
+			if (ThreadFiber && ThreadFiber != CurrentFiberHandle)
 			{
-				SwitchToFiber(NextFiber);
+				SwitchToFiber(ThreadFiber);
 			}
 			else
 			{
-				std::this_thread::yield();
+				break;
 			}
 		}
 	}
 
-	// 종료 시 원래 스레드 파이버로 복귀
 	if (ThreadFiber)
 	{
 		SwitchToFiber(ThreadFiber);

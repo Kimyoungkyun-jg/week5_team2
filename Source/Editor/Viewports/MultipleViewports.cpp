@@ -9,6 +9,10 @@
 #include <float.h>
 #include "Math/EngineMath.h"
 
+#include "Job/FiberJobManager.h"
+#include <vector>
+
+
 
 // float 무한대 대응은 유한 최댓값으로 대체하지 않는다.
 static_assert(std::numeric_limits<float>::has_infinity, "Float type must support infinity");
@@ -394,12 +398,33 @@ bool IsAABBInFrustum(const FAABB& Bounds, const FFrustumPlanes& Frustum)
 void CullForView(const TArray<FRenderableObject>& WorldObjects, const FFrustumPlanes& Frustum, TArray<UPrimitiveComponent*>& OutVisiblePrimitives)
 {
     OutVisiblePrimitives.Reset();
-    for (const FRenderableObject& Object : WorldObjects)
-    {
-        if (Object.Primitive && IsAABBInFrustum(Object.WorldBounds, Frustum))
+    if (WorldObjects.Num() == 0) return;
+
+    const int32 ChunkSize = 1000;
+    const int32 NumJobs = (WorldObjects.Num() + ChunkSize - 1) / ChunkSize;
+
+    std::vector<TArray<UPrimitiveComponent*>> LocalResults(NumJobs);
+
+    FFiberJobManager::Get().ParallelFor(WorldObjects.Num(), ChunkSize, [&](int32 Start, int32 End)
+
         {
-            OutVisiblePrimitives.Add(Object.Primitive);
-        }
+            int32 JobIndex = Start / ChunkSize;
+            LocalResults[JobIndex].Reserve(End - Start);
+            // 기존의 검사 루프를 워커들이 Start ~ End 구역만 나눠서 실행
+            for (int32 i = Start; i < End; ++i)
+            {
+                const FRenderableObject& Object = WorldObjects[i];
+                if (Object.Primitive && IsAABBInFrustum(Object.WorldBounds, Frustum))
+                {
+                    LocalResults[JobIndex].Add(Object.Primitive);
+                }
+            }
+        });
+
+
+    for (int32 i = 0; i < NumJobs; ++i)
+    {
+        OutVisiblePrimitives.Append(LocalResults[i]);
     }
 }
 

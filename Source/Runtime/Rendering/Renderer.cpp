@@ -4,15 +4,22 @@
 #include "Mesh.h"
 #include "Material.h"
 
-#include "Core/EngineTimer.h"
-
 #include "RenderCommand.h"
-
+#include "Core/EngineTimer.h"
 #include "Camera/CameraComponent.h"
+#include "Job/FiberJobManager.h"
 
 #include <algorithm>
+#include <functional>
 
-#include "Job/FiberJobManager.h"
+
+bool cmp(const FRenderPacket& A, const FRenderPacket& B)
+{
+	if (A.material != B.material)
+		return std::less<>{}(A.material, B.material);
+
+	return std::less<>{}(A.mesh, B.mesh);
+}
 
 bool FRenderer::Init()
 {
@@ -94,7 +101,7 @@ void FRenderer::RenderOpaque(TQueue<FRenderPacket>& InQueue, const FMatrix& View
 }
 
 // TArray 기반 불투명 메시 지연 컨텍스트 병렬 렌더링
-void FRenderer::RenderOpaque(const TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection)
+void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection)
 {
 	const int32 TotalPackets = InPackets.Num();
 	if (TotalPackets == 0)
@@ -103,6 +110,8 @@ void FRenderer::RenderOpaque(const TArray<FRenderPacket>& InPackets, const FMatr
 	}
 
 	EnsureDeferredWorkers();
+
+	sort(InPackets.begin(), InPackets.end(), cmp);
 
 	// 머티리얼 파라미터 사전 일괄 갱신
 	TArray<UMaterial*> UniqueMaterials;

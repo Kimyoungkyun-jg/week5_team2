@@ -405,7 +405,7 @@ void FEditorApplication::RenderFrame(
     const int32 ViewIndex, const FRenderingInfo &ViewRenderingInfo,
     const FMatrix &ViewProjection, const FVector &ViewCameraLocation,
     const FVector &ViewCameraForward,
-    const TArray<FRenderPacket> &RenderPackets) {
+    TArray<FRenderPacket> &RenderPackets) {
   RenderCommand::BeginRenderPass(ViewRenderingInfo);
 
   FEditorSettings DefaultSettings;

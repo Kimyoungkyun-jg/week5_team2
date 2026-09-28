@@ -109,7 +109,9 @@ project "HitoriEngine"
 	location "Source/Runtime"
 	kind     "StaticLib"
 	CommonSettings()
-
+	filter { "system:windows", "configurations:Release" }
+    	buildoptions { "/GT" }
+	filter {}
 	pchheader "EnginePCH.h"
 	pchsource "Source/Runtime/EnginePCH.cpp"
 

@@ -754,7 +754,14 @@ void FSoftwareOcclusionCuller::RasterizeClippedTriangle(const FVector4& A, const
     if (Area <= ClipEpsilon)
         return;
 
+    // 깊이 평면 Z(x, y)의 화면 공간 기울기. 서브셀 안의 최대 깊이를 모서리 평가 없이 구한다.
+    const float DepthDX = (-(V2.Y - V1.Y) * V0.Z - (V0.Y - V2.Y) * V1.Z - (V1.Y - V0.Y) * V2.Z) / Area;
+    const float DepthDY = ((V2.X - V1.X) * V0.Z + (V0.X - V2.X) * V1.Z + (V1.X - V0.X) * V2.Z) / Area;
+    const float MaxVertexDepth = std::max({V0.Z, V1.Z, V2.Z});
+
     const float SubcellSize = static_cast<float>(Settings.TileSize) / static_cast<float>(SubcellsPerAxis);
+    const float HalfSubcell = SubcellSize * 0.5f;
+    const float DepthSlack = (std::fabs(DepthDX) + std::fabs(DepthDY)) * HalfSubcell;
     const int32 TotalSubcellsX = TilesX * SubcellsPerAxis;
     const int32 TotalSubcellsY = TilesY * SubcellsPerAxis;
     const float MinX = std::min({V0.X, V1.X, V2.X});
@@ -770,31 +777,19 @@ void FSoftwareOcclusionCuller::RasterizeClippedTriangle(const FVector4& A, const
     {
         for (int32 CellX = MinCellX; CellX < MaxCellX; ++CellX)
         {
-            const float X0 = static_cast<float>(CellX) * SubcellSize;
-            const float Y0 = static_cast<float>(CellY) * SubcellSize;
-            const float X1 = std::min(X0 + SubcellSize, static_cast<float>(BufferWidth));
-            const float Y1 = std::min(Y0 + SubcellSize, static_cast<float>(BufferHeight));
-            const float CornerX[4]{X0, X1, X0, X1};
-            const float CornerY[4]{Y0, Y0, Y1, Y1};
-            float FarthestDepth = 0.0f;
-            bool bFullyCovered = true;
-            for (int32 Corner = 0; Corner < 4; ++Corner)
-            {
-                const float E0 = EdgeFunction(V0.X, V0.Y, V1.X, V1.Y, CornerX[Corner], CornerY[Corner]);
-                const float E1 = EdgeFunction(V1.X, V1.Y, V2.X, V2.Y, CornerX[Corner], CornerY[Corner]);
-                const float E2 = EdgeFunction(V2.X, V2.Y, V0.X, V0.Y, CornerX[Corner], CornerY[Corner]);
-                if (E0 < 0.0f || E1 < 0.0f || E2 < 0.0f)
-                {
-                    bFullyCovered = false;
-                    break;
-                }
-                const float W0 = E1 / Area;
-                const float W1 = E2 / Area;
-                const float W2 = E0 / Area;
-                const float Depth = W0 * V0.Z + W1 * V1.Z + W2 * V2.Z;
-                FarthestDepth = std::max(FarthestDepth, Depth);
-            }
-            if (!bFullyCovered || FarthestDepth < 0.0f || FarthestDepth > 1.0f)
+            // 서브셀 중심 한 점으로 포함을 판정해 인접 삼각형의 공유 엣지에 구멍이 생기지 않게 한다.
+            const float CenterX = static_cast<float>(CellX) * SubcellSize + HalfSubcell;
+            const float CenterY = static_cast<float>(CellY) * SubcellSize + HalfSubcell;
+            const float E0 = EdgeFunction(V0.X, V0.Y, V1.X, V1.Y, CenterX, CenterY);
+            const float E1 = EdgeFunction(V1.X, V1.Y, V2.X, V2.Y, CenterX, CenterY);
+            const float E2 = EdgeFunction(V2.X, V2.Y, V0.X, V0.Y, CenterX, CenterY);
+            if (E0 < 0.0f || E1 < 0.0f || E2 < 0.0f)
+                continue;
+
+            // 중심 깊이에 서브셀 모서리까지의 평면 증가분을 더해 보수적인 최대 깊이를 쓴다.
+            const float CenterDepth = (E1 * V0.Z + E2 * V1.Z + E0 * V2.Z) / Area;
+            const float FarthestDepth = std::min(CenterDepth + DepthSlack, MaxVertexDepth);
+            if (FarthestDepth < 0.0f || FarthestDepth > 1.0f)
                 continue;
 
             const int32 TileX = CellX / SubcellsPerAxis;

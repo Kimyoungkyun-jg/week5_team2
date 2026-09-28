@@ -2,6 +2,7 @@
 #include "Swapchain.h"
 
 #include "Core/Window.h"
+#include <dxgi1_5.h>
 
 FSwapchain::FSwapchain(FRenderDevice* InRenderDevice, FWindow* InWindow)
 {
@@ -22,12 +23,29 @@ FSwapchain::FSwapchain(FRenderDevice* InRenderDevice, FWindow* InWindow)
 	Desc.BufferCount = 2;
 	Desc.OutputWindow = InWindow->GetHandle();
 	Desc.Windowed = true;
-	Desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD; // DXGI_SWAP_EFFECT_DISCARD 이걸 하면 프레임 제한 없어짐
+	Desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	Desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+
+	ComPtr<IDXGIFactory5> Factory5;
+	if (SUCCEEDED(RenderDevice->GetFactory()->QueryInterface(IID_PPV_ARGS(&Factory5))))
+	{
+		BOOL bTearingSupported = FALSE;
+		if (SUCCEEDED(Factory5->CheckFeatureSupport(
+			DXGI_FEATURE_PRESENT_ALLOW_TEARING,
+			&bTearingSupported,
+			sizeof(bTearingSupported))))
+		{
+			bAllowTearing = bTearingSupported == TRUE;
+		}
+	}
+	if (bAllowTearing)
+		Desc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 
 	HRESULT hr = RenderDevice->GetFactory()->CreateSwapChain(RenderDevice->GetDevice(), &Desc, Swapchain.GetAddressOf());
 	if (FAILED(hr))
 		LOG(Error, "Failed To Create Swapchain!");
+	else
+		LOG(Info, "Swapchain tearing support: {}", bAllowTearing ? "enabled" : "unavailable");
 
 	CreateBackbuffer();
 
@@ -63,7 +81,7 @@ void FSwapchain::Resize(int32 InWidth, int32 InHeight)
 		InWidth,
 		InHeight,
 		DXGI_FORMAT_UNKNOWN,
-		0
+		Desc.Flags
 	);
 
 	//Update Desc
@@ -76,7 +94,14 @@ void FSwapchain::Resize(int32 InWidth, int32 InHeight)
 
 void FSwapchain::SwapBuffers(uint32 SyncInterval, uint32 Flags)
 {
-	Swapchain->Present(1,0);
+	uint32 PresentFlags = Flags;
+	if (SyncInterval == 0 && bAllowTearing)
+	{
+		BOOL bFullscreen = FALSE;
+		if (SUCCEEDED(Swapchain->GetFullscreenState(&bFullscreen, nullptr)) && !bFullscreen)
+			PresentFlags |= DXGI_PRESENT_ALLOW_TEARING;
+	}
+	Swapchain->Present(SyncInterval, PresentFlags);
 }
 
 void FSwapchain::ValidateRenderingInfo()

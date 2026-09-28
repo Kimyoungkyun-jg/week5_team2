@@ -17,6 +17,7 @@ public:
 	void Resize(int32 Width, int32 Height);
 
 	void SwapBuffers(uint32 SyncInterval = 1, uint32 Flags = 0);
+	bool IsTearingSupported() const { return bAllowTearing; }
 
 	const FRenderingInfo& GetRenderingInfo() const { return RenderingInfo; }
 private:
@@ -26,6 +27,7 @@ private:
 
 	DXGI_SWAP_CHAIN_DESC Desc;
 	ComPtr<IDXGISwapChain> Swapchain;
+	bool bAllowTearing = false;
 
 	TUniquePtr<FTexture2D> BackbufferTexture;
 

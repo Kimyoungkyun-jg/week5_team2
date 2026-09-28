@@ -34,29 +34,17 @@ void FRenderer::RenderAll(TQueue<FRenderPacket>& InQueue, const FMatrix& ViewPro
 // 불투명 메시를 큐에서 직접 꺼내 즉시 렌더링
 void FRenderer::RenderOpaque(TQueue<FRenderPacket>& InQueue, const FMatrix& ViewProjection)
 {
-
-	EPSOType LastPSO = static_cast<EPSOType>(255);
 	while (InQueue.IsEmpty() == false)
 	{
 		const FRenderPacket& RenderPacket = InQueue.Peek();
 		if (RenderPacket.mesh != nullptr && RenderPacket.material != nullptr)
 		{
 			RenderCommand::BindMesh(RenderPacket.mesh);
-			// 1. 매 프레임 첫 번째 사과: (255 != 0) 이므로 무조건 D3D11에 1회 바인딩!
-			// 2. 2번째 ~ 50,000번째 사과: (0 == 0) 이므로 49,999번은 완벽 스킵!
-			if (LastPSO != RenderPacket.material->PSOType)
-			{
-				LastPSO = RenderPacket.material->PSOType;
-				RenderCommand::BindPipelineState(FRenderResourceManager::GetPSO(LastPSO));
-			}
-			// 텍스처와 CBuffer 바인딩
-			for (int i = 0; i < RenderPacket.material->Textures.size(); i++)
-			{
-				RenderCommand::BindShaderResource(i, RenderPacket.material->Textures[i], EShaderBindFlagBits::Pixel);
-			}
-			RenderCommand::BindSamplerState(0, RenderPacket.material->SamplerState, EShaderBindFlagBits::Pixel);
+			BindMaterial(RenderPacket.material);
+
 			UpdateMaterialParams(RenderPacket);
 			UpdatePerObjectConstants(RenderPacket, ViewProjection);
+
 			RenderCommand::DrawIndexed(
 				RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),
 				RenderPacket.StartIndex

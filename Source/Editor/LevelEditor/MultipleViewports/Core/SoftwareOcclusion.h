@@ -86,6 +86,7 @@ public:
         FSoftwareOcclusionStats& OutStats);
 
 private:
+    static constexpr int32 MaxBufferExtent = 320;
     static constexpr int32 SubcellsPerAxis = 4;
     static constexpr int32 SubcellCount = SubcellsPerAxis * SubcellsPerAxis;
     static constexpr uint16 FullCoverageMask = 0xffff;

@@ -215,13 +215,18 @@ void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject
 
 void FSoftwareOcclusionCuller::PrepareBuffers(const int32 ViewWidth, const int32 ViewHeight)
 {
-    const int32 NewTilesX = (ViewWidth + Settings.TileSize - 1) / Settings.TileSize;
-    const int32 NewTilesY = (ViewHeight + Settings.TileSize - 1) / Settings.TileSize;
-    if (ViewWidth == BufferWidth && ViewHeight == BufferHeight && NewTilesX == TilesX && NewTilesY == TilesY)
+    // 뷰포트 해상도와 무관하게 긴 변을 MaxBufferExtent 이하로 줄인 저해상도 버퍼에 래스터화한다.
+    const float Scale = std::min(1.0f,
+        static_cast<float>(MaxBufferExtent) / static_cast<float>(std::max(ViewWidth, ViewHeight)));
+    const int32 NewWidth = std::max(1, static_cast<int32>(std::lround(static_cast<float>(ViewWidth) * Scale)));
+    const int32 NewHeight = std::max(1, static_cast<int32>(std::lround(static_cast<float>(ViewHeight) * Scale)));
+    const int32 NewTilesX = (NewWidth + Settings.TileSize - 1) / Settings.TileSize;
+    const int32 NewTilesY = (NewHeight + Settings.TileSize - 1) / Settings.TileSize;
+    if (NewWidth == BufferWidth && NewHeight == BufferHeight && NewTilesX == TilesX && NewTilesY == TilesY)
         return;
 
-    BufferWidth = ViewWidth;
-    BufferHeight = ViewHeight;
+    BufferWidth = NewWidth;
+    BufferHeight = NewHeight;
     TilesX = NewTilesX;
     TilesY = NewTilesY;
     Tiles.SetNum(TilesX * TilesY, false);

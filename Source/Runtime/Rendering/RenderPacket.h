@@ -1,11 +1,9 @@
 #pragma once
-#include "Math/Transform.h"
-#include "Mesh.h"
-#include "Shader.h"
-#include "Material.h"
+#include "Core/Types.h"
+#include "Math/Matrix.h"
 
-// Todo: subuv
-class UTexture2D;
+class UStaticMesh;
+class UMaterial;
 
 struct FRenderPacket {
 	FMatrix model;

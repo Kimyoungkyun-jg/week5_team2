@@ -1,5 +1,7 @@
 #include "EnginePCH.h"
 #include "Editor/Details/DetailsPanel.h"
+#include "World/World.h"
+#include <format>
 
 #include "imgui_internal.h"
 #include "Editor/Application/EditorDragDrop.h"

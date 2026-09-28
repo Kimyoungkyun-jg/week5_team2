@@ -1,6 +1,8 @@
 #pragma once
 
-#include <d3d11.h>
+#include "Math/Vector.h"
+#include "Math/Vector2.h"
+#include "Math/Vector4.h"
 
 struct FVertex
 {

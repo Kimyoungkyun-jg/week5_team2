@@ -1,5 +1,6 @@
 #include "EnginePCH.h"
 #include "Mesh.h"
+#include "Material.h"
 #include "Renderer.h"
 #include "Asset/AssetManager.h"
 

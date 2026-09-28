@@ -1,5 +1,8 @@
 #pragma once
 
+#include "Container/Array.h"
+#include "Core/EngineString.h"
+
 class UObject;
 class UClass;
 

@@ -2,6 +2,7 @@
 #include "Renderer.h"
 #include "Shader.h"
 #include "Mesh.h"
+#include "Material.h"
 
 #include "Core/EngineTimer.h"
 

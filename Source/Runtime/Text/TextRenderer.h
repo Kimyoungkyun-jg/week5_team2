@@ -2,6 +2,7 @@
 
 #include "Rendering/Buffer.h"
 #include "Rendering/PipelineState.h"
+#include "Rendering/Vertex.h"
 
 class UFont;
 class UCameraComponent;

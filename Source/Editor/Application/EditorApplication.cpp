@@ -1,6 +1,12 @@
 #include "EnginePCH.h"
 
 #include "Editor/Application/EditorApplication.h"
+#include "Editor/OutputLog/OutputLogPanel.h"
+#include "Editor/Details/DetailsPanel.h"
+#include "Editor/EditorControls/EditorControlsPanel.h"
+#include "Editor/Settings/SettingsPanel.h"
+#include "Editor/Viewports/ViewportsPanel.h"
+#include "Editor/ContentDrawer/ContentDrawerPanel.h"
 
 #include "Core/EngineStatics.h"
 #include "Core/EngineTimer.h"

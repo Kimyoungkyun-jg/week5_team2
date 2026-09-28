@@ -1,4 +1,5 @@
 #include "EnginePCH.h"
+#include "Rendering/Material.h"
 #include "BillboardComponent.h"
 
 #include "Asset/AssetManager.h"

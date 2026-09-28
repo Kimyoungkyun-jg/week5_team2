@@ -1,5 +1,10 @@
 #pragma once
 
+#include "Container/Array.h"
+#include "Core/EngineString.h"
+#include "Core/Types.h"
+#include <dxgiformat.h>
+
 struct FImageData
 {
 	FImageData() = default;

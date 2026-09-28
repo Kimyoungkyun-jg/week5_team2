@@ -2,6 +2,7 @@
 
 #include "../Math/Transform.h"
 #include "ActorComponent.h"
+#include "Rendering/StaticMeshData.h"
 
 class USceneComponent : public UActorComponent
 {

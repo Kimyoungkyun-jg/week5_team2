@@ -3,6 +3,7 @@
 #include "ObjectSystem/Object.h"
 #include "ObjectSystem/Property.h"
 #include "Rendering/Renderer.h"
+#include "Rendering/Shader.h"
 
 #include <filesystem>
 

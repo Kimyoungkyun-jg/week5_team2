@@ -1,4 +1,5 @@
 #include "EnginePCH.h"
+#include "Rendering/Mesh.h"
 #include "ObjViewerApp.h"
 
 #include "Asset/AssetManager.h"

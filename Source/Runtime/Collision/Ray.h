@@ -1,7 +1,8 @@
 #pragma once
 
 #include "Math/EngineMath.h"
-#include "Rendering/StaticMeshData.h"
+
+struct FStaticMeshData;
 
 struct FRay
 {

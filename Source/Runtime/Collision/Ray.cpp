@@ -1,5 +1,6 @@
 #include "EnginePCH.h"
 #include "Ray.h"
+#include "Rendering/StaticMeshData.h"
 #include "Math/EngineMath.h"
 
 

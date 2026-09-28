@@ -1,4 +1,6 @@
 #include "EnginePCH.h"
+#include "Rendering/Mesh.h"
+#include "Rendering/Material.h"
 #include "Object.h"
 
 #include "Core/EngineStatics.h"

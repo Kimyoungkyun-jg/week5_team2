@@ -1,6 +1,8 @@
 #pragma once
 
-#include "World/World.h"
+#include "Core/EngineString.h"
+
+class UWorld;
 
 class FEditorFileUtils
 {

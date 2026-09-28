@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RenderPacket.h"
+#include "Buffer.h"
 #include "Texture2D.h"
 #include "Text/Font.h"
 

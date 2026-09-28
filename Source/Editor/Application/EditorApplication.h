@@ -14,23 +14,24 @@
 #include "Rendering/LineBatcher.h"
 
 #include "Editor/EditorUI/EditorUI.h"
-#include "Editor/OutputLog/OutputLogPanel.h"
-#include "Editor/Details/DetailsPanel.h"
-#include "Editor/EditorControls/EditorControlsPanel.h"
-#include "Editor/Settings/SettingsPanel.h"
-#include "Editor/Viewports/ViewportsPanel.h"
 #include "Editor/Viewports/MultipleViewportsAdapter.h"
-#include "Editor/ContentDrawer/ContentDrawerPanel.h"
 
 #include "Editor/Rendering/Outline.h"
 #include "Editor/Rendering/OutlineRenderer.h"
-#include "Editor/Outliner/OutlinerPanel.h"
 
 #include "Rendering/SkyboxRenderer.h"
 
 //Temp
 #include "Text/Font.h"
 #include "Text/TextRenderer.h"
+
+class FOutputLogPanel;
+class FDetailsPanel;
+class FEditorControlsPanel;
+class FSettingsPanel;
+class FViewportsPanel;
+class FContentDrawerPanel;
+class FOutlinerPanel;
 
 struct FWindowContext
 {

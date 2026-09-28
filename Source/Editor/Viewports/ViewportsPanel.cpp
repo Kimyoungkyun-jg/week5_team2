@@ -277,8 +277,8 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 	if (FStatOverlay::IsEnabled(EStatFlags::FPS))
 	{
 		Lines.Add({"FPS", TitleColor});
-		Lines.Add({std::format("  {:.1f} fps", FStatOverlay::GetFPS()), ValueColor});
-		Lines.Add({std::format("  {:.2f} ms", FStatOverlay::GetFrameTimeMs()), ValueColor});
+		Lines.Add({std::format("  {:.0f} fps", FStatOverlay::GetFPS()), ValueColor});
+		Lines.Add({std::format("  {:.0f} ms", FStatOverlay::GetFrameTimeMs()), ValueColor});
 	}
 
 	if (FStatOverlay::IsEnabled(EStatFlags::Memory))
@@ -289,6 +289,17 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 			FStatOverlay::GetObjectAllocationCount()), ValueColor});
 		Lines.Add({std::format("  Process {:.2f} MB",
 			static_cast<double>(FStatOverlay::GetProcessWorkingSetBytes()) / BytesPerMegabyte), ValueColor});
+	}
+
+	if (FStatOverlay::IsEnabled(EStatFlags::Picking))
+	{
+		Lines.Add({ "Picking", TitleColor });
+		Lines.Add({std::format("  Last Time {:.0f} ms", 
+			FStatOverlay::GetLastPickingTimeMs()), ValueColor});
+		Lines.Add({std::format("  Num Attempts {}", 
+			FStatOverlay::GetTotalPickCount()), ValueColor});
+		Lines.Add({std::format("  Accumulated Time {:.0f} ms", 
+			FStatOverlay::GetTotalPickingTimeMs()), ValueColor});
 	}
 
 	if (Lines.Num() == 0)

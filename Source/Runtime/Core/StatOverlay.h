@@ -9,6 +9,7 @@ enum class EStatFlags : uint32
 	None   = 0,
 	FPS    = 1 << 0,
 	Memory = 1 << 1,
+	Picking = 1 << 2,
 };
 DEFINE_ENUM_OPERATORS(EStatFlags)
 
@@ -38,13 +39,30 @@ public:
 	// 프로세스 전체가 점유한 물리 메모리(Working Set).
 	static uint64 GetProcessWorkingSetBytes();
 
+	static void RecordPickingTime(double Milliseconds);
+
+	static double GetLastPickingTimeMs() { return LastPickingTimeMs; }
+	static double GetTotalPickingTimeMs() { return TotalPickingTimeMs; }
+	//static double GetAveragePickingTimeMs()
+	//{
+	//	return TotalPickCount > 0
+	//		? TotalPickingTimeMs / static_cast<double>(TotalPickCount)
+	//		: 0.0;
+	//}
+	static uint64 GetTotalPickCount() { return TotalPickCount; }
+
 private:
 	// 표시 수치 갱신 주기(초). 너무 짧으면 숫자가 읽히지 않는다.
 	static constexpr float SampleInterval = 0.25f;
 
-	inline static EStatFlags Flags = EStatFlags::None;
+	inline static EStatFlags Flags =
+		EStatFlags::FPS | EStatFlags::Picking;
 	inline static float AccumulatedTime = 0.0f;
 	inline static int32 AccumulatedFrames = 0;
 	inline static float DisplayFPS = 0.0f;
 	inline static float DisplayFrameTimeMs = 0.0f;
+
+	inline static double LastPickingTimeMs = 0.0;
+	inline static double TotalPickingTimeMs = 0.0;
+	inline static uint64 TotalPickCount = 0;
 };

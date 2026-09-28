@@ -659,6 +659,7 @@ void FMultipleViewportsAdapter::BuildRenderQueue(const int32 ViewIndex, TQueue<F
     const PreparedView& View = PrepareView(ViewIndex);
     const FViewCamera RenderCamera = GetRenderCamera(ViewIndex);
     SoftwareOcclusion.Cull(
+        ViewIndex,
         RenderObjects,
         View.Frustum,
         View.EngineViewProjection,

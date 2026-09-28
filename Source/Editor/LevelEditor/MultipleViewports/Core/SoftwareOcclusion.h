@@ -45,6 +45,7 @@ struct FSoftwareOcclusionStats
     float CullMs = 0.0f;
     bool bTriangleBudgetExceeded = false;
     bool bCpuBudgetExceeded = false;
+    bool bOcclusionSuspended = false;
 };
 
 enum class ESoftwareOcclusionDebugState : uint8
@@ -75,6 +76,7 @@ public:
 
     // View 하나의 프러스텀과 Software Occlusion을 실행한다.
     void Cull(
+        int32 ViewIndex,
         const TArray<FRenderableObject>& Objects,
         const FFrustumPlanes& Frustum,
         const FMatrix& ViewProjection,
@@ -92,6 +94,10 @@ private:
     static constexpr uint16 FullCoverageMask = 0xffff;
     static constexpr uint32 BVHLeafSize = 32;
     static constexpr int32 SAHBinCount = 16;
+    // 적응형 폴백: 프러스텀 통과 물체 중 가려낸 비율이 기준 미만이면 일정 프레임 동안 오클루전을 끈다.
+    static constexpr int32 MaxViews = 4;
+    static constexpr float MinOcclusionRejectRatio = 0.2f;
+    static constexpr int32 OcclusionProbeInterval = 30;
 
     struct FObjectState
     {
@@ -166,6 +172,7 @@ private:
     TArray<uint32> CandidateIndices;
     TArray<uint8> VisibilityFlags;
     TArray<FSoftwareOcclusionDebugBounds> DebugBounds;
+    int32 SuspendedFrames[MaxViews]{};
 
     FMatrix CurrentViewProjection{};
     FVector CurrentCameraLocation{};

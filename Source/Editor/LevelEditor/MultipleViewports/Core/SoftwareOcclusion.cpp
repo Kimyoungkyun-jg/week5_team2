@@ -125,6 +125,7 @@ void FSoftwareOcclusionCuller::ResetScene()
     BuiltStaticObjectIndices.Reset();
     BVHObjectIndices.Reset();
     BVHNodes.Reset();
+    std::fill(std::begin(SuspendedFrames), std::end(SuspendedFrames), 0);
     LastBVHBuildMs = 0.0f;
 #if defined(ENGINE_DEBUG)
     bSelfTestsRan = false;
@@ -133,6 +134,7 @@ void FSoftwareOcclusionCuller::ResetScene()
 
 void FSoftwareOcclusionCuller::SetSettings(const FSoftwareOcclusionSettings& InSettings)
 {
+    const FSoftwareOcclusionSettings Previous = Settings;
     const int32 PreviousTileSize = Settings.TileSize;
     Settings = InSettings;
     if (Settings.TileSize != 4 && Settings.TileSize != 8 && Settings.TileSize != 16)
@@ -142,6 +144,11 @@ void FSoftwareOcclusionCuller::SetSettings(const FSoftwareOcclusionSettings& InS
     Settings.DepthBias = std::max(0.0f, Settings.DepthBias);
     if (PreviousTileSize != Settings.TileSize)
         BufferWidth = 0;
+    // 설정 패널이 매 프레임 호출하므로 값이 실제로 바뀐 경우에만 다음 프레임에 바로 다시 측정한다.
+    if (Previous.Mode != Settings.Mode || Previous.TileSize != Settings.TileSize ||
+        Previous.MinimumOccluderTiles != Settings.MinimumOccluderTiles || Previous.TriangleBudget != Settings.TriangleBudget ||
+        Previous.CpuTimeBudgetMs != Settings.CpuTimeBudgetMs || Previous.DepthBias != Settings.DepthBias)
+        std::fill(std::begin(SuspendedFrames), std::end(SuspendedFrames), 0);
 }
 
 void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject>& Objects)
@@ -1017,6 +1024,7 @@ void FSoftwareOcclusionCuller::TraverseBVH(
 }
 
 void FSoftwareOcclusionCuller::Cull(
+    const int32 ViewIndex,
     const TArray<FRenderableObject>& Objects,
     const FFrustumPlanes& Frustum,
     const FMatrix& ViewProjection,
@@ -1056,7 +1064,13 @@ void FSoftwareOcclusionCuller::Cull(
         return;
     }
 
-    const bool bBVHFrustumOnly = Settings.Mode == ESoftwareOcclusionMode::StaticBVHFrustumOnly;
+    // 효과가 낮아 쉬는 중이면 BVH 프러스텀 컬링만 하고, 주기가 끝난 프레임에 오클루전을 다시 측정한다.
+    int32& Suspended = SuspendedFrames[std::clamp(ViewIndex, 0, MaxViews - 1)];
+    const bool bSuspended = Settings.Mode != ESoftwareOcclusionMode::StaticBVHFrustumOnly && Suspended > 0;
+    if (bSuspended)
+        --Suspended;
+    OutStats.bOcclusionSuspended = bSuspended;
+    const bool bBVHFrustumOnly = Settings.Mode == ESoftwareOcclusionMode::StaticBVHFrustumOnly || bSuspended;
     if (!bBVHFrustumOnly)
     {
         PrepareBuffers(ViewWidth, ViewHeight);
@@ -1133,4 +1147,12 @@ void FSoftwareOcclusionCuller::Cull(
     OutStats.FinalVisible = static_cast<uint32>(OutVisible.Num());
     OutStats.CullMs = static_cast<float>((NowSeconds() - CullStartSeconds) * 1000.0);
     ActiveStats = nullptr;
+
+    if (!bBVHFrustumOnly)
+    {
+        const uint32 Candidates = OutStats.OcclusionRejected + OutStats.FinalVisible;
+        if (Candidates > 0 &&
+            static_cast<float>(OutStats.OcclusionRejected) < MinOcclusionRejectRatio * static_cast<float>(Candidates))
+            Suspended = OcclusionProbeInterval;
+    }
 }

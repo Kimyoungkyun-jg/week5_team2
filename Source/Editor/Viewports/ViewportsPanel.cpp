@@ -308,10 +308,11 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 			Stats.SubcellCoveragePercent, Stats.FullTileCoveragePercent), ValueColor});
 		Lines.Add({std::format("  BVH tested {}  pruned {}",
 			Stats.BVHNodesTested, Stats.BVHNodesPruned), ValueColor});
-		Lines.Add({std::format("  cull {:.2f} ms  build {:.2f} ms{}{}",
+		Lines.Add({std::format("  cull {:.2f} ms  build {:.2f} ms{}{}{}",
 			Stats.CullMs, Stats.BVHBuildMs,
 			Stats.bTriangleBudgetExceeded ? "  TRI BUDGET" : "",
-			Stats.bCpuBudgetExceeded ? "  CPU BUDGET" : ""), ValueColor});
+			Stats.bCpuBudgetExceeded ? "  CPU BUDGET" : "",
+			Stats.bOcclusionSuspended ? "  SUSPENDED" : ""), ValueColor});
 	}
 
 	if (Lines.Num() == 0)

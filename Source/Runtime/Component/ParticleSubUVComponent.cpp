@@ -190,6 +190,75 @@ void UParticleSubUVComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQ
 	}
 }
 
+// 기본 카메라 기준으로 파티클 렌더 패킷을 배열에 직접 수집
+void UParticleSubUVComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets)
+{
+	assert(QuadMesh != nullptr);
+	assert(Material != nullptr);
+	
+	Constants.Reset();
+	Constants.Reserve(Particles.Num());
+
+	const FVector CameraPos = GetOwner()->GetWorld()->GetMainCamera()->GetCameraComponent()->GetWorldLocation();
+	for (FParticle& Particle : Particles)
+	{
+		if (Particle.bAlive == false)
+		{
+			continue;
+		}
+
+		FMatrix WorldMatrix = FMatrix::Identity; 
+		Super::GetWorldTransformedMatrix(&WorldMatrix);
+
+		WorldMatrix.M[0][0] *= Particle.Scale;
+		WorldMatrix.M[0][1] *= Particle.Scale;
+		WorldMatrix.M[0][2] *= Particle.Scale;
+		WorldMatrix.M[0][3] *= Particle.Scale;
+
+		WorldMatrix.M[1][0] *= Particle.Scale;
+		WorldMatrix.M[1][1] *= Particle.Scale;
+		WorldMatrix.M[1][2] *= Particle.Scale;
+		WorldMatrix.M[1][3] *= Particle.Scale;
+
+		WorldMatrix.M[2][0] *= Particle.Scale;
+		WorldMatrix.M[2][1] *= Particle.Scale;
+		WorldMatrix.M[2][2] *= Particle.Scale;
+		WorldMatrix.M[2][3] *= Particle.Scale;
+
+		WorldMatrix.M[3][0] = Particle.Location.X;
+		WorldMatrix.M[3][1] = Particle.Location.Y;
+		WorldMatrix.M[3][2] = Particle.Location.Z;
+		WorldMatrix.M[3][3] = 1.0f;
+
+		const FVector ParticlePos = Particle.Location;
+		const FVector CameraToParticleVec = ParticlePos - CameraPos;
+
+		const float CameraToParticleDistance = 
+			CameraToParticleVec.X * CameraToParticleVec.X +
+			CameraToParticleVec.Y * CameraToParticleVec.Y +
+			CameraToParticleVec.Z * CameraToParticleVec.Z;
+
+		FRenderPacket Packet;
+		Packet.model = WorldMatrix;
+		Packet.mesh = QuadMesh;
+		Packet.material = Material;
+
+		FSubUVConstants C;
+		C.CurrentFrame =  Particle.SubUVFrame;
+		C.AtlasColSize = ColSize;
+		C.AtlasRowSize = RowSize;
+		C.Alpha = Particle.Alpha;
+
+		Constants.Add(C);
+
+		Packet.MaterialParamData = &Constants.Last();
+		Packet.MaterialParamDataSize = sizeof(FSubUVConstants);
+		Packet.CameraToParticleDistance = CameraToParticleDistance;
+
+		OutPackets.Add(Packet);
+	}
+}
+
 // 파티클 위치·속도·수명 등 재생성 상태를 초기화한다.
 void UParticleSubUVComponent::RespawnParticle(FParticle& Particle)
 {

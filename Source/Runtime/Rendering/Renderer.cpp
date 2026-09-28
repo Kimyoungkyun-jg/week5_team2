@@ -35,15 +35,29 @@ void FRenderer::RenderAll(TQueue<FRenderPacket>& InQueue, const FMatrix& ViewPro
 // 불투명 메시를 큐에서 직접 꺼내 즉시 렌더링
 void FRenderer::RenderOpaque(TQueue<FRenderPacket>& InQueue, const FMatrix& ViewProjection)
 {
+	RenderCommand::BindConstantBuffer(0, Temp.get(), EShaderBindFlagBits::Vertex);
+
+	const UStaticMesh* LastMesh = nullptr;
+	const UMaterial* LastMaterial = nullptr;
+
 	while (InQueue.IsEmpty() == false)
 	{
 		const FRenderPacket& RenderPacket = InQueue.Peek();
 		if (RenderPacket.mesh != nullptr && RenderPacket.material != nullptr)
 		{
-			RenderCommand::BindMesh(RenderPacket.mesh);
-			BindMaterial(RenderPacket.material);
+			if (LastMesh != RenderPacket.mesh)
+			{
+				RenderCommand::BindMesh(RenderPacket.mesh);
+				LastMesh = RenderPacket.mesh;
+			}
 
-			UpdateMaterialParams(RenderPacket);
+			if (LastMaterial != RenderPacket.material)
+			{
+				BindMaterial(RenderPacket.material);
+				UpdateMaterialParams(RenderPacket);
+				LastMaterial = RenderPacket.material;
+			}
+
 			UpdatePerObjectConstants(RenderPacket, ViewProjection);
 
 			RenderCommand::DrawIndexed(
@@ -52,6 +66,46 @@ void FRenderer::RenderOpaque(TQueue<FRenderPacket>& InQueue, const FMatrix& View
 			);
 		}
 		InQueue.Dequeue();
+	}
+}
+
+// TArray 기반 불투명 메시 고속 렌더링
+void FRenderer::RenderOpaque(const TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection)
+{
+	if (InPackets.Num() == 0)
+	{
+		return;
+	}
+
+	RenderCommand::BindConstantBuffer(0, Temp.get(), EShaderBindFlagBits::Vertex);
+
+	const UStaticMesh* LastMesh = nullptr;
+	const UMaterial* LastMaterial = nullptr;
+
+	for (const FRenderPacket& RenderPacket : InPackets)
+	{
+		if (RenderPacket.mesh != nullptr && RenderPacket.material != nullptr)
+		{
+			if (LastMesh != RenderPacket.mesh)
+			{
+				RenderCommand::BindMesh(RenderPacket.mesh);
+				LastMesh = RenderPacket.mesh;
+			}
+
+			if (LastMaterial != RenderPacket.material)
+			{
+				BindMaterial(RenderPacket.material);
+				UpdateMaterialParams(RenderPacket);
+				LastMaterial = RenderPacket.material;
+			}
+
+			UpdatePerObjectConstants(RenderPacket, ViewProjection);
+
+			RenderCommand::DrawIndexed(
+				RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),
+				RenderPacket.StartIndex
+			);
+		}
 	}
 }
 
@@ -124,14 +178,18 @@ void FRenderer::UpdateMaterialParams(const FRenderPacket& RenderPacket)
 // b0 MVP 채우고 꽂기
 void FRenderer::UpdatePerObjectConstants(const FRenderPacket& RenderPacket, const FMatrix& ViewProjection)
 {
-	// rp.Transform 과 Camera VP 행렬 곱
-	// 행렬곱의 결과 (MVP Matrix) Constant Buffer 업데이트 필요
-
 	FPerObjectConstants Constants;
 
-	Constants.MVP = (RenderPacket.model * ViewProjection).GetTransposed();
+	if (RenderPacket.MVP.M[3][3] != 0.0f)
+	{
+		Constants.MVP = RenderPacket.MVP;
+	}
+	else
+	{
+		Constants.MVP = (RenderPacket.model * ViewProjection).GetTransposed();
+	}
+
 	Constants.World = RenderPacket.model.GetTransposed();
 
 	RenderCommand::UpdateBufferData(Temp.get(), &Constants);
-	RenderCommand::BindConstantBuffer(0, Temp.get(), EShaderBindFlagBits::Vertex);
 }

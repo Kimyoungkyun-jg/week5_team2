@@ -44,6 +44,10 @@ void UPrimitiveComponent::BeginPlay()
 	Super::BeginPlay();
 }
 
+void UPrimitiveComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets)
+{
+}
+
 
 void UPrimitiveComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue)
 {

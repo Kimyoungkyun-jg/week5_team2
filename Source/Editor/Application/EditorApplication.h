@@ -51,6 +51,7 @@ public:
 	void UpdateGizmoAndPicking();
 	// View 하나의 Scene·Grid·Gizmo·텍스트를 해당 ViewProjection으로 렌더한다.
 	void RenderFrame(int32 ViewIndex, const FRenderingInfo& ViewRenderingInfo, const FMatrix& ViewProjection, const FVector& ViewCameraLocation, const FVector& ViewCameraForward, TQueue<FRenderPacket>& RenderQueue);
+	void RenderFrame(int32 ViewIndex, const FRenderingInfo& ViewRenderingInfo, const FMatrix& ViewProjection, const FVector& ViewCameraLocation, const FVector& ViewCameraForward, const TArray<FRenderPacket>& RenderPackets);
 	// 네 View 결과와 ImGui를 메인 Swapchain에 합성해 화면에 표시한다.
 	void PresentFrame();
 	void DeleteActor(AActor* Actor);

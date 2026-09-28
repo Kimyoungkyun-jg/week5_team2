@@ -78,3 +78,29 @@ void UStaticMeshComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueu
         RenderQueue.Enqueue(rp);
     }
 }
+
+// TArray 기반 고속 패킷 제출
+void UStaticMeshComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets)
+{
+    if (!StaticMesh)
+        return;
+
+    const FStaticMeshData& MeshData = StaticMesh->GetMeshData();
+    const FMatrix WorldMatrix = GetWorldMatrix();
+
+    for (const FStaticMeshSection& Section : MeshData.Sections)
+    {
+        UMaterial* SectionMaterial = GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
+        if (!SectionMaterial)
+            continue;
+
+        FRenderPacket rp;
+        rp.mesh = StaticMesh;
+        rp.model = WorldMatrix;
+        rp.StartIndex = Section.StartIndex;
+        rp.IndexCount = Section.IndexCount;
+        rp.material = SectionMaterial;
+
+        OutPackets.Add(rp);
+    }
+}

@@ -34,8 +34,8 @@ public:
 	virtual void BeginPlay() override;
 
 	// Todo: subuv
-	//void SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue);
 	virtual void SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue);
+	virtual void SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets);
 
 	virtual const FStaticMeshData* GetMeshData() const { return nullptr; }
 

@@ -76,6 +76,32 @@ void UBillboardComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue
 	RenderQueue.Enqueue(Packet);
 }
 
+// 기본 카메라 기준으로 패킷 배열에 추가
+void UBillboardComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets)
+{
+	if (QuadMesh == nullptr || Material == nullptr)
+	{
+		return;
+	}
+
+	FMatrix BillboardWorldMatrix;
+	GetWorldTransformedMatrix(&BillboardWorldMatrix);
+	SubmitToRenderPackets(OutPackets, BillboardWorldMatrix);
+}
+
+// 전달받은 행렬 기준으로 패킷 배열에 직접 추가
+void UBillboardComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets, const FMatrix& BillboardWorldMatrix)
+{
+	if (QuadMesh == nullptr || Material == nullptr)
+		return;
+
+	FRenderPacket Packet;
+	Packet.mesh = QuadMesh;
+	Packet.material = Material;
+	Packet.model = BillboardWorldMatrix;
+	OutPackets.Add(Packet);
+}
+
 void UBillboardComponent::Serialize(json& Handle, bool bIsLoading)
 {
 	Super::Serialize(Handle, bIsLoading);

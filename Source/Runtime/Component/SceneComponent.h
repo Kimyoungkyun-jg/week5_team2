@@ -17,21 +17,21 @@ public:
 
 	// Get & Set
 	const FVector& GetRelativeLocation() const { return Transform.Location; }
-	void SetRelativeLocation(const FVector& InLocation) { Transform.Location = InLocation; }
+	void SetRelativeLocation(const FVector& InLocation) { Transform.Location = InLocation; MarkBoundsDirtyRecursive(); }
 
 	const FRotator& GetRelativeRotation() const { return Transform.Rotation; }
-	void SetRelativeRotation(const FRotator& InRotation) { Transform.Rotation = InRotation; }
+	void SetRelativeRotation(const FRotator& InRotation) { Transform.Rotation = InRotation; MarkBoundsDirtyRecursive(); }
 
 	const FVector& GetRelativeScale3D() const { return Transform.Scale; }
-	void SetRelativeScale3D(const FVector& InScale) { Transform.Scale = InScale; }
+	void SetRelativeScale3D(const FVector& InScale) { Transform.Scale = InScale; MarkBoundsDirtyRecursive(); }
 
 	// 쿼터니언 적용된 회전행렬
 	FQuat GetRelativeRotationQuat() const { return Transform.GetOrientation(); }
 
 	const FTransform& GetTransform() const { return Transform; }
 	void SetTransform(const FTransform& InTransform) { 
-		Transform = InTransform; 
-		bBoundsDirty = true; //위치가 바뀔때만 더티 마킹
+		Transform = InTransform;
+		MarkBoundsDirtyRecursive();
 	}
 
 	// Attatch-To
@@ -48,8 +48,10 @@ public:
 	FVector GetWorldScale3D() const;
 	FMatrix GetWorldMatrix() const;
 
-	// 위치가 바뀌면 더티 마킹
-	void MarkBoundsDirty() { bBoundsDirty = true; }
+	// Transform 변경을 현재 컴포넌트와 모든 자식의 Bounds에 전파한다.
+	void MarkBoundsDirty() { MarkBoundsDirtyRecursive(); }
+	void MarkBoundsDirtyRecursive();
+	uint64 GetBoundsRevision() const { return BoundsRevision; }
 
 	//더티할 때만 새로 계산하고, 아니면 캐시된 박스 즉시 반환!
 	const FBox GetWorldBounds()
@@ -70,5 +72,6 @@ protected:
 
 
 	bool bBoundsDirty = true; // 처음 생성 시에는 계산 필요
+	uint64 BoundsRevision = 1;
 	FBox CachedWorldBounds;
 };

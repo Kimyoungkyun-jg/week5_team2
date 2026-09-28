@@ -103,16 +103,14 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
 
   Gizmo = MakeUnique<FGizmo>();
 
-  // 필요한 Panel들 추가후 raw pointer 반환(소유권 = EditorUI)
+  // 필요한 패널 추가
   DetailsPanel = EditorUI->AddEditorPanel<FDetailsPanel>();
   EditorControlsPanel = EditorUI->AddEditorPanel<FEditorControlsPanel>();
+  SettingsPanel = EditorUI->AddEditorPanel<FSettingsPanel>();
   ViewportsPanel = EditorUI->AddEditorPanel<FViewportsPanel>();
 
-	// 필요한 Panel들 추가후 raw pointer 반환(소유권 = EditorUI)
-	DetailsPanel = EditorUI->AddEditorPanel<FDetailsPanel>();
-	EditorControlsPanel = EditorUI->AddEditorPanel<FEditorControlsPanel>();
-	SettingsPanel = EditorUI->AddEditorPanel<FSettingsPanel>();
-	ViewportsPanel = EditorUI->AddEditorPanel<FViewportsPanel>();
+  OutlineRenderer = MakeUnique<FOutlineRenderer>();
+  OutlineRenderer->Init(Renderer.get());
 
   Outline = MakeUnique<FOutline>();
 
@@ -158,29 +156,13 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
   EditorControlsPanel->SetGizmo(Gizmo.get());
   EditorControlsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
 
+  SettingsPanel->SetWorld(World);
+  SettingsPanel->SetTearingSupported(MainWindowSC->IsTearingSupported());
+  SettingsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
+
   ViewportsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
   bIsRunning = true;
   return true;
-
-  bIsRunning = true;
-
-	EditorControlsPanel->SetWorld(World);
-	EditorControlsPanel->SetGizmo(Gizmo.get());
-	EditorControlsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
-
-	SettingsPanel->SetWorld(World);
-	SettingsPanel->SetTearingSupported(MainWindowSC->IsTearingSupported());
-	SettingsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
-
-	ViewportsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
-	bIsRunning = true;
-	return true;
-
-
-
-	bIsRunning = true;
-
-	return true;
 }
 
 // 프레임 시작·View 상태·월드 갱신·렌더·종료를 순차 반복한다.
@@ -444,7 +426,7 @@ void FEditorApplication::RenderFrame(
 
   Renderer->RenderOpaque(RenderPackets, ViewProjection);
 
-  if (Outline->GetTarget()) {
+  if (Outline && Outline->GetTarget() && OutlineRenderer) {
     OutlineRenderer->OnRender(*Outline, ViewProjection,
                               ViewRenderingInfo.ViewportSetting);
   }
@@ -497,10 +479,8 @@ void FEditorApplication::PresentFrame() {
 
 	RenderCommand::EndRenderPass(MainWindowSC->GetRenderingInfo());
 
-	// 에디터 성능 측정은 VSync의 60 FPS 제한을 받지 않는다.
+	// 버퍼 갱신
 	MainWindowSC->SwapBuffers(0, 0);
-
-  MainWindowSC->SwapBuffers();
 }
 
 // 엔진 종료에 필요한 자원 정리를 수행한다.

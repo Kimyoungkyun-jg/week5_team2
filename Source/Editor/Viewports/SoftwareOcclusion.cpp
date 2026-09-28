@@ -1066,7 +1066,11 @@ void FSoftwareOcclusionCuller::Cull(
 
     // 효과가 낮아 쉬는 중이면 BVH 프러스텀 컬링만 하고, 주기가 끝난 프레임에 오클루전을 다시 측정한다.
     int32& Suspended = SuspendedFrames[std::clamp(ViewIndex, 0, MaxViews - 1)];
-    const bool bSuspended = Settings.Mode != ESoftwareOcclusionMode::StaticBVHFrustumOnly && Suspended > 0;
+    bool bSuspended = Settings.Mode != ESoftwareOcclusionMode::StaticBVHFrustumOnly && Suspended > 0;
+
+    bSuspended = false; //항상 오쿨루전 작동
+
+
     if (bSuspended)
         --Suspended;
     OutStats.bOcclusionSuspended = bSuspended;
@@ -1153,6 +1157,8 @@ void FSoftwareOcclusionCuller::Cull(
         const uint32 Candidates = OutStats.OcclusionRejected + OutStats.FinalVisible;
         if (Candidates > 0 &&
             static_cast<float>(OutStats.OcclusionRejected) < MinOcclusionRejectRatio * static_cast<float>(Candidates))
-            Suspended = OcclusionProbeInterval;
+        { }
+            
+            //Suspended = OcclusionProbeInterval;
     }
 }

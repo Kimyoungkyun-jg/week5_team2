@@ -1,36 +1,28 @@
 #pragma once
+
 #include "FiberTypes.h"
 #include <vector>
+#include <deque>
 #include <thread>
 #include <mutex>
 #include <queue>
 #include <condition_variable>
 #include <algorithm>
 
-// 파이버 기반 잡 시스템 관리자
 class FFiberJobManager
 {
 public:
-	// 싱글톤 인스턴스 반환
 	static FFiberJobManager& Get();
 
-	// 잡 매니저 초기화
 	void Initialize(uint32_t InNumWorkers = 0, uint32_t InNumFibers = 128, uint32_t InFiberStackSize = 64 * 1024);
-
-	// 잡 매니저 종료
 	void Shutdown();
 
-	// 워커 스레드 수 반환
 	uint32_t GetNumWorkers() const { return NumWorkers; }
 
-	// 일감 등록
 	void RunJob(const FFiberJob& InJob);
 	void RunJobs(const FFiberJob* InJobs, uint32_t InNumJobs, FFiberCounter* InCounter = nullptr);
-
-	// 카운터 완료 대기
 	void WaitForCounter(FFiberCounter* InCounter, int32_t InTargetValue = 0);
 
-	// 병렬 분할 실행 템플릿
 	template<typename FuncType>
 	void ParallelFor(int32_t TotalCount, int32_t ChunkSize, const FuncType& Function)
 	{
@@ -75,33 +67,31 @@ public:
 		WaitForCounter(&Counter, 0);
 	}
 
-	// 내부 파이버 실행 진입점
-	struct FFiberTaskContext;
-	void FiberWorkerLoop(FFiberTaskContext* Context);
+
 
 	struct FFiberTaskContext
 	{
 		void* FiberHandle = nullptr;
-		void* CallerFiber = nullptr;
 		FFiberJob CurrentJob;
 		FFiberJobManager* Manager = nullptr;
+		std::atomic<bool> bIsSuspended{ true };
+
+		FFiberCounter* WaitingOnCounter = nullptr;
+		int32_t WaitingTargetValue = 0;
 	};
+
+	void FiberWorkerLoop(FFiberTaskContext* Context);
+
+	void OnJobCompleted(FFiberCounter* Counter);
+	void SuspendAndSwitch(FFiberTaskContext* WaitingFiber);
+	void YieldCurrentFiber(FFiberTaskContext* Context);
+	bool ExecuteOneJobOrReadyFiber();
 
 private:
 	FFiberJobManager() = default;
 	~FFiberJobManager();
 
-	// 파이버 생성
 	FFiberTaskContext* CreateJobFiber();
-
-	// 다음 일감 획득
-	bool PopJob(FFiberJob& OutJob);
-
-	// 놀고 있는 파이버 획득
-	FFiberTaskContext* PopFreeFiber();
-
-	// 파이버 풀에 반환
-	void ReturnFiber(FFiberTaskContext* InContext);
 
 private:
 	std::atomic<bool> bIsRunning{ false };
@@ -110,11 +100,11 @@ private:
 	uint32_t FiberStackSize = 0;
 
 	std::vector<std::thread> Workers;
-	std::vector<FFiberTaskContext*> FiberPool;
 	std::vector<FFiberTaskContext*> AllocatedFibers;
-	std::mutex FiberPoolMutex;
+	std::vector<FFiberTaskContext*> FreeFiberPool;
+	std::deque<FFiberTaskContext*> SuspendFibers;
 
 	std::queue<FFiberJob> JobQueue;
-	std::mutex JobQueueMutex;
+	std::mutex SchedulerMutex;
 	std::condition_variable WakeCondition;
 };

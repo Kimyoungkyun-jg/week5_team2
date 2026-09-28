@@ -33,7 +33,10 @@ void FEditorControlsPanel::Tick(float DeltaTime)
 // 선택한 클래스의 액터를 월드에 생성한다.
 void FEditorControlsPanel::AddActor(uint32 Index)
 {
-	World->SpawnActor(Classes[Index]);
+	if (World && Index < static_cast<uint32>(Classes.Num()))
+	{
+		World->SpawnActor(Classes[Index]);
+	}
 }
 
 // 액터 생성·카메라 속성·기즈모·경로 추적 UI를 그린다.
@@ -64,7 +67,7 @@ void FEditorControlsPanel::OnRender()
 		CountText,
 		sizeof(CountText),
 		"%d Actors",
-		World->GetActorNum()
+		World ? World->GetActorNum() : 0
 	);
 
 	const float CountWidth = ImGui::CalcTextSize(CountText).x;
@@ -96,7 +99,7 @@ void FEditorControlsPanel::OnRender()
 	ImGui::Dummy(ImVec2(0.0f, SectionGap));
 	ImGui::SeparatorText("Gizmo");
 
-	if (ImGui::BeginTable("GizmoControls", 2))
+	if (Gizmo && ImGui::BeginTable("GizmoControls", 2))
 	{
 		ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, 70.0f);
 		ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);

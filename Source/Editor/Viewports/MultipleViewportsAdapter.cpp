@@ -736,7 +736,7 @@ void FMultipleViewportsAdapter::BuildRenderQueue(
 void FMultipleViewportsAdapter::BuildRenderPackets(
     const int32 ViewIndex, TArray<FRenderPacket>& OutPackets)
 {
-    OutQueue.Reset();
+    OutPackets.Reset();
     if (!IsViewActive(ViewIndex)) return;
     const PreparedView& View = PrepareView(ViewIndex);
     const FViewCamera RenderCamera = GetRenderCamera(ViewIndex);
@@ -751,12 +751,57 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
         IsViewWireframe(ViewIndex),
         VisiblePrimitives[ViewIndex],
         OcclusionStats[ViewIndex]);
-    for (UPrimitiveComponent* Primitive : VisiblePrimitives[ViewIndex])
+
+    const int32 TotalPrimitives = VisiblePrimitives[ViewIndex].Num();
+    if (TotalPrimitives == 0)
     {
-      LocalPackets[JobIndex][k].MVP = (LocalPackets[JobIndex][k].model * VP).GetTransposed();
-      LocalPackets[JobIndex][k].model = LocalPackets[JobIndex][k].model.GetTransposed();
+        OcclusionStats[ViewIndex].RenderPackets = 0;
+        return;
     }
-    OcclusionStats[ViewIndex].RenderPackets = OutQueue.Num();
+
+    const FMatrix& VP = View.EngineViewProjection;
+    const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+    const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
+    const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
+
+    std::vector<TArray<FRenderPacket>> LocalPackets(NumJobs);
+
+    FFiberJobManager::Get().ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
+    {
+        const int32 JobIndex = Start / ChunkSize;
+        LocalPackets[JobIndex].Reserve(End - Start);
+
+        for (int32 i = Start; i < End; ++i)
+        {
+            UPrimitiveComponent* Primitive = VisiblePrimitives[ViewIndex][i];
+            if (Primitive)
+            {
+                Primitive->SubmitToRenderPackets(LocalPackets[JobIndex]);
+            }
+        }
+
+        // 파이버 워커가 모델과 뷰프로젝션 행렬 곱셈 및 전치 수행
+        for (int32 k = 0; k < LocalPackets[JobIndex].Num(); ++k)
+        {
+            LocalPackets[JobIndex][k].MVP = (LocalPackets[JobIndex][k].model * VP).GetTransposed();
+            LocalPackets[JobIndex][k].model = LocalPackets[JobIndex][k].model.GetTransposed();
+        }
+    });
+
+    // 패킷 총량 계산 및 취합
+    int32 TotalPacketCount = 0;
+    for (int32 j = 0; j < NumJobs; ++j)
+    {
+        TotalPacketCount += LocalPackets[j].Num();
+    }
+
+    OutPackets.Reserve(TotalPacketCount);
+    for (int32 j = 0; j < NumJobs; ++j)
+    {
+        OutPackets.Append(LocalPackets[j]);
+    }
+
+    OcclusionStats[ViewIndex].RenderPackets = OutPackets.Num();
 }
 
 void FMultipleViewportsAdapter::AppendSoftwareOcclusionDebugBounds(FLineBatcher& LineBatcher) const

@@ -23,7 +23,7 @@ public:
 
 	float DeltaTime = 1.0f;
 	float CameraSpeed = 20.0f; // 기본 이동 속도
-	UWorld* World; // SpawnActor MainCamera
+	UWorld* World = nullptr; // 월드 포인터
 
 	void AddActor(uint32 Index);
 
@@ -31,7 +31,7 @@ public:
 
 	const char* Items[4] ={"StaticMesh","Particle","Text","Light"};
 
-	FGizmo* Gizmo;
+	FGizmo* Gizmo = nullptr;
 	int32 GizmoSelectedIndex = 0;
 	const char* GizmoItems[3] ={"Location","Rotation","Scale"};
 

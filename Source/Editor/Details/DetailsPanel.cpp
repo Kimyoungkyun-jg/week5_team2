@@ -40,7 +40,7 @@ namespace
 
 		// 드래그 슬라이더
 		ImGui::SameLine();
-		std::string dragID = "##" + _label;
+		FString dragID = "##" + _label;
 		isValueChanged |= ImGui::DragFloat(dragID.c_str(), &_value, _speed, _minValue, _maxValue, "%.2f");
 
 		return isValueChanged;

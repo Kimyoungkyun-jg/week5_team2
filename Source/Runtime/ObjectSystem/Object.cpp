@@ -101,7 +101,7 @@ void UObject::Serialize(json& Handle, bool bIsLoading)
 			case EPropertyType::String:
 			{
 				FString& Value = *static_cast<FString*>(Ptr);
-				if (bIsLoading) Value = Handle[Property.Name].get<std::string>();
+				if (bIsLoading) Value = Handle[Property.Name].get<FString>();
 				else Handle[Property.Name] = Value;
 				break;
 			}

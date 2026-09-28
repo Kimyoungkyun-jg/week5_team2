@@ -34,7 +34,7 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 	if (!AppleMesh) AppleMesh = UAssetManager::GetAssetByPath<UStaticMesh>("Cube");
 	if (!BittenAppleMesh) BittenAppleMesh = AppleMesh;
 
-	std::string Line;
+	FString Line;
 	bool bInPrimitives = false;
 	bool bInCamera = false;
 
@@ -47,17 +47,18 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 
 	int32 SpawnedCount = 0;
 
+	// 매 줄 읽기
 	while (std::getline(File, Line))
 	{
-		// PerspectiveCamera 섹션 시작
-		if (!bInPrimitives && Line.find("\"PerspectiveCamera\"") != std::string::npos)
+		// PerspectiveCamera 섹션 시작 발견
+		if (!bInPrimitives && Line.find("\"PerspectiveCamera\"") != FString::npos)
 		{
 			bInCamera = true;
 			continue;
 		}
 
-		// Primitives 섹션 시작
-		if (Line.find("\"Primitives\"") != std::string::npos)
+		// Primitives 섹션 시작 발견
+		if (Line.find("\"Primitives\"") != FString::npos)
 		{
 			bInCamera = false;
 			bInPrimitives = true;
@@ -67,7 +68,7 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 		// 카메라 데이터 파싱
 		if (bInCamera && World->GetMainCamera())
 		{
-			if (Line.find("\"Location\"") != std::string::npos)
+			if (Line.find("\"Location\"") != FString::npos)
 			{
 				float X = 0.0f, Y = 0.0f, Z = 0.0f;
 				if (const char* Bracket = strchr(Line.c_str(), '['))
@@ -82,7 +83,7 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 					}
 				}
 			}
-			else if (Line.find("\"Rotation\"") != std::string::npos)
+			else if (Line.find("\"Rotation\"") != FString::npos)
 			{
 				float R0 = 0.0f, R1 = 0.0f, R2 = 0.0f;
 				if (const char* Bracket = strchr(Line.c_str(), '['))
@@ -100,21 +101,21 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 					}
 				}
 			}
-			else if (Line.find("\"FOV\"") != std::string::npos)
+			else if (Line.find("\"FOV\"") != FString::npos)
 			{
 				float Fov = 60.0f;
 				if (const char* Bracket = strchr(Line.c_str(), '['))
 					if (sscanf(Bracket + 1, "%f", &Fov) >= 1 && World->GetMainCamera()->GetCameraComponent())
 						World->GetMainCamera()->GetCameraComponent()->SetFieldOfView(Fov);
 			}
-			else if (Line.find("\"NearClip\"") != std::string::npos)
+			else if (Line.find("\"NearClip\"") != FString::npos)
 			{
 				float NearZ = 0.1f;
 				if (const char* Bracket = strchr(Line.c_str(), '['))
 					if (sscanf(Bracket + 1, "%f", &NearZ) >= 1 && World->GetMainCamera()->GetCameraComponent())
 						World->GetMainCamera()->GetCameraComponent()->SetNearZ(NearZ);
 			}
-			else if (Line.find("\"FarClip\"") != std::string::npos)
+			else if (Line.find("\"FarClip\"") != FString::npos)
 			{
 				float FarZ = 100.0f;
 				if (const char* Bracket = strchr(Line.c_str(), '['))
@@ -128,16 +129,16 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 		if (bInPrimitives)
 		{
 			// 새로운 UUID 항목 시작 확인
-			if (Line.find('{') != std::string::npos)
+			if (Line.find('{') != FString::npos)
 			{
 				// 숫자 UUID 추출
 				size_t Q1 = Line.find('\"');
-				if (Q1 != std::string::npos)
+				if (Q1 != FString::npos)
 				{
 					size_t Q2 = Line.find('\"', Q1 + 1);
-					if (Q2 != std::string::npos)
+					if (Q2 != FString::npos)
 					{
-						std::string Key = Line.substr(Q1 + 1, Q2 - Q1 - 1);
+						FString Key = Line.substr(Q1 + 1, Q2 - Q1 - 1);
 						char* EndPtr = nullptr;
 						uint32 Uid = static_cast<uint32>(strtoul(Key.c_str(), &EndPtr, 10));
 						if (Uid > 0 && EndPtr == Key.c_str() + Key.length())
@@ -156,7 +157,7 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 
 			if (bHasObject)
 			{
-				if (Line.find("\"Location\"") != std::string::npos)
+				if (Line.find("\"Location\"") != FString::npos)
 				{
 					if (const char* Bracket = strchr(Line.c_str(), '['))
 					{
@@ -168,7 +169,7 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 						}
 					}
 				}
-				else if (Line.find("\"Rotation\"") != std::string::npos)
+				else if (Line.find("\"Rotation\"") != FString::npos)
 				{
 					if (const char* Bracket = strchr(Line.c_str(), '['))
 					{
@@ -180,7 +181,7 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 						}
 					}
 				}
-				else if (Line.find("\"Scale\"") != std::string::npos)
+				else if (Line.find("\"Scale\"") != FString::npos)
 				{
 					if (const char* Bracket = strchr(Line.c_str(), '['))
 					{
@@ -192,14 +193,14 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 						}
 					}
 				}
-				else if (Line.find("\"ObjStaticMeshAsset\"") != std::string::npos)
+				else if (Line.find("\"ObjStaticMeshAsset\"") != FString::npos)
 				{
-					if (Line.find("bitten") != std::string::npos)
+					if (Line.find("bitten") != FString::npos)
 					{
 						bIsBitten = true;
 					}
 				}
-				else if (Line.find('}') != std::string::npos)
+				else if (Line.find('}') != FString::npos)
 				{
 					// 오브젝트 파싱 완료 -> 즉시 스폰
 					FTransform SpawnTransform;

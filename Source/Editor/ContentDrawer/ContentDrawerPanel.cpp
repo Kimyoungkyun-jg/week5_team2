@@ -80,8 +80,8 @@ void FContentDrawerPanel::OnRender()
 
 				ImGui::TableNextColumn();
 
-				std::string PathString = Path.generic_string();
-				std::string FilenameString = Path.filename().string();
+				FString PathString = Path.generic_string();
+				FString FilenameString = Path.filename().string();
 
 				ImGui::PushID(PathString.c_str()); // 각 위젯에 고유 ID 부여
 				UTexture2D* Thumbnail = nullptr;

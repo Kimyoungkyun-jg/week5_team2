@@ -63,6 +63,11 @@ void FSettingsPanel::OnRender()
 		ImGui::SliderInt("Triangle Budget", &Settings.SoftwareOcclusionTriangleBudget, 10000, 1000000);
 		ImGui::SetNextItemWidth(220.0f);
 		ImGui::SliderFloat("Occlusion CPU Budget (ms)", &Settings.SoftwareOcclusionCpuBudgetMs, 0.0f, 16.0f, "%.1f");
+		ImGui::SetNextItemWidth(220.0f);
+		ImGui::SliderFloat("Box Distance Threshold", &Settings.SoftwareOcclusionBoxDistanceThreshold, 0.0f, 100.0f, "%.1f m");
+		const int32 ActiveViewIndex = ViewportAdapter->GetSingleViewIndex();
+		const FSoftwareOcclusionStats& Stats = ViewportAdapter->GetSoftwareOcclusionStats(ActiveViewIndex);
+		ImGui::Text("Nearest Occluder: %.2f m (%s)", Stats.NearestOccluderDistance, Stats.bUsingMeshOccluder ? "Mesh" : "Box");
 		ImGui::Checkbox("Debug Occlusion Bounds", &Settings.bSoftwareOcclusionDebugBounds);
 		bool bShowOcclusionStats = FStatOverlay::IsEnabled(EStatFlags::Occlusion);
 		if (ImGui::Checkbox("Show Occlusion Stats", &bShowOcclusionStats))
@@ -74,6 +79,7 @@ void FSettingsPanel::OnRender()
 		Occlusion.MinimumOccluderTiles = Settings.SoftwareOcclusionMinimumTiles;
 		Occlusion.TriangleBudget = static_cast<uint32>(std::max(0, Settings.SoftwareOcclusionTriangleBudget));
 		Occlusion.CpuTimeBudgetMs = Settings.SoftwareOcclusionCpuBudgetMs;
+		Occlusion.BoxOccluderDistanceThreshold = Settings.SoftwareOcclusionBoxDistanceThreshold;
 		Occlusion.bDebugBounds = Settings.bSoftwareOcclusionDebugBounds;
 		ViewportAdapter->SetSoftwareOcclusionSettings(Occlusion);
 	}
@@ -157,6 +163,7 @@ bool FSettingsPanel::SaveSettings() const
 	File << "SoftwareOcclusionMinimumTiles=" << Snapshot.SoftwareOcclusionMinimumTiles << "\n";
 	File << "SoftwareOcclusionTriangleBudget=" << Snapshot.SoftwareOcclusionTriangleBudget << "\n";
 	File << "SoftwareOcclusionCpuBudgetMs=" << Snapshot.SoftwareOcclusionCpuBudgetMs << "\n";
+	File << "SoftwareOcclusionBoxDistanceThreshold=" << Snapshot.SoftwareOcclusionBoxDistanceThreshold << "\n";
 	File << "SoftwareOcclusionDebugBounds=" << Snapshot.bSoftwareOcclusionDebugBounds << "\n";
 	File << "\n";
 
@@ -287,6 +294,7 @@ bool FSettingsPanel::LoadSettings()
 				else if (Key == "SoftwareOcclusionMinimumTiles") Settings.SoftwareOcclusionMinimumTiles = std::max(1, std::stoi(ValueStr));
 				else if (Key == "SoftwareOcclusionTriangleBudget") Settings.SoftwareOcclusionTriangleBudget = std::max(0, std::stoi(ValueStr));
 				else if (Key == "SoftwareOcclusionCpuBudgetMs") Settings.SoftwareOcclusionCpuBudgetMs = std::max(0.0f, std::stof(ValueStr));
+				else if (Key == "SoftwareOcclusionBoxDistanceThreshold") Settings.SoftwareOcclusionBoxDistanceThreshold = std::max(0.0f, std::stof(ValueStr));
 				else if (Key == "SoftwareOcclusionDebugBounds") Settings.bSoftwareOcclusionDebugBounds = std::stoi(ValueStr) != 0;
 
 				else if (Key == "CameraMoveSpeed") Settings.CameraSpeed = std::stof(ValueStr);
@@ -342,6 +350,7 @@ void FSettingsPanel::ReadViewportSettings(FEditorSettings& Out) const
 	Out.SoftwareOcclusionMinimumTiles = Occlusion.MinimumOccluderTiles;
 	Out.SoftwareOcclusionTriangleBudget = static_cast<int32>(Occlusion.TriangleBudget);
 	Out.SoftwareOcclusionCpuBudgetMs = Occlusion.CpuTimeBudgetMs;
+	Out.SoftwareOcclusionBoxDistanceThreshold = Occlusion.BoxOccluderDistanceThreshold;
 	Out.bSoftwareOcclusionDebugBounds = Occlusion.bDebugBounds;
     Out.MultipleViewportsHorizontal = ViewportAdapter->GetSplitRatio().Horizontal;
     Out.MultipleViewportsVertical = ViewportAdapter->GetSplitRatio().Vertical;
@@ -374,6 +383,7 @@ void FSettingsPanel::ApplyViewportSettings()
 	Occlusion.MinimumOccluderTiles = Settings.SoftwareOcclusionMinimumTiles;
 	Occlusion.TriangleBudget = static_cast<uint32>(std::max(0, Settings.SoftwareOcclusionTriangleBudget));
 	Occlusion.CpuTimeBudgetMs = Settings.SoftwareOcclusionCpuBudgetMs;
+	Occlusion.BoxOccluderDistanceThreshold = Settings.SoftwareOcclusionBoxDistanceThreshold;
 	Occlusion.bDebugBounds = Settings.bSoftwareOcclusionDebugBounds;
 	ViewportAdapter->SetSoftwareOcclusionSettings(Occlusion);
     ViewportAdapter->SetSplitRatio({Settings.MultipleViewportsHorizontal, Settings.MultipleViewportsVertical});

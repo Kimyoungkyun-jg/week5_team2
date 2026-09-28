@@ -21,10 +21,13 @@ struct FSoftwareOcclusionSettings
     float CpuTimeBudgetMs = 4.0f;
     float DepthBias = 0.0001f;
     bool bDebugBounds = false;
+    float BoxOccluderDistanceThreshold = 10.0f;
 };
 
 struct FSoftwareOcclusionStats
 {
+    float NearestOccluderDistance = 0.0f;
+    bool bUsingMeshOccluder = false;
     uint32 CapturedPrimitives = 0;
     uint32 StaticObjects = 0;
     uint32 DynamicObjects = 0;
@@ -218,7 +221,7 @@ private:
     bool QueryHZBCell(int32 Level, int32 X, int32 Y, int32 MinTileX, int32 MinTileY, int32 MaxTileX, int32 MaxTileY, float NearestDepth) const;
     bool QueryEdgeSubcells(const FProjectedBounds& Bounds, int32 FullMinX, int32 FullMinY, int32 FullMaxX, int32 FullMaxY) const;
 
-    void RasterizeOccluder(const FRenderableObject& Object, const FProjectedBounds& Projected);
+    void RasterizeOccluder(const FRenderableObject& Object, const FProjectedBounds& Projected, bool bUseMesh = false);
     void RasterizeClippedTriangle(const FVector4& A, const FVector4& B, const FVector4& C);
     void UpdateDirtyHZB();
     void UpdateHZBParent(int32 Level, int32 X, int32 Y);

@@ -24,6 +24,7 @@ struct FEditorSettings
 	int32 SoftwareOcclusionTriangleBudget = 500000;
 	float SoftwareOcclusionCpuBudgetMs = 4.0f;
 	bool bSoftwareOcclusionDebugBounds = false;
+	float SoftwareOcclusionBoxDistanceThreshold = 10.0f;
 
 	// Values
 	float CameraSpeed = 1.0f;

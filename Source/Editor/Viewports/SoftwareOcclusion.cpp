@@ -895,7 +895,7 @@ void FSoftwareOcclusionCuller::RasterizeClippedTriangle(const FVector4& A, const
     }
 }
 
-void FSoftwareOcclusionCuller::RasterizeOccluder(const FRenderableObject& Object, const FProjectedBounds& Projected)
+void FSoftwareOcclusionCuller::RasterizeOccluder(const FRenderableObject& Object, const FProjectedBounds& Projected, const bool bUseMesh)
 {
     if (!Object.StaticMeshData || !Projected.bValid || Projected.bUncertain || !bAllowRasterization)
         return;
@@ -912,7 +912,12 @@ void FSoftwareOcclusionCuller::RasterizeOccluder(const FRenderableObject& Object
         return;
     }
 
-    constexpr uint32 TriangleCount = 12;
+    const FStaticMeshData& Mesh = *Object.StaticMeshData;
+    const int32 NumVerts = Mesh.Vertices.Num();
+    const int32 NumIndices = Mesh.Indices.Num();
+    const bool bValidMesh = bUseMesh && NumVerts > 0 && NumIndices >= 3;
+    const uint32 TriangleCount = bValidMesh ? static_cast<uint32>(NumIndices / 3) : 12;
+
     if (UsedTriangles + TriangleCount > Settings.TriangleBudget)
     {
         ActiveStats->bTriangleBudgetExceeded = true;
@@ -924,96 +929,164 @@ void FSoftwareOcclusionCuller::RasterizeOccluder(const FRenderableObject& Object
     ++ActiveStats->OccludersRasterized;
 
     const FMatrix ModelViewProjection = Object.WorldMatrix * CurrentViewProjection;
-    const FBox& Box = Object.StaticMeshData->AABB;
-    const bool bValidBox = Box.Min.X < Box.Max.X && Box.Min.Y < Box.Max.Y && Box.Min.Z < Box.Max.Z;
 
-    // 바운딩 박스 정점 변환
-    TransformedVertices.SetNum(8, false);
-    if (bValidBox)
+    if (bValidMesh)
     {
-        const FVector LocalCorners[8] = {
-            { Box.Min.X, Box.Min.Y, Box.Min.Z },
-            { Box.Max.X, Box.Min.Y, Box.Min.Z },
-            { Box.Min.X, Box.Max.Y, Box.Min.Z },
-            { Box.Max.X, Box.Max.Y, Box.Min.Z },
-            { Box.Min.X, Box.Min.Y, Box.Max.Z },
-            { Box.Max.X, Box.Min.Y, Box.Max.Z },
-            { Box.Min.X, Box.Max.Y, Box.Max.Z },
-            { Box.Max.X, Box.Max.Y, Box.Max.Z }
-        };
-        for (int32 i = 0; i < 8; ++i)
+        // 정점 메시 변환 및 클리핑
+        TransformedVertices.SetNum(NumVerts, false);
+        for (int32 i = 0; i < NumVerts; ++i)
         {
-            TransformedVertices[i] = FVector4(LocalCorners[i], 1.0f) * ModelViewProjection;
+            TransformedVertices[i] = FVector4(Mesh.Vertices[i].Position, 1.0f) * ModelViewProjection;
+        }
+
+        for (int32 Index = 0; Index + 2 < NumIndices; Index += 3)
+        {
+            const uint32 I0 = Mesh.Indices[Index];
+            const uint32 I1 = Mesh.Indices[Index + 1];
+            const uint32 I2 = Mesh.Indices[Index + 2];
+            if (I0 >= static_cast<uint32>(NumVerts) ||
+                I1 >= static_cast<uint32>(NumVerts) ||
+                I2 >= static_cast<uint32>(NumVerts))
+            {
+                continue;
+            }
+
+            FVector4 PolygonA[16]{};
+            FVector4 PolygonB[16]{};
+            PolygonA[0] = TransformedVertices[I0];
+            PolygonA[1] = TransformedVertices[I1];
+            PolygonA[2] = TransformedVertices[I2];
+            int32 VertexCount = 3;
+            FVector4* Input = PolygonA;
+            FVector4* Output = PolygonB;
+            for (int32 Plane = 0; Plane < 6 && VertexCount > 0; ++Plane)
+            {
+                int32 OutputCount = 0;
+                FVector4 Previous = Input[VertexCount - 1];
+                float PreviousDistance = ClipPlaneDistance(Previous, Plane);
+                bool bPreviousInside = PreviousDistance >= 0.0f;
+                for (int32 Vertex = 0; Vertex < VertexCount; ++Vertex)
+                {
+                    const FVector4 Current = Input[Vertex];
+                    const float CurrentDistance = ClipPlaneDistance(Current, Plane);
+                    const bool bCurrentInside = CurrentDistance >= 0.0f;
+                    if (bCurrentInside != bPreviousInside)
+                    {
+                        const float T = PreviousDistance / (PreviousDistance - CurrentDistance);
+                        Output[OutputCount++] = LerpClip(Previous, Current, T);
+                    }
+                    if (bCurrentInside)
+                    {
+                        Output[OutputCount++] = Current;
+                    }
+                    Previous = Current;
+                    PreviousDistance = CurrentDistance;
+                    bPreviousInside = bCurrentInside;
+                }
+                VertexCount = OutputCount;
+                std::swap(Input, Output);
+            }
+
+            for (int32 Triangle = 1; Triangle + 1 < VertexCount; ++Triangle)
+            {
+                RasterizeClippedTriangle(Input[0], Input[Triangle], Input[Triangle + 1]);
+                ++ActiveStats->ClippedTriangles;
+            }
         }
     }
     else
     {
-        FVector WorldCorners[8];
-        GetBoundsCorners(Object.WorldBounds, WorldCorners);
-        for (int32 i = 0; i < 8; ++i)
+        const FBox& Box = Object.StaticMeshData->AABB;
+        const bool bValidBox = Box.Min.X < Box.Max.X && Box.Min.Y < Box.Max.Y && Box.Min.Z < Box.Max.Z;
+
+        // 바운딩 박스 정점 변환
+        TransformedVertices.SetNum(8, false);
+        if (bValidBox)
         {
-            TransformedVertices[i] = FVector4(WorldCorners[i], 1.0f) * CurrentViewProjection;
-        }
-    }
-
-    static constexpr uint32 BoxIndices[36] = {
-        7, 5, 1,  7, 1, 3,
-        4, 6, 2,  4, 2, 0,
-        6, 7, 3,  6, 3, 2,
-        5, 4, 0,  5, 0, 1,
-        4, 5, 7,  4, 7, 6,
-        0, 2, 3,  0, 3, 1
-    };
-
-    // 바운딩 박스 인덱스 순회
-    for (int32 Index = 0; Index + 2 < 36; Index += 3)
-    {
-        const uint32 I0 = BoxIndices[Index];
-        const uint32 I1 = BoxIndices[Index + 1];
-        const uint32 I2 = BoxIndices[Index + 2];
-        if (I0 >= static_cast<uint32>(TransformedVertices.Num()) ||
-            I1 >= static_cast<uint32>(TransformedVertices.Num()) ||
-            I2 >= static_cast<uint32>(TransformedVertices.Num()))
-            continue;
-
-        FVector4 PolygonA[16]{};
-        FVector4 PolygonB[16]{};
-        PolygonA[0] = TransformedVertices[I0];
-        PolygonA[1] = TransformedVertices[I1];
-        PolygonA[2] = TransformedVertices[I2];
-        int32 VertexCount = 3;
-        FVector4* Input = PolygonA;
-        FVector4* Output = PolygonB;
-        for (int32 Plane = 0; Plane < 6 && VertexCount > 0; ++Plane)
-        {
-            int32 OutputCount = 0;
-            FVector4 Previous = Input[VertexCount - 1];
-            float PreviousDistance = ClipPlaneDistance(Previous, Plane);
-            bool bPreviousInside = PreviousDistance >= 0.0f;
-            for (int32 Vertex = 0; Vertex < VertexCount; ++Vertex)
+            const FVector LocalCorners[8] = {
+                { Box.Min.X, Box.Min.Y, Box.Min.Z },
+                { Box.Max.X, Box.Min.Y, Box.Min.Z },
+                { Box.Min.X, Box.Max.Y, Box.Min.Z },
+                { Box.Max.X, Box.Max.Y, Box.Min.Z },
+                { Box.Min.X, Box.Min.Y, Box.Max.Z },
+                { Box.Max.X, Box.Min.Y, Box.Max.Z },
+                { Box.Min.X, Box.Max.Y, Box.Max.Z },
+                { Box.Max.X, Box.Max.Y, Box.Max.Z }
+            };
+            for (int32 i = 0; i < 8; ++i)
             {
-                const FVector4 Current = Input[Vertex];
-                const float CurrentDistance = ClipPlaneDistance(Current, Plane);
-                const bool bCurrentInside = CurrentDistance >= 0.0f;
-                if (bCurrentInside != bPreviousInside)
-                {
-                    const float T = PreviousDistance / (PreviousDistance - CurrentDistance);
-                    Output[OutputCount++] = LerpClip(Previous, Current, T);
-                }
-                if (bCurrentInside)
-                    Output[OutputCount++] = Current;
-                Previous = Current;
-                PreviousDistance = CurrentDistance;
-                bPreviousInside = bCurrentInside;
+                TransformedVertices[i] = FVector4(LocalCorners[i], 1.0f) * ModelViewProjection;
             }
-            VertexCount = OutputCount;
-            std::swap(Input, Output);
+        }
+        else
+        {
+            FVector WorldCorners[8];
+            GetBoundsCorners(Object.WorldBounds, WorldCorners);
+            for (int32 i = 0; i < 8; ++i)
+            {
+                TransformedVertices[i] = FVector4(WorldCorners[i], 1.0f) * CurrentViewProjection;
+            }
         }
 
-        for (int32 Triangle = 1; Triangle + 1 < VertexCount; ++Triangle)
+        static constexpr uint32 BoxIndices[36] = {
+            7, 5, 1,  7, 1, 3,
+            4, 6, 2,  4, 2, 0,
+            6, 7, 3,  6, 3, 2,
+            5, 4, 0,  5, 0, 1,
+            4, 5, 7,  4, 7, 6,
+            0, 2, 3,  0, 3, 1
+        };
+
+        // 바운딩 박스 인덱스 순회
+        for (int32 Index = 0; Index + 2 < 36; Index += 3)
         {
-            RasterizeClippedTriangle(Input[0], Input[Triangle], Input[Triangle + 1]);
-            ++ActiveStats->ClippedTriangles;
+            const uint32 I0 = BoxIndices[Index];
+            const uint32 I1 = BoxIndices[Index + 1];
+            const uint32 I2 = BoxIndices[Index + 2];
+            if (I0 >= static_cast<uint32>(TransformedVertices.Num()) ||
+                I1 >= static_cast<uint32>(TransformedVertices.Num()) ||
+                I2 >= static_cast<uint32>(TransformedVertices.Num()))
+                continue;
+
+            FVector4 PolygonA[16]{};
+            FVector4 PolygonB[16]{};
+            PolygonA[0] = TransformedVertices[I0];
+            PolygonA[1] = TransformedVertices[I1];
+            PolygonA[2] = TransformedVertices[I2];
+            int32 VertexCount = 3;
+            FVector4* Input = PolygonA;
+            FVector4* Output = PolygonB;
+            for (int32 Plane = 0; Plane < 6 && VertexCount > 0; ++Plane)
+            {
+                int32 OutputCount = 0;
+                FVector4 Previous = Input[VertexCount - 1];
+                float PreviousDistance = ClipPlaneDistance(Previous, Plane);
+                bool bPreviousInside = PreviousDistance >= 0.0f;
+                for (int32 Vertex = 0; Vertex < VertexCount; ++Vertex)
+                {
+                    const FVector4 Current = Input[Vertex];
+                    const float CurrentDistance = ClipPlaneDistance(Current, Plane);
+                    const bool bCurrentInside = CurrentDistance >= 0.0f;
+                    if (bCurrentInside != bPreviousInside)
+                    {
+                        const float T = PreviousDistance / (PreviousDistance - CurrentDistance);
+                        Output[OutputCount++] = LerpClip(Previous, Current, T);
+                    }
+                    if (bCurrentInside)
+                        Output[OutputCount++] = Current;
+                    Previous = Current;
+                    PreviousDistance = CurrentDistance;
+                    bPreviousInside = bCurrentInside;
+                }
+                VertexCount = OutputCount;
+                std::swap(Input, Output);
+            }
+
+            for (int32 Triangle = 1; Triangle + 1 < VertexCount; ++Triangle)
+            {
+                RasterizeClippedTriangle(Input[0], Input[Triangle], Input[Triangle + 1]);
+                ++ActiveStats->ClippedTriangles;
+            }
         }
     }
     UpdateDirtyHZB();
@@ -1310,205 +1383,128 @@ void FSoftwareOcclusionCuller::Cull(
             // 기수 정렬 수행
             RadixSortCandidateDistances(CandidateDistances, CandidateDistancesTemp);
 
-            // 오클루더 선별
-            OccluderIndices.Reset();
-            const uint32 MaxOccluders = 1000;
+            const float NearestDistance = CandidateDistances.IsEmpty() ? 0.0f : std::sqrt(CandidateDistances[0].DistSq);
+            OutStats.NearestOccluderDistance = NearestDistance;
+            const float BoxThresholdSq = Settings.BoxOccluderDistanceThreshold * Settings.BoxOccluderDistanceThreshold;
+            const bool bUsingMesh = CandidateDistances[0].DistSq <= BoxThresholdSq;
+            OutStats.bUsingMeshOccluder = bUsingMesh;
 
-            for (const FCandidateDistance& Item : CandidateDistances)
+            if (!bUsingMesh)
             {
-                if (OccluderIndices.Num() >= static_cast<int32>(MaxOccluders))
+                // 거리 기준 박스 차폐막
+                uint32 RasterizedCount = 0;
+                const uint32 MaxOccluders = 1000;
+
+                for (const FCandidateDistance& Item : CandidateDistances)
                 {
-                    break;
-                }
-
-                const uint32 Index = Item.Index;
-                const FRenderableObject& Object = Objects[Index];
-
-                if (!Object.bCanOcclude || !Object.StaticMeshData || !Object.Primitive)
-                {
-                    continue;
-                }
-
-                const uint32 InternalIndex = Object.Primitive->GetInternalIndex();
-                bool bStatic = false;
-                if (InternalIndex < static_cast<uint32>(ObjectStates.Num()))
-                {
-                    const FObjectState& State = ObjectStates[InternalIndex];
-                    bStatic = (State.SerialNumber == Object.Primitive->GetSerialNumber()) && !State.bDynamic;
-                }
-
-                if (!bStatic)
-                {
-                    continue;
-                }
-
-                const FProjectedBounds Projected = ProjectBounds(Object.WorldBounds);
-                if (!Projected.bValid || Projected.bUncertain)
-                {
-                    continue;
-                }
-
-                const int32 TileWidth = static_cast<int32>(std::ceil((Projected.MaxX - Projected.MinX) / Settings.TileSize));
-                const int32 TileHeight = static_cast<int32>(std::ceil((Projected.MaxY - Projected.MinY) / Settings.TileSize));
-                if (TileWidth * TileHeight < Settings.MinimumOccluderTiles)
-                {
-                    continue;
-                }
-
-                OccluderIndices.Add(Index);
-            }
-
-            const int32 NumOccluders = OccluderIndices.Num();
-            if (NumOccluders > 0)
-            {
-                const int32 OccluderChunkSize = (NumOccluders + NumWorkers - 1) / NumWorkers;
-                const int32 NumJobs = (NumOccluders + OccluderChunkSize - 1) / OccluderChunkSize;
-
-                if (WorkerClippedTriangleBuffers.Num() < NumJobs)
-                {
-                    WorkerClippedTriangleBuffers.SetNum(NumJobs);
-                }
-                for (int32 i = 0; i < NumJobs; ++i)
-                {
-                    WorkerClippedTriangleBuffers[i].Reset();
-                }
-
-                // 기하 변환 및 클리핑 병렬 수행
-                FFiberJobManager::Get().ParallelFor(NumOccluders, OccluderChunkSize, [&](int32 Start, int32 End)
-                {
-                    const int32 JobIndex = Start / OccluderChunkSize;
-                    TArray<FClippedTriangle>& LocalTriangles = WorkerClippedTriangleBuffers[JobIndex];
-                    LocalTriangles.Reserve((End - Start) * 12);
-
-                    static constexpr uint32 BoxIndices[36] = {
-                        7, 5, 1,  7, 1, 3,
-                        4, 6, 2,  4, 2, 0,
-                        6, 7, 3,  6, 3, 2,
-                        5, 4, 0,  5, 0, 1,
-                        4, 5, 7,  4, 7, 6,
-                        0, 2, 3,  0, 3, 1
-                    };
-
-                    for (int32 i = Start; i < End; ++i)
-                    {
-                        const uint32 Index = OccluderIndices[i];
-                        const FRenderableObject& Object = Objects[Index];
-
-                        FVector4 Verts[8];
-                        const FMatrix MVP = Object.WorldMatrix * CurrentViewProjection;
-                        const FBox& Box = Object.StaticMeshData->AABB;
-                        const bool bValidBox = Box.Min.X < Box.Max.X && Box.Min.Y < Box.Max.Y && Box.Min.Z < Box.Max.Z;
-                        if (bValidBox)
-                        {
-                            const FVector LocalCorners[8] = {
-                                { Box.Min.X, Box.Min.Y, Box.Min.Z },
-                                { Box.Max.X, Box.Min.Y, Box.Min.Z },
-                                { Box.Min.X, Box.Max.Y, Box.Min.Z },
-                                { Box.Max.X, Box.Max.Y, Box.Min.Z },
-                                { Box.Min.X, Box.Min.Y, Box.Max.Z },
-                                { Box.Max.X, Box.Min.Y, Box.Max.Z },
-                                { Box.Min.X, Box.Max.Y, Box.Max.Z },
-                                { Box.Max.X, Box.Max.Y, Box.Max.Z }
-                            };
-                            for (int32 c = 0; c < 8; ++c)
-                            {
-                                Verts[c] = FVector4(LocalCorners[c], 1.0f) * MVP;
-                            }
-                        }
-                        else
-                        {
-                            FVector WorldCorners[8];
-                            GetBoundsCorners(Object.WorldBounds, WorldCorners);
-                            for (int32 c = 0; c < 8; ++c)
-                            {
-                                Verts[c] = FVector4(WorldCorners[c], 1.0f) * CurrentViewProjection;
-                            }
-                        }
-
-                        for (int32 tri = 0; tri < 36; tri += 3)
-                        {
-                            const uint32 I0 = BoxIndices[tri];
-                            const uint32 I1 = BoxIndices[tri + 1];
-                            const uint32 I2 = BoxIndices[tri + 2];
-
-                            FVector4 PolygonA[16]{};
-                            FVector4 PolygonB[16]{};
-                            PolygonA[0] = Verts[I0];
-                            PolygonA[1] = Verts[I1];
-                            PolygonA[2] = Verts[I2];
-                            int32 VertexCount = 3;
-                            FVector4* Input = PolygonA;
-                            FVector4* Output = PolygonB;
-
-                            for (int32 Plane = 0; Plane < 6 && VertexCount > 0; ++Plane)
-                            {
-                                int32 OutputCount = 0;
-                                FVector4 Previous = Input[VertexCount - 1];
-                                float PreviousDistance = ClipPlaneDistance(Previous, Plane);
-                                bool bPreviousInside = PreviousDistance >= 0.0f;
-                                for (int32 Vertex = 0; Vertex < VertexCount; ++Vertex)
-                                {
-                                    const FVector4 Current = Input[Vertex];
-                                    const float CurrentDistance = ClipPlaneDistance(Current, Plane);
-                                    const bool bCurrentInside = CurrentDistance >= 0.0f;
-                                    if (bCurrentInside != bPreviousInside)
-                                    {
-                                        const float T = PreviousDistance / (PreviousDistance - CurrentDistance);
-                                        Output[OutputCount++] = LerpClip(Previous, Current, T);
-                                    }
-                                    if (bCurrentInside)
-                                    {
-                                        Output[OutputCount++] = Current;
-                                    }
-                                    Previous = Current;
-                                    PreviousDistance = CurrentDistance;
-                                    bPreviousInside = bCurrentInside;
-                                }
-                                VertexCount = OutputCount;
-                                std::swap(Input, Output);
-                            }
-
-                            for (int32 t = 1; t + 1 < VertexCount; ++t)
-                            {
-                                LocalTriangles.Add({ Input[0], Input[t], Input[t + 1] });
-                            }
-                        }
-                    }
-                });
-
-                // 클리핑된 삼각형 래스터화
-                ActiveStats->OccludersRasterized = NumOccluders;
-                ActiveStats->SourceTriangles = NumOccluders * 12;
-
-                for (int32 JobIndex = 0; JobIndex < NumJobs; ++JobIndex)
-                {
-                    const TArray<FClippedTriangle>& Triangles = WorkerClippedTriangleBuffers[JobIndex];
-                    ActiveStats->ClippedTriangles += Triangles.Num();
-                    for (const FClippedTriangle& Tri : Triangles)
-                    {
-                        if (UsedTriangles >= Settings.TriangleBudget)
-                        {
-                            ActiveStats->bTriangleBudgetExceeded = true;
-                            break;
-                        }
-                        if (Settings.CpuTimeBudgetMs > 0.0f && (NowSeconds() - CullStartSeconds) * 1000.0 > Settings.CpuTimeBudgetMs)
-                        {
-                            bAllowRasterization = false;
-                            ActiveStats->bCpuBudgetExceeded = true;
-                            break;
-                        }
-
-                        RasterizeClippedTriangle(Tri.V0, Tri.V1, Tri.V2);
-                        ++UsedTriangles;
-                    }
-                    if (!bAllowRasterization || ActiveStats->bTriangleBudgetExceeded)
+                    if (!bAllowRasterization || RasterizedCount >= MaxOccluders)
                     {
                         break;
                     }
-                }
 
-                UpdateDirtyHZB();
+                    const uint32 Index = Item.Index;
+                    const FRenderableObject& Object = Objects[Index];
+
+                    if (!Object.bCanOcclude || !Object.StaticMeshData || !Object.Primitive)
+                    {
+                        continue;
+                    }
+
+                    const uint32 InternalIndex = Object.Primitive->GetInternalIndex();
+                    bool bStatic = false;
+                    if (InternalIndex < static_cast<uint32>(ObjectStates.Num()))
+                    {
+                        const FObjectState& State = ObjectStates[InternalIndex];
+                        bStatic = (State.SerialNumber == Object.Primitive->GetSerialNumber()) && !State.bDynamic;
+                    }
+
+                    if (!bStatic)
+                    {
+                        continue;
+                    }
+
+                    const FProjectedBounds Projected = ProjectBounds(Object.WorldBounds);
+                    if (!Projected.bValid || Projected.bUncertain)
+                    {
+                        continue;
+                    }
+
+                    if (RasterizedCount > 0 && IsOccluded(Projected, true))
+                    {
+                        continue;
+                    }
+
+                    const uint32 PrevRasterized = ActiveStats->OccludersRasterized;
+                    RasterizeOccluder(Object, Projected, false);
+                    if (ActiveStats->OccludersRasterized > PrevRasterized)
+                    {
+                        ++RasterizedCount;
+                    }
+                }
             }
+            else
+            {
+                // 거리 기준 정점 메시 차폐막
+                uint32 RasterizedCount = 0;
+                uint32 MeshRasterizedCount = 0;
+                const uint32 MaxOccluders = 1000;
+                constexpr uint32 MaxMeshOccluders = 64;
+
+                for (const FCandidateDistance& Item : CandidateDistances)
+                {
+                    if (!bAllowRasterization || RasterizedCount >= MaxOccluders)
+                    {
+                        break;
+                    }
+
+                    const uint32 Index = Item.Index;
+                    const FRenderableObject& Object = Objects[Index];
+
+                    if (!Object.bCanOcclude || !Object.StaticMeshData || !Object.Primitive)
+                    {
+                        continue;
+                    }
+
+                    const uint32 InternalIndex = Object.Primitive->GetInternalIndex();
+                    bool bStatic = false;
+                    if (InternalIndex < static_cast<uint32>(ObjectStates.Num()))
+                    {
+                        const FObjectState& State = ObjectStates[InternalIndex];
+                        bStatic = (State.SerialNumber == Object.Primitive->GetSerialNumber()) && !State.bDynamic;
+                    }
+
+                    if (!bStatic)
+                    {
+                        continue;
+                    }
+
+                    const FProjectedBounds Projected = ProjectBounds(Object.WorldBounds);
+                    if (!Projected.bValid || Projected.bUncertain)
+                    {
+                        continue;
+                    }
+
+                    if (RasterizedCount > 0 && IsOccluded(Projected, true))
+                    {
+                        continue;
+                    }
+
+                    if (MeshRasterizedCount >= MaxMeshOccluders)
+                    {
+                        break;
+                    }
+
+                    const uint32 PrevRasterized = ActiveStats->OccludersRasterized;
+                    RasterizeOccluder(Object, Projected, true);
+                    if (ActiveStats->OccludersRasterized > PrevRasterized)
+                    {
+                        ++RasterizedCount;
+                        ++MeshRasterizedCount;
+                    }
+                }
+            }
+
+            UpdateDirtyHZB();
 
             // 가시성 병렬 판정
             const int32 QueryChunkSize = (TotalCandidates + NumWorkers - 1) / NumWorkers;

@@ -3,6 +3,7 @@
 #include "Editor/LevelEditor/MultipleViewports/Adapter/MultipleViewportsAdapter.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
+#include "Core/StatOverlay.h"
 
 #include "Engine/World.h"
 
@@ -45,6 +46,37 @@ void FSettingsPanel::OnRender()
 	ImGui::Checkbox("Draw Primitives", &Settings.bDrawPrimitives);
 	ImGui::Checkbox("Draw Bounding Box", &Settings.bDrawBoundingBox);
 	ImGui::Checkbox("Show Object UUID", &Settings.bShowUUID);
+
+	if (ViewportAdapter)
+	{
+		const char* OcclusionModes[]{"Disabled", "Linear Subcells", "Hierarchical Subcells", "Static BVH + HZB", "Static BVH Frustum Only"};
+		ImGui::SetNextItemWidth(220.0f);
+		ImGui::Combo("Software Occlusion", &Settings.SoftwareOcclusionMode, OcclusionModes, 5);
+		const int32 TileSizes[]{4, 8, 16};
+		int32 TileSelection = Settings.SoftwareOcclusionTileSize == 4 ? 0 : Settings.SoftwareOcclusionTileSize == 16 ? 2 : 1;
+		ImGui::SetNextItemWidth(220.0f);
+		if (ImGui::Combo("Occlusion Tile Size", &TileSelection, "4 px\0 8 px\0 16 px\0"))
+			Settings.SoftwareOcclusionTileSize = TileSizes[TileSelection];
+		ImGui::SetNextItemWidth(220.0f);
+		ImGui::SliderInt("Minimum Occluder Tiles", &Settings.SoftwareOcclusionMinimumTiles, 1, 64);
+		ImGui::SetNextItemWidth(220.0f);
+		ImGui::SliderInt("Triangle Budget", &Settings.SoftwareOcclusionTriangleBudget, 10000, 1000000);
+		ImGui::SetNextItemWidth(220.0f);
+		ImGui::SliderFloat("Occlusion CPU Budget (ms)", &Settings.SoftwareOcclusionCpuBudgetMs, 0.0f, 16.0f, "%.1f");
+		ImGui::Checkbox("Debug Occlusion Bounds", &Settings.bSoftwareOcclusionDebugBounds);
+		bool bShowOcclusionStats = FStatOverlay::IsEnabled(EStatFlags::Occlusion);
+		if (ImGui::Checkbox("Show Occlusion Stats", &bShowOcclusionStats))
+			FStatOverlay::SetEnabled(EStatFlags::Occlusion, bShowOcclusionStats);
+
+		FSoftwareOcclusionSettings Occlusion = ViewportAdapter->GetSoftwareOcclusionSettings();
+		Occlusion.Mode = static_cast<ESoftwareOcclusionMode>(std::clamp(Settings.SoftwareOcclusionMode, 0, 4));
+		Occlusion.TileSize = Settings.SoftwareOcclusionTileSize;
+		Occlusion.MinimumOccluderTiles = Settings.SoftwareOcclusionMinimumTiles;
+		Occlusion.TriangleBudget = static_cast<uint32>(std::max(0, Settings.SoftwareOcclusionTriangleBudget));
+		Occlusion.CpuTimeBudgetMs = Settings.SoftwareOcclusionCpuBudgetMs;
+		Occlusion.bDebugBounds = Settings.bSoftwareOcclusionDebugBounds;
+		ViewportAdapter->SetSoftwareOcclusionSettings(Occlusion);
+	}
 
 	//////////////////////////////////////////////////////////
 
@@ -120,6 +152,12 @@ bool FSettingsPanel::SaveSettings() const
 	File << "ShowUUID=" << Settings.bShowUUID << "\n";
 	File << "DrawBatchLine=" << Settings.bDrawBatchLine << "\n";
 	File << "DrawPSGrid=" << Settings.bDrawPSGrid << "\n";
+	File << "SoftwareOcclusionMode=" << Snapshot.SoftwareOcclusionMode << "\n";
+	File << "SoftwareOcclusionTileSize=" << Snapshot.SoftwareOcclusionTileSize << "\n";
+	File << "SoftwareOcclusionMinimumTiles=" << Snapshot.SoftwareOcclusionMinimumTiles << "\n";
+	File << "SoftwareOcclusionTriangleBudget=" << Snapshot.SoftwareOcclusionTriangleBudget << "\n";
+	File << "SoftwareOcclusionCpuBudgetMs=" << Snapshot.SoftwareOcclusionCpuBudgetMs << "\n";
+	File << "SoftwareOcclusionDebugBounds=" << Snapshot.bSoftwareOcclusionDebugBounds << "\n";
 	File << "\n";
 
 	File << "[Editor]\n";
@@ -240,6 +278,16 @@ bool FSettingsPanel::LoadSettings()
 				else if (Key == "ShowUUID") Settings.bShowUUID = std::stoi(ValueStr);
 				else if (Key == "DrawBatchLine") Settings.bDrawBatchLine = std::stoi(ValueStr);
 				else if (Key == "DrawPSGrid") Settings.bDrawPSGrid = std::stoi(ValueStr);
+				else if (Key == "SoftwareOcclusionMode") Settings.SoftwareOcclusionMode = std::clamp(std::stoi(ValueStr), 0, 4);
+				else if (Key == "SoftwareOcclusionTileSize")
+				{
+					const int32 Value = std::stoi(ValueStr);
+					Settings.SoftwareOcclusionTileSize = Value == 4 || Value == 16 ? Value : 8;
+				}
+				else if (Key == "SoftwareOcclusionMinimumTiles") Settings.SoftwareOcclusionMinimumTiles = std::max(1, std::stoi(ValueStr));
+				else if (Key == "SoftwareOcclusionTriangleBudget") Settings.SoftwareOcclusionTriangleBudget = std::max(0, std::stoi(ValueStr));
+				else if (Key == "SoftwareOcclusionCpuBudgetMs") Settings.SoftwareOcclusionCpuBudgetMs = std::max(0.0f, std::stof(ValueStr));
+				else if (Key == "SoftwareOcclusionDebugBounds") Settings.bSoftwareOcclusionDebugBounds = std::stoi(ValueStr) != 0;
 
 				else if (Key == "CameraMoveSpeed") Settings.CameraSpeed = std::stof(ValueStr);
 				else if (Key == "CameraRotateSensitivity") Settings.MouseSensitivity = std::stof(ValueStr);
@@ -288,6 +336,13 @@ void FSettingsPanel::SetViewportAdapter(FMultipleViewportsAdapter* Value)
 void FSettingsPanel::ReadViewportSettings(FEditorSettings& Out) const
 {
     if (!ViewportAdapter) return;
+	const FSoftwareOcclusionSettings& Occlusion = ViewportAdapter->GetSoftwareOcclusionSettings();
+	Out.SoftwareOcclusionMode = static_cast<int32>(Occlusion.Mode);
+	Out.SoftwareOcclusionTileSize = Occlusion.TileSize;
+	Out.SoftwareOcclusionMinimumTiles = Occlusion.MinimumOccluderTiles;
+	Out.SoftwareOcclusionTriangleBudget = static_cast<int32>(Occlusion.TriangleBudget);
+	Out.SoftwareOcclusionCpuBudgetMs = Occlusion.CpuTimeBudgetMs;
+	Out.bSoftwareOcclusionDebugBounds = Occlusion.bDebugBounds;
     Out.MultipleViewportsHorizontal = ViewportAdapter->GetSplitRatio().Horizontal;
     Out.MultipleViewportsVertical = ViewportAdapter->GetSplitRatio().Vertical;
     Out.bMultipleViewportsSingle = ViewportAdapter->GetLayoutMode() == ELayoutMode::Single;
@@ -313,6 +368,14 @@ void FSettingsPanel::CaptureViewportSettings() { ReadViewportSettings(Settings);
 void FSettingsPanel::ApplyViewportSettings()
 {
     if (!ViewportAdapter) return;
+	FSoftwareOcclusionSettings Occlusion = ViewportAdapter->GetSoftwareOcclusionSettings();
+	Occlusion.Mode = static_cast<ESoftwareOcclusionMode>(std::clamp(Settings.SoftwareOcclusionMode, 0, 4));
+	Occlusion.TileSize = Settings.SoftwareOcclusionTileSize;
+	Occlusion.MinimumOccluderTiles = Settings.SoftwareOcclusionMinimumTiles;
+	Occlusion.TriangleBudget = static_cast<uint32>(std::max(0, Settings.SoftwareOcclusionTriangleBudget));
+	Occlusion.CpuTimeBudgetMs = Settings.SoftwareOcclusionCpuBudgetMs;
+	Occlusion.bDebugBounds = Settings.bSoftwareOcclusionDebugBounds;
+	ViewportAdapter->SetSoftwareOcclusionSettings(Occlusion);
     ViewportAdapter->SetSplitRatio({Settings.MultipleViewportsHorizontal, Settings.MultipleViewportsVertical});
     ViewportAdapter->SetSingleViewIndex(Settings.MultipleViewportsSingleViewIndex);
     ViewportAdapter->SetLayoutMode(Settings.bMultipleViewportsSingle ? ELayoutMode::Single : ELayoutMode::QuadSplit);

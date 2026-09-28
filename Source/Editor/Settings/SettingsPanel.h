@@ -18,6 +18,12 @@ struct FEditorSettings
 	bool bShowUUID = false;
 	bool bDrawBatchLine = true;
 	bool bDrawPSGrid = false;
+	int32 SoftwareOcclusionMode = 0;
+	int32 SoftwareOcclusionTileSize = 8;
+	int32 SoftwareOcclusionMinimumTiles = 16;
+	int32 SoftwareOcclusionTriangleBudget = 500000;
+	float SoftwareOcclusionCpuBudgetMs = 4.0f;
+	bool bSoftwareOcclusionDebugBounds = false;
 
 	// Values
 	float CameraSpeed = 1.0f;

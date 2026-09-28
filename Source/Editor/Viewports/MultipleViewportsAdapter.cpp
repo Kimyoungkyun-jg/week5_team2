@@ -6,6 +6,8 @@
 #include "Camera/CameraComponent.h"
 #include "Component/BillboardComponent.h"
 #include "Component/ParticleSubUVComponent.h"
+#include "Core/ScopeStyleCounter.h"
+#include "Core/StatOverlay.h"
 #include "Component/PrimitiveComponent.h"
 #include "Editor/Outliner/OutlinerPanel.h"
 #include "Editor/Rendering/GridRenderer.h"
@@ -752,12 +754,46 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
 }
 
 // 클릭한 View의 Ray를 World에 전달하고 Component의 최근접 교차 결과를 보관한다.
-FPickHit
-FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosition,
-                                          UWorld &World) {
-  LastPick = {};
-  FRay Ray{};
-  if (!TryGetActiveViewRay(LocalMousePosition, Ray))
+FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosition, UWorld& World)
+{
+    LastPick = {};
+    FRay Ray{};
+    if (!TryGetActiveViewRay(LocalMousePosition, Ray)) return LastPick;
+
+    // 렌더와 같은 함수로 각 Billboard의 위치·크기에 맞는 View 행렬을 만든다.
+    const auto ResolveBillboardTransform = [](const UBillboardComponent& Billboard, const void* Context) -> FMatrix
+    {
+        const auto& Adapter = *static_cast<const FMultipleViewportsAdapter*>(Context);
+        const FVector Scale = Billboard.GetWorldScale3D();
+        return Adapter.BuildEngineBillboardMatrix(Adapter.GetActiveViewIndex(),
+            Billboard.GetWorldLocation(), Scale.Y, Scale.Z);
+    };
+    FHitResult Hit;
+    bool bHit = false;
+
+    // 충돌 검사 시간 측정
+    if (FStatOverlay::IsEnabled(EStatFlags::Picking))
+    {
+        FScopeCycleCounter PickCounter;
+        bHit = World.LineTraceSingle(Ray, Hit, ResolveBillboardTransform, this);
+
+        const uint64 PickCycles = PickCounter.Finish();
+        const double PickTimeMs = FPlatformTime::ToMilliseconds(PickCycles);
+
+        FStatOverlay::RecordPickingTime(PickTimeMs);
+    }
+    else
+    {
+        bHit = World.LineTraceSingle(Ray, Hit, ResolveBillboardTransform, this);
+    }
+
+    if (bHit)
+    {
+        LastPick.bHit = true;
+        LastPick.Id = Hit.HitComponent->GetUUID();
+        LastPick.Distance = Hit.Distance;
+        LastPick.HitPoint = Hit.ImpactPoint;
+    }
     return LastPick;
 
   // 렌더와 같은 함수로 각 Billboard의 위치·크기에 맞는 View 행렬을 만든다.

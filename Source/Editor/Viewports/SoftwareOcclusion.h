@@ -2,7 +2,6 @@
 
 #include "Editor/Viewports/MultipleViewports.h"
 
-#include <unordered_map>
 
 enum class ESoftwareOcclusionMode : uint8
 {
@@ -66,6 +65,12 @@ struct FSoftwareOcclusionDebugBounds
 class FSoftwareOcclusionCuller
 {
 public:
+    struct FCandidateDistance
+    {
+        uint32 Index = 0;
+        float DistSq = 0.0f;
+    };
+
     void ResetScene();
     void SetSettings(const FSoftwareOcclusionSettings& InSettings);
     const FSoftwareOcclusionSettings& GetSettings() const { return Settings; }
@@ -101,6 +106,7 @@ private:
 
     struct FObjectState
     {
+        uint32 SerialNumber = 0;
         uint64 BoundsRevision = 0;
         uint64 SeenSerial = 0;
         bool bDynamic = false;
@@ -148,7 +154,7 @@ private:
     };
 
     FSoftwareOcclusionSettings Settings{};
-    std::unordered_map<uint32, FObjectState> ObjectStates;
+    TArray<FObjectState> ObjectStates;
     uint64 SyncSerial = 0;
     bool bInitialized = false;
     bool bBVHDirty = true;
@@ -171,7 +177,21 @@ private:
     TArray<FVector4> TransformedVertices;
     TArray<uint32> CandidateIndices;
     TArray<uint8> VisibilityFlags;
+    struct FClippedTriangle
+    {
+        FVector4 V0;
+        FVector4 V1;
+        FVector4 V2;
+    };
+
     TArray<FSoftwareOcclusionDebugBounds> DebugBounds;
+    TArray<TArray<UPrimitiveComponent*>> WorkerVisibleBuffers;
+    TArray<uint32> WorkerRejectedBuffers;
+    TArray<TArray<uint32>> WorkerCandidateBuffers;
+    TArray<uint32> OccluderIndices;
+    TArray<TArray<FClippedTriangle>> WorkerClippedTriangleBuffers;
+    TArray<FCandidateDistance> CandidateDistances;
+    TArray<FCandidateDistance> CandidateDistancesTemp;
     int32 SuspendedFrames[MaxViews]{};
 
     FMatrix CurrentViewProjection{};

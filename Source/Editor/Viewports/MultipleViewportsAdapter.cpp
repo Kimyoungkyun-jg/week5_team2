@@ -504,13 +504,21 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
     const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
     const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
 
-    std::vector<TArray<FRenderableObject>> LocalObjects(NumJobs);
+    if (WorkerRenderObjectBuffers.Num() < NumJobs)
+    {
+        WorkerRenderObjectBuffers.SetNum(NumJobs);
+    }
+    for (int32 i = 0; i < NumJobs; ++i)
+    {
+        WorkerRenderObjectBuffers[i].Reset();
+    }
 
     // 컴포넌트 정보 병렬 수집
     FFiberJobManager::Get().ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
     {
         const int32 JobIndex = Start / ChunkSize;
-        LocalObjects[JobIndex].Reserve(End - Start);
+        TArray<FRenderableObject>& LocalList = WorkerRenderObjectBuffers[JobIndex];
+        LocalList.Reserve(End - Start);
         for (int32 Index = Start; Index < End; ++Index)
         {
             UPrimitiveComponent* Primitive = Primitives[Index].Get();
@@ -544,14 +552,14 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
                     }
                 }
             }
-            LocalObjects[JobIndex].Add(RenderObject);
+            LocalList.Add(RenderObject);
         }
     });
 
     int32 TotalValid = 0;
     for (int32 JobIndex = 0; JobIndex < NumJobs; ++JobIndex)
     {
-        TotalValid += LocalObjects[JobIndex].Num();
+        TotalValid += WorkerRenderObjectBuffers[JobIndex].Num();
     }
     RenderObjects.Reserve(TotalValid);
 
@@ -559,7 +567,7 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
     uint32 StableIndex = 0;
     for (int32 JobIndex = 0; JobIndex < NumJobs; ++JobIndex)
     {
-        for (FRenderableObject& Object : LocalObjects[JobIndex])
+        for (FRenderableObject& Object : WorkerRenderObjectBuffers[JobIndex])
         {
             Object.StableIndex = StableIndex++;
             RenderObjects.Add(std::move(Object));
@@ -811,26 +819,34 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
     const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
     const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
 
-    std::vector<TArray<FRenderPacket>> LocalPackets(NumJobs);
+    if (WorkerPacketBuffers.Num() < NumJobs)
+    {
+        WorkerPacketBuffers.SetNum(NumJobs);
+    }
+    for (int32 i = 0; i < NumJobs; ++i)
+    {
+        WorkerPacketBuffers[i].Reset();
+    }
 
     FFiberJobManager::Get().ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
     {
         const int32 JobIndex = Start / ChunkSize;
-        LocalPackets[JobIndex].Reserve(End - Start);
+        TArray<FRenderPacket>& LocalList = WorkerPacketBuffers[JobIndex];
+        LocalList.Reserve(End - Start);
 
         for (int32 i = Start; i < End; ++i)
         {
             UPrimitiveComponent* Primitive = VisiblePrimitives[ViewIndex][i];
             if (Primitive)
             {
-                Primitive->SubmitToRenderPackets(LocalPackets[JobIndex]);
+                Primitive->SubmitToRenderPackets(LocalList);
             }
         }
 
         // 파이버 워커에서 행렬 곱셈 수행
-        for (int32 k = 0; k < LocalPackets[JobIndex].Num(); ++k)
+        for (int32 k = 0; k < LocalList.Num(); ++k)
         {
-            FRenderPacket& Packet = LocalPackets[JobIndex][k];
+            FRenderPacket& Packet = LocalList[k];
             const FMatrixRegister Model = FMatrixRegister::Load(Packet.model);
             (Model * VPReg).Store(Packet.MVP);
         }
@@ -840,13 +856,13 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
     int32 TotalPacketCount = 0;
     for (int32 j = 0; j < NumJobs; ++j)
     {
-        TotalPacketCount += LocalPackets[j].Num();
+        TotalPacketCount += WorkerPacketBuffers[j].Num();
     }
 
     OutPackets.Reserve(TotalPacketCount);
     for (int32 j = 0; j < NumJobs; ++j)
     {
-        OutPackets.Append(LocalPackets[j]);
+        OutPackets.Append(WorkerPacketBuffers[j]);
     }
 
     OcclusionStats[ViewIndex].RenderPackets = OutPackets.Num();

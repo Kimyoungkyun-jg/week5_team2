@@ -76,23 +76,32 @@ public:
 	}
 
 	// 내부 파이버 실행 진입점
-	void FiberWorkerLoop();
+	struct FFiberTaskContext;
+	void FiberWorkerLoop(FFiberTaskContext* Context);
+
+	struct FFiberTaskContext
+	{
+		void* FiberHandle = nullptr;
+		void* CallerFiber = nullptr;
+		FFiberJob CurrentJob;
+		FFiberJobManager* Manager = nullptr;
+	};
 
 private:
 	FFiberJobManager() = default;
 	~FFiberJobManager();
 
 	// 파이버 생성
-	void* CreateJobFiber();
+	FFiberTaskContext* CreateJobFiber();
 
 	// 다음 일감 획득
 	bool PopJob(FFiberJob& OutJob);
 
 	// 놀고 있는 파이버 획득
-	void* PopFreeFiber();
+	FFiberTaskContext* PopFreeFiber();
 
 	// 파이버 풀에 반환
-	void ReturnFiber(void* InFiber);
+	void ReturnFiber(FFiberTaskContext* InContext);
 
 private:
 	std::atomic<bool> bIsRunning{ false };
@@ -101,12 +110,11 @@ private:
 	uint32_t FiberStackSize = 0;
 
 	std::vector<std::thread> Workers;
-	std::vector<void*> FiberPool;
+	std::vector<FFiberTaskContext*> FiberPool;
+	std::vector<FFiberTaskContext*> AllocatedFibers;
 	std::mutex FiberPoolMutex;
 
 	std::queue<FFiberJob> JobQueue;
 	std::mutex JobQueueMutex;
 	std::condition_variable WakeCondition;
-
-	thread_local static void* ThreadFiber;
 };

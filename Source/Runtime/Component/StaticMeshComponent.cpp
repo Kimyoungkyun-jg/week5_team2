@@ -34,6 +34,7 @@ void UStaticMeshComponent::SetStaticMesh(UStaticMesh* InStaticMesh)
 
     StaticMesh = InStaticMesh;
     ClearOverrideMaterials();
+    MarkBoundsDirtyRecursive();
 }
 
 int32 UStaticMeshComponent::GetNumMaterials() const

@@ -294,12 +294,36 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 	if (FStatOverlay::IsEnabled(EStatFlags::Picking))
 	{
 		Lines.Add({ "Picking", TitleColor });
-		Lines.Add({std::format("  Last Time {:.0f} ms", 
+		Lines.Add({std::format("  Last Time {:.0f} ms",
 			FStatOverlay::GetLastPickingTimeMs()), ValueColor});
-		Lines.Add({std::format("  Num Attempts {}", 
+		Lines.Add({std::format("  Num Attempts {}",
 			FStatOverlay::GetTotalPickCount()), ValueColor});
-		Lines.Add({std::format("  Accumulated Time {:.0f} ms", 
+		Lines.Add({std::format("  Accumulated Time {:.0f} ms",
 			FStatOverlay::GetTotalPickingTimeMs()), ValueColor});
+	}
+
+	if (FStatOverlay::IsEnabled(EStatFlags::Occlusion) && ViewportAdapter)
+	{
+		const int32 ViewIndex = ViewportAdapter->GetEditorViewIndex();
+		const FSoftwareOcclusionStats& Stats = ViewportAdapter->GetSoftwareOcclusionStats(ViewIndex);
+		Lines.Add({"Software Occlusion", TitleColor});
+		Lines.Add({std::format("  captured {}  static {}  dynamic {}",
+			Stats.CapturedPrimitives, Stats.StaticObjects, Stats.DynamicObjects), ValueColor});
+		Lines.Add({std::format("  frustum {}  occluded {}  visible {}",
+			Stats.FrustumRejected, Stats.OcclusionRejected, Stats.FinalVisible), ValueColor});
+		Lines.Add({std::format("  draw packets {}  occluders {}",
+			Stats.RenderPackets, Stats.OccludersRasterized), ValueColor});
+		Lines.Add({std::format("  triangles {}  clipped {}",
+			Stats.SourceTriangles, Stats.ClippedTriangles), ValueColor});
+		Lines.Add({std::format("  coverage {:.1f}%  full tiles {:.1f}%",
+			Stats.SubcellCoveragePercent, Stats.FullTileCoveragePercent), ValueColor});
+		Lines.Add({std::format("  BVH tested {}  pruned {}",
+			Stats.BVHNodesTested, Stats.BVHNodesPruned), ValueColor});
+		Lines.Add({std::format("  cull {:.2f} ms  build {:.2f} ms{}{}{}",
+			Stats.CullMs, Stats.BVHBuildMs,
+			Stats.bTriangleBudgetExceeded ? "  TRI BUDGET" : "",
+			Stats.bCpuBudgetExceeded ? "  CPU BUDGET" : "",
+			Stats.bOcclusionSuspended ? "  SUSPENDED" : ""), ValueColor});
 	}
 
 	if (Lines.Num() == 0)

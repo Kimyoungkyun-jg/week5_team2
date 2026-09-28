@@ -10,6 +10,7 @@ enum class EStatFlags : uint32
 	FPS    = 1 << 0,
 	Memory = 1 << 1,
 	Picking = 1 << 2,
+	Occlusion = 1 << 3,
 };
 DEFINE_ENUM_OPERATORS(EStatFlags)
 
@@ -28,6 +29,13 @@ public:
 	static EStatFlags GetFlags() { return Flags; }
 	static bool IsEnabled(EStatFlags Flag) { return HasFlag(Flags, Flag); }
 	static bool IsAnyEnabled() { return Flags != EStatFlags::None; }
+	static void SetEnabled(EStatFlags Flag, bool bEnabled)
+	{
+		if (bEnabled)
+			Flags |= Flag;
+		else
+			Flags &= ~Flag;
+	}
 
 	// 샘플 구간 평균 FPS와 프레임 시간(ms). 매 프레임 값은 흔들려서 평균만 노출한다.
 	static float GetFPS() { return DisplayFPS; }

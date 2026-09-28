@@ -108,9 +108,11 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
   EditorControlsPanel = EditorUI->AddEditorPanel<FEditorControlsPanel>();
   ViewportsPanel = EditorUI->AddEditorPanel<FViewportsPanel>();
 
-  // OutLine
-  OutlineRenderer = MakeUnique<FOutlineRenderer>();
-  OutlineRenderer->Init(Renderer.get());
+	// 필요한 Panel들 추가후 raw pointer 반환(소유권 = EditorUI)
+	DetailsPanel = EditorUI->AddEditorPanel<FDetailsPanel>();
+	EditorControlsPanel = EditorUI->AddEditorPanel<FEditorControlsPanel>();
+	SettingsPanel = EditorUI->AddEditorPanel<FSettingsPanel>();
+	ViewportsPanel = EditorUI->AddEditorPanel<FViewportsPanel>();
 
   Outline = MakeUnique<FOutline>();
 
@@ -162,7 +164,23 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
 
   bIsRunning = true;
 
-  return true;
+	EditorControlsPanel->SetWorld(World);
+	EditorControlsPanel->SetGizmo(Gizmo.get());
+	EditorControlsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
+
+	SettingsPanel->SetWorld(World);
+	SettingsPanel->SetTearingSupported(MainWindowSC->IsTearingSupported());
+	SettingsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
+
+	ViewportsPanel->SetViewportAdapter(&MultipleViewportsAdapter);
+	bIsRunning = true;
+	return true;
+
+
+
+	bIsRunning = true;
+
+	return true;
 }
 
 // 프레임 시작·View 상태·월드 갱신·렌더·종료를 순차 반복한다.
@@ -287,10 +305,11 @@ void FEditorApplication::RenderMultipleViewports() {
 }
 
 // 화면을 표시하고 UI 변경 후 View 설정을 보관한다.
-void FEditorApplication::EndFrame() {
-  PresentFrame();
-  // UI 변경 후 설정을 복사해 종료 시 카메라 수명에 의존하지 않는다.
-  // SettingsPanel->CaptureViewportSettings();
+void FEditorApplication::EndFrame()
+{
+	PresentFrame();
+	// UI 변경 후 설정을 복사해 종료 시 카메라 수명에 의존하지 않는다.
+	SettingsPanel->CaptureViewportSettings();
 }
 
 // 입력 View의 Ray와 피킹으로 Gizmo·공유 선택을 갱신한다.
@@ -334,12 +353,15 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
                                      TQueue<FRenderPacket> &RenderQueue) {
   RenderCommand::BeginRenderPass(ViewRenderingInfo);
 
-  FEditorSettings DefaultSettings; // 기본 그리드 간격 사용
-  GridRenderer->OnRenderPSGrid(ViewProjection, ViewCameraLocation,
-                               DefaultSettings,
-                               ViewRenderingInfo.ViewportSetting);
+	const FEditorSettings& EditorSettings = SettingsPanel->GetSettings();
+	GridRenderer->OnRenderPSGrid(
+		ViewProjection,
+		ViewCameraLocation,
+		EditorSettings,
+		ViewRenderingInfo.ViewportSetting
+	);
 
-  const bool bDrawPrimitives = true;
+	const bool bDrawPrimitives = EditorSettings.bDrawPrimitives;
 
   // 삼각형 연결은 유지하고 View별 Fill Mode만 선택한다.
   const ERasterizerState SceneRasterizerState =
@@ -354,11 +376,18 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
     Renderer->RenderOpaque(RenderQueue, ViewProjection);
   }
 
-  // 스텐실 기반이라 선택 대상의 가시성이 꺼져 있어도 외곽선만 그린다.
-  if (Outline->GetTarget()) {
-    OutlineRenderer->OnRender(*Outline, ViewProjection,
-                              ViewRenderingInfo.ViewportSetting);
-  }
+	if (MultipleViewportsAdapter.GetSoftwareOcclusionSettings().bDebugBounds)
+	{
+		LineBatcher->BeginFrame();
+		MultipleViewportsAdapter.AppendSoftwareOcclusionDebugBounds(*LineBatcher);
+		LineBatcher->OnRender(ViewProjection);
+	}
+
+	// 스텐실 기반이라 선택 대상의 가시성이 꺼져 있어도 외곽선만 그린다.
+	if (Outline->GetTarget())
+	{
+		OutlineRenderer->OnRender(*Outline, ViewProjection, ViewRenderingInfo.ViewportSetting);
+	}
 
   if (Gizmo->GetTarget()) {
     auto Target = Cast<UPrimitiveComponent>(Gizmo->GetTarget());
@@ -466,7 +495,10 @@ void FEditorApplication::PresentFrame() {
 
   ImGuiRenderer->End();
 
-  RenderCommand::EndRenderPass(MainWindowSC->GetRenderingInfo());
+	RenderCommand::EndRenderPass(MainWindowSC->GetRenderingInfo());
+
+	// 에디터 성능 측정은 VSync의 60 FPS 제한을 받지 않는다.
+	MainWindowSC->SwapBuffers(0, 0);
 
   MainWindowSC->SwapBuffers();
 }
@@ -516,7 +548,8 @@ void FEditorApplication::CreateNewScene() {
   if (!FEditorFileUtils::NewScene(World))
     return;
 
-  ResetSceneSelection();
+	ResetSceneSelection();
+	MultipleViewportsAdapter.ResetSoftwareOcclusionScene();
 }
 
 // 씬 불러오기가 성공하면 에디터 선택 상태를 초기화한다.
@@ -524,7 +557,8 @@ void FEditorApplication::OpenScene() {
   if (!FEditorFileUtils::LoadScene(World))
     return;
 
-  ResetSceneSelection();
+	ResetSceneSelection();
+	MultipleViewportsAdapter.ResetSoftwareOcclusionScene();
 }
 
 // 공통 파일 유틸리티로 현재 씬을 저장한다.

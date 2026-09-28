@@ -2,19 +2,17 @@
 #include "FiberJobManager.h"
 #include <windows.h>
 
-thread_local void* FFiberJobManager::ThreadFiber = nullptr;
-
-// 윈도우 파이버 실행 콜백
+// 파이버 작업 진입점
 static VOID CALLBACK FiberEntryPoint(PVOID lpParameter)
 {
-	FFiberJobManager* Manager = static_cast<FFiberJobManager*>(lpParameter);
-	if (Manager)
+	FFiberJobManager::FFiberTaskContext* Context = static_cast<FFiberJobManager::FFiberTaskContext*>(lpParameter);
+	if (Context && Context->Manager)
 	{
-		Manager->FiberWorkerLoop();
+		Context->Manager->FiberWorkerLoop(Context);
 	}
 }
 
-// 싱글톤 인스턴스 획득
+// 싱글톤 반환
 FFiberJobManager& FFiberJobManager::Get()
 {
 	static FFiberJobManager Instance;
@@ -37,7 +35,7 @@ void FFiberJobManager::Initialize(uint32_t InNumWorkers, uint32_t InNumFibers, u
 	bIsRunning.store(true);
 	FiberStackSize = InFiberStackSize;
 
-	// 사용 가능한 하드웨어 스레드 수 산출
+	// 워커 스레드 수 산출
 	if (InNumWorkers == 0)
 	{
 		uint32_t HardwareThreads = std::thread::hardware_concurrency();
@@ -45,7 +43,7 @@ void FFiberJobManager::Initialize(uint32_t InNumWorkers, uint32_t InNumFibers, u
 		{
 			HardwareThreads = 4;
 		}
-		// 메인 스레드 제외 최대 코어 활용
+		// 코어 활용
 		NumWorkers = (HardwareThreads > 1) ? (HardwareThreads - 1) : 1;
 	}
 	else
@@ -58,23 +56,21 @@ void FFiberJobManager::Initialize(uint32_t InNumWorkers, uint32_t InNumFibers, u
 	// 메인 스레드 파이버 변환
 	if (!IsThreadAFiber())
 	{
-		ThreadFiber = ConvertThreadToFiber(nullptr);
-	}
-	else
-	{
-		ThreadFiber = GetCurrentFiber();
+		ConvertThreadToFiber(nullptr);
 	}
 
 	// 파이버 풀 생성
 	{
 		std::lock_guard<std::mutex> Lock(FiberPoolMutex);
 		FiberPool.reserve(NumFibers);
+		AllocatedFibers.reserve(NumFibers);
 		for (uint32_t Index = 0; Index < NumFibers; ++Index)
 		{
-			void* Fiber = CreateJobFiber();
-			if (Fiber)
+			FFiberTaskContext* Context = CreateJobFiber();
+			if (Context)
 			{
-				FiberPool.push_back(Fiber);
+				FiberPool.push_back(Context);
+				AllocatedFibers.push_back(Context);
 			}
 		}
 	}
@@ -88,35 +84,63 @@ void FFiberJobManager::Initialize(uint32_t InNumWorkers, uint32_t InNumFibers, u
 			// 워커 스레드 파이버 변환
 			if (!IsThreadAFiber())
 			{
-				ThreadFiber = ConvertThreadToFiber(nullptr);
-			}
-			else
-			{
-				ThreadFiber = GetCurrentFiber();
+				ConvertThreadToFiber(nullptr);
 			}
 
-			// 워커 메인 루프
+			// 워커 루프
 			while (bIsRunning.load(std::memory_order_relaxed))
 			{
-				// 일감이 생길 때까지 대기
+				FFiberJob Job;
 				{
+					// 대기
 					std::unique_lock<std::mutex> Lock(JobQueueMutex);
 					WakeCondition.wait(Lock, [this]()
 					{
 						return !JobQueue.empty() || !bIsRunning.load(std::memory_order_relaxed);
 					});
+
+					if (!bIsRunning.load(std::memory_order_relaxed) && JobQueue.empty())
+					{
+						break;
+					}
+
+					if (!JobQueue.empty())
+					{
+						Job = JobQueue.front();
+						JobQueue.pop();
+					}
 				}
 
-				if (!bIsRunning.load(std::memory_order_relaxed))
+				if (!Job.Function)
 				{
-					break;
+					continue;
 				}
 
-				// 놀고 있는 파이버로 전환하여 일감 처리
-				void* Fiber = PopFreeFiber();
-				if (Fiber)
+				// 일감 처리
+				FFiberTaskContext* Context = PopFreeFiber();
+				if (Context)
 				{
-					SwitchToFiber(Fiber);
+					Context->CallerFiber = GetCurrentFiber();
+					Context->CurrentJob = Job;
+					SwitchToFiber(Context->FiberHandle);
+					// 파이버 반환
+					ReturnFiber(Context);
+				}
+				else
+				{
+					// 직접 처리
+					try
+					{
+						Job.Function(Job.Data);
+					}
+					catch (...)
+					{
+					}
+
+					if (Job.Counter)
+					{
+						Job.Counter->Value.fetch_sub(1, std::memory_order_seq_cst);
+					}
 				}
 			}
 		});
@@ -133,7 +157,7 @@ void FFiberJobManager::Shutdown()
 
 	WakeCondition.notify_all();
 
-	// 워커 스레드 합류
+	// 워커 종료 대기
 	for (std::thread& Worker : Workers)
 	{
 		if (Worker.joinable())
@@ -146,11 +170,19 @@ void FFiberJobManager::Shutdown()
 	// 파이버 풀 해제
 	{
 		std::lock_guard<std::mutex> Lock(FiberPoolMutex);
-		for (void* Fiber : FiberPool)
+		for (FFiberTaskContext* Context : AllocatedFibers)
 		{
-			DeleteFiber(Fiber);
+			if (Context)
+			{
+				if (Context->FiberHandle)
+				{
+					DeleteFiber(Context->FiberHandle);
+				}
+				delete Context;
+			}
 		}
 		FiberPool.clear();
+		AllocatedFibers.clear();
 	}
 }
 
@@ -170,10 +202,12 @@ void FFiberJobManager::RunJobs(const FFiberJob* InJobs, uint32_t InNumJobs, FFib
 
 	if (InCounter)
 	{
-		InCounter->Value.fetch_add(InNumJobs, std::memory_order_relaxed);
+		// 카운터 증가
+		InCounter->Value.fetch_add(InNumJobs, std::memory_order_seq_cst);
 	}
 
 	{
+		// 큐에 삽입
 		std::lock_guard<std::mutex> Lock(JobQueueMutex);
 		for (uint32_t Index = 0; Index < InNumJobs; ++Index)
 		{
@@ -186,10 +220,11 @@ void FFiberJobManager::RunJobs(const FFiberJob* InJobs, uint32_t InNumJobs, FFib
 		}
 	}
 
+	// 워커 깨우기
 	WakeCondition.notify_all();
 }
 
-// 카운터 완료 대기
+// 카운터 대기
 void FFiberJobManager::WaitForCounter(FFiberCounter* InCounter, int32_t InTargetValue)
 {
 	if (!InCounter)
@@ -197,89 +232,103 @@ void FFiberJobManager::WaitForCounter(FFiberCounter* InCounter, int32_t InTarget
 		return;
 	}
 
-	while (InCounter->Value.load(std::memory_order_acquire) > InTargetValue)
+	while (InCounter->Value.load(std::memory_order_seq_cst) > InTargetValue)
 	{
 		FFiberJob NextJob;
 		if (PopJob(NextJob))
 		{
-			// 대기 중인 일감 직접 처리
+			// 대기 중 일감 직접 처리
 			if (NextJob.Function)
 			{
-				NextJob.Function(NextJob.Data);
+				try
+				{
+					NextJob.Function(NextJob.Data);
+				}
+				catch (...)
+				{
+				}
 			}
 			if (NextJob.Counter)
 			{
-				NextJob.Counter->Value.fetch_sub(1, std::memory_order_release);
+				// 카운터 감소
+				NextJob.Counter->Value.fetch_sub(1, std::memory_order_seq_cst);
 			}
 		}
 		else
 		{
-			// 일감이 남아있지 않으면 양보
+			// 양보
 			std::this_thread::yield();
 		}
 	}
 }
 
-// 파이버 풀에 반환
-void FFiberJobManager::ReturnFiber(void* InFiber)
+// 파이버 반환
+void FFiberJobManager::ReturnFiber(FFiberTaskContext* InContext)
 {
-	if (!InFiber)
+	if (!InContext)
 	{
 		return;
 	}
 
 	std::lock_guard<std::mutex> Lock(FiberPoolMutex);
-	FiberPool.push_back(InFiber);
+	FiberPool.push_back(InContext);
 }
 
-// 파이버 작업 루프
-void FFiberJobManager::FiberWorkerLoop()
+// 파이버 루프
+void FFiberJobManager::FiberWorkerLoop(FFiberTaskContext* Context)
 {
 	while (bIsRunning.load(std::memory_order_relaxed))
 	{
-		FFiberJob Job;
-		if (PopJob(Job))
+		if (Context->CurrentJob.Function)
 		{
-			if (Job.Function)
+			try
 			{
-				Job.Function(Job.Data);
+				Context->CurrentJob.Function(Context->CurrentJob.Data);
 			}
+			catch (...)
+			{
+			}
+		}
 
-			if (Job.Counter)
-			{
-				Job.Counter->Value.fetch_sub(1, std::memory_order_release);
-			}
+		if (Context->CurrentJob.Counter)
+		{
+			// 카운터 감소
+			Context->CurrentJob.Counter->Value.fetch_sub(1, std::memory_order_seq_cst);
+			Context->CurrentJob.Counter = nullptr;
+		}
+
+		Context->CurrentJob.Function = nullptr;
+		Context->CurrentJob.Data = nullptr;
+
+		void* Caller = Context->CallerFiber;
+		Context->CallerFiber = nullptr;
+
+		if (Caller)
+		{
+			SwitchToFiber(Caller);
 		}
 		else
 		{
-			// 일감이 없으면 파이버를 풀에 반환하고 원래 스레드로 복귀
-			void* CurrentFiberHandle = GetCurrentFiber();
-			ReturnFiber(CurrentFiberHandle);
-
-			if (ThreadFiber && ThreadFiber != CurrentFiberHandle)
-			{
-				SwitchToFiber(ThreadFiber);
-			}
-			else
-			{
-				break;
-			}
+			break;
 		}
 	}
-
-	if (ThreadFiber)
-	{
-		SwitchToFiber(ThreadFiber);
-	}
 }
 
-// 신규 파이버 생성
-void* FFiberJobManager::CreateJobFiber()
+// 파이버 생성
+FFiberJobManager::FFiberTaskContext* FFiberJobManager::CreateJobFiber()
 {
-	return CreateFiberEx(FiberStackSize, FiberStackSize, 0, FiberEntryPoint, this);
+	FFiberTaskContext* Context = new FFiberTaskContext();
+	Context->Manager = this;
+	Context->FiberHandle = CreateFiberEx(FiberStackSize, FiberStackSize, 0, FiberEntryPoint, Context);
+	if (!Context->FiberHandle)
+	{
+		delete Context;
+		return nullptr;
+	}
+	return Context;
 }
 
-// 큐에서 일감 인출
+// 일감 획득
 bool FFiberJobManager::PopJob(FFiberJob& OutJob)
 {
 	std::lock_guard<std::mutex> Lock(JobQueueMutex);
@@ -293,8 +342,8 @@ bool FFiberJobManager::PopJob(FFiberJob& OutJob)
 	return true;
 }
 
-// 풀에서 놀고 있는 파이버 인출
-void* FFiberJobManager::PopFreeFiber()
+// 놀고 있는 파이버 획득
+FFiberJobManager::FFiberTaskContext* FFiberJobManager::PopFreeFiber()
 {
 	std::lock_guard<std::mutex> Lock(FiberPoolMutex);
 	if (FiberPool.empty())
@@ -302,7 +351,7 @@ void* FFiberJobManager::PopFreeFiber()
 		return nullptr;
 	}
 
-	void* Fiber = FiberPool.back();
+	FFiberTaskContext* Context = FiberPool.back();
 	FiberPool.pop_back();
-	return Fiber;
+	return Context;
 }

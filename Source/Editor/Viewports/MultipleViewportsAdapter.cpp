@@ -4,6 +4,8 @@
 
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
+#include "Component/PrimitiveComponent.h"
+#include "Component/StaticMeshComponent.h"
 #include "Component/BillboardComponent.h"
 #include "Component/ParticleSubUVComponent.h"
 #include "Core/ScopeStyleCounter.h"
@@ -12,6 +14,8 @@
 #include "Editor/Outliner/OutlinerPanel.h"
 #include "Editor/Rendering/GridRenderer.h"
 #include "Input/InputSystem.h"
+#include "Rendering/Material.h"
+#include "Rendering/LineBatcher.h"
 #include "ObjectSystem/UObjectIterator.h"
 #include "World/World.h"
 
@@ -154,11 +158,11 @@ FQuat MakeCameraRotation(const float YawDegrees, const float PitchDegrees) {
 } // namespace
 
 // 메인 카메라 투영값을 공유하고 네 View의 기본 프리셋 상태를 만든다.
-void FMultipleViewportsAdapter::InitializeFromWorld(UWorld &World) {
-  UCameraComponent *MainCamera =
-      World.GetMainCamera() ? World.GetMainCamera()->GetCameraComponent()
-                            : nullptr;
-  assert(MainCamera != nullptr);
+void FMultipleViewportsAdapter::InitializeFromWorld(UWorld& World)
+{
+    SoftwareOcclusion.ResetScene();
+    UCameraComponent* MainCamera = World.GetMainCamera() ? World.GetMainCamera()->GetCameraComponent() : nullptr;
+    assert(MainCamera != nullptr);
 
   const FCameraProjection Perspective{
       EProjectionMode::Perspective, MainCamera->GetFieldOfView(),
@@ -488,45 +492,44 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
     RenderObjects.Reset();
     bCapturedBillboard = false;
     bCapturedParticle = false;
-    
-    const int32 TotalPrimitives = Primitives.Num();
-    if (TotalPrimitives == 0)
-        return;
-    
-    const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
-    const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
-    const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
-    
-    // 워커별 독립 저장 공간 (경합 방지)
-    std::vector<TArray<FRenderableObject>> LocalResults(NumJobs);
-    
-    FFiberJobManager::Get().ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
-        {
-            const int32 JobIndex = Start / ChunkSize;
-            LocalResults[JobIndex].Reserve(End - Start);
-    
-            // 워커가 담당 구역(Start ~ End)만 순회
-            for (int32 i = Start; i < End; ++i)
-            {
-                UPrimitiveComponent* Primitive = Primitives[i].Get();
-                if (!Primitive || !Primitive->IsVisible())
-                    continue;
-    
-                FRenderableObject RenderObject{};
-                
-                RenderObject.Primitive = Primitive;
-                RenderObject.WorldBounds = MakeWorldBounds(Primitive->GetWorldBounds());
-                
-                LocalResults[JobIndex].Add(RenderObject);
-            }
-        });
-    
-    // 메인 스레드에서 결과 일괄 취합
-    RenderObjects.Reserve(TotalPrimitives);
-    for (int32 i = 0; i < NumJobs; ++i)
+   
+    // 등록된 컴포넌트 순회
+    uint32 StableIndex = 0;
+    for (const auto& WeakPrimitive : Primitives)
     {
-        RenderObjects.Append(LocalResults[i]);
+        UPrimitiveComponent* Primitive = WeakPrimitive.Get();
+        if (!Primitive || !Primitive->IsVisible()) continue;
+        
+        // 바운딩 박스와 컴포넌트 포인터 등록
+        FRenderableObject RenderObject{};
+        RenderObject.Primitive = Primitive;
+        RenderObject.WorldMatrix = Primitive->GetWorldMatrix();
+        RenderObject.WorldBounds = MakeWorldBounds(Primitive->GetWorldBounds());
+        RenderObject.BoundsRevision = Primitive->GetBoundsRevision();
+        RenderObject.StableIndex = StableIndex++;
+
+        if (UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(Primitive))
+        {
+            RenderObject.StaticMeshData = StaticMeshComponent->GetMeshData();
+            RenderObject.bCanBeOccluded = RenderObject.StaticMeshData != nullptr &&
+                !RenderObject.StaticMeshData->Vertices.IsEmpty() && !RenderObject.StaticMeshData->Indices.IsEmpty();
+            RenderObject.bCanOcclude = RenderObject.bCanBeOccluded && !RenderObject.StaticMeshData->Sections.IsEmpty();
+            if (RenderObject.bCanOcclude)
+            {
+                for (const FStaticMeshSection& Section : RenderObject.StaticMeshData->Sections)
+                {
+                    UMaterial* Material = StaticMeshComponent->GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
+                    if (!Material || Material->PSOType != EPSOType::StaticMesh_Opaque)
+                    {
+                        RenderObject.bCanOcclude = false;
+                        break;
+                    }
+                }
+            }
+        }
+        RenderObjects.Add(RenderObject);
     }
+    SoftwareOcclusion.SynchronizeObjects(RenderObjects);
 }
 
 // 유효 Rect와 Single 대상 인덱스 또는 Quad 모드로 View 활성 여부를 판정한다.
@@ -733,59 +736,44 @@ void FMultipleViewportsAdapter::BuildRenderQueue(
 void FMultipleViewportsAdapter::BuildRenderPackets(
     const int32 ViewIndex, TArray<FRenderPacket>& OutPackets)
 {
-  OutPackets.Reset();
-  if (!IsViewActive(ViewIndex))
-    return;
-
-  const PreparedView& ViewInfo = PrepareView(ViewIndex);
-  CullForView(RenderObjects, ViewInfo.Frustum, VisiblePrimitives[ViewIndex]);
-
-  const int32 TotalPrimitives = VisiblePrimitives[ViewIndex].Num();
-  if (TotalPrimitives == 0)
-    return;
-
-  const FMatrix& VP = ViewInfo.EngineViewProjection;
-  const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
-  const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
-  const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
-
-  std::vector<TArray<FRenderPacket>> LocalPackets(NumJobs);
-
-  FFiberJobManager::Get().ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
-  {
-    const int32 JobIndex = Start / ChunkSize;
-    LocalPackets[JobIndex].Reserve(End - Start);
-
-    for (int32 i = Start; i < End; ++i)
-    {
-      UPrimitiveComponent* Primitive = VisiblePrimitives[ViewIndex][i];
-      if (Primitive)
-      {
-        Primitive->SubmitToRenderPackets(LocalPackets[JobIndex]);
-      }
-    }
-
-    // 파이버 워커가 모델과 뷰프로젝션 행렬 곱셈 및 전치 병렬 수행
-    for (int32 k = 0; k < LocalPackets[JobIndex].Num(); ++k)
+    OutQueue.Reset();
+    if (!IsViewActive(ViewIndex)) return;
+    const PreparedView& View = PrepareView(ViewIndex);
+    const FViewCamera RenderCamera = GetRenderCamera(ViewIndex);
+    SoftwareOcclusion.Cull(
+        ViewIndex,
+        RenderObjects,
+        View.Frustum,
+        View.EngineViewProjection,
+        RenderCamera.Transform.Location,
+        std::max(1, static_cast<int32>(ViewRects[ViewIndex].Width)),
+        std::max(1, static_cast<int32>(ViewRects[ViewIndex].Height)),
+        IsViewWireframe(ViewIndex),
+        VisiblePrimitives[ViewIndex],
+        OcclusionStats[ViewIndex]);
+    for (UPrimitiveComponent* Primitive : VisiblePrimitives[ViewIndex])
     {
       LocalPackets[JobIndex][k].MVP = (LocalPackets[JobIndex][k].model * VP).GetTransposed();
       LocalPackets[JobIndex][k].model = LocalPackets[JobIndex][k].model.GetTransposed();
     }
-  });
+    OcclusionStats[ViewIndex].RenderPackets = OutQueue.Num();
+}
 
-  // 패킷 총량 계산 및 일괄 취합
-  int32 TotalPacketCount = 0;
-  for (int32 j = 0; j < NumJobs; ++j)
-  {
-    TotalPacketCount += LocalPackets[j].Num();
-  }
-
-  OutPackets.Reset();
-  OutPackets.Reserve(TotalPacketCount);
-  for (int32 j = 0; j < NumJobs; ++j)
-  {
-    OutPackets.Append(LocalPackets[j]);
-  }
+void FMultipleViewportsAdapter::AppendSoftwareOcclusionDebugBounds(FLineBatcher& LineBatcher) const
+{
+    for (const FSoftwareOcclusionDebugBounds& Entry : SoftwareOcclusion.GetDebugBounds())
+    {
+        FVector4 Color;
+        switch (Entry.State)
+        {
+        case ESoftwareOcclusionDebugState::Occluded: Color = {1.0f, 0.1f, 0.1f, 1.0f}; break;
+        case ESoftwareOcclusionDebugState::Fallback: Color = {1.0f, 1.0f, 0.1f, 1.0f}; break;
+        case ESoftwareOcclusionDebugState::StaticVisible: Color = {0.1f, 0.4f, 1.0f, 1.0f}; break;
+        case ESoftwareOcclusionDebugState::DynamicVisible: Color = {1.0f, 0.5f, 0.1f, 1.0f}; break;
+        default: Color = {0.1f, 1.0f, 0.1f, 1.0f}; break;
+        }
+        LineBatcher.AddBox({Entry.Bounds.Center - Entry.Bounds.Extent, Entry.Bounds.Center + Entry.Bounds.Extent}, Color);
+    }
 }
 
 // 클릭한 View의 Ray를 World에 전달하고 Component의 최근접 교차 결과를 보관한다.

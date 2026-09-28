@@ -7,6 +7,8 @@
 #include "Component/PrimitiveComponent.h"
 #include "Component/BillboardComponent.h"
 #include "Component/ParticleSubUVComponent.h"
+#include "Core/ScopeStyleCounter.h"
+#include "Core/StatOverlay.h"
 #include "Editor/Outliner/OutlinerPanel.h"
 #include "Editor/Rendering/GridRenderer.h"
 #include "World/World.h"
@@ -655,7 +657,25 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
             Billboard.GetWorldLocation(), Scale.Y, Scale.Z);
     };
     FHitResult Hit;
-    if (World.LineTraceSingle(Ray, Hit, ResolveBillboardTransform, this))
+    bool bHit = false;
+
+    // 충돌 검사 시간 측정
+    if (FStatOverlay::IsEnabled(EStatFlags::Picking))
+    {
+        FScopeCycleCounter PickCounter;
+        bHit = World.LineTraceSingle(Ray, Hit, ResolveBillboardTransform, this);
+
+        const uint64 PickCycles = PickCounter.Finish();
+        const double PickTimeMs = FPlatformTime::ToMilliseconds(PickCycles);
+
+        FStatOverlay::RecordPickingTime(PickTimeMs);
+    }
+    else
+    {
+        bHit = World.LineTraceSingle(Ray, Hit, ResolveBillboardTransform, this);
+    }
+
+    if (bHit)
     {
         LastPick.bHit = true;
         LastPick.Id = Hit.HitComponent->GetUUID();

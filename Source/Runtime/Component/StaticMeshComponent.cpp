@@ -7,7 +7,7 @@
 // StaticMesh 컴포넌트를 초기화한다.
 UStaticMeshComponent::UStaticMeshComponent()
 {
-    StaticMesh = UAssetManager::GetAssetByPath<UStaticMesh>("Cube");
+	StaticMesh = UAssetManager::GetAssetByKey<UStaticMesh>("Cube");
 }
 
 // StaticMesh 컴포넌트의 소멸을 처리한다.

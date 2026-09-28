@@ -19,10 +19,10 @@ bool FGizmoRenderer::Init(FRenderer* InRenderer)
 {
 	Renderer = InRenderer;
 	
-	LocationMesh = UAssetManager::GetAssetByPath<UStaticMesh>("Arrow");
-	RotationMesh = UAssetManager::GetAssetByPath<UStaticMesh>("Ring");
-	ScaleMesh = UAssetManager::GetAssetByPath<UStaticMesh>("ScaleBar");
-	SphereMesh = UAssetManager::GetAssetByPath<UStaticMesh>("GizmoSphere");
+	LocationMesh = UAssetManager::GetAssetByKey<UStaticMesh>("Arrow");
+	RotationMesh = UAssetManager::GetAssetByKey<UStaticMesh>("Ring");
+	ScaleMesh = UAssetManager::GetAssetByKey<UStaticMesh>("ScaleBar");
+	SphereMesh = UAssetManager::GetAssetByKey<UStaticMesh>("GizmoSphere");
 
 	CB = RenderCommand::CreateConstantBuffer(sizeof(FGizmoData));
 

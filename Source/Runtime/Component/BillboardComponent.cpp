@@ -11,8 +11,8 @@
 // Billboard 컴포넌트의 초기 상태를 구성한다.
 UBillboardComponent::UBillboardComponent()
 {
-	QuadMesh = UAssetManager::GetAssetByPath<UStaticMesh>("ParticleQuad");
-	Material = UAssetManager::GetAssetByPath<UMaterial>("SubUVMaterial");
+	QuadMesh = UAssetManager::GetAssetByKey<UStaticMesh>("ParticleQuad");
+	Material = UAssetManager::GetAssetByKey<UMaterial>("SubUVMaterial");
 }
 
 // Billboard 컴포넌트의 소멸을 처리한다.

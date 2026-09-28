@@ -114,8 +114,7 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
 
   Outline = MakeUnique<FOutline>();
 
-  SystemFont =
-      UAssetManager::GetAssetByPath<UFont>("Assets/Fonts/Pretendard.json");
+  SystemFont = UAssetManager::GetAssetByKey<UFont>("Assets/Fonts/Pretendard.json");
 
   TextRenderer = MakeUnique<FTextRenderer>();
   TextRenderer->Init();

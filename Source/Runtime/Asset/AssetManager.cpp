@@ -58,7 +58,7 @@ namespace
 		Mesh->VertexBuffer = std::move(VB);
 		Mesh->IndexBuffer = std::move(IB);
 
-		UMaterial* DefaultMaterial = UAssetManager::GetAssetByPath<UMaterial>("DefaultMaterial");
+		UMaterial* DefaultMaterial = UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial");
 		if (!DefaultMaterial)
 		{
 			return nullptr;
@@ -261,7 +261,7 @@ void UAssetManager::CreateDefaultMaterial()
 {
 	UMaterial* DefaultMat = FObjectFactory::ConstructObject<UMaterial>();
 	DefaultMat->PSOType = EPSOType::StaticMesh_Opaque;
-	DefaultMat->Textures.Add(GetAssetByPath<UTexture2D>("WhiteTexture"));
+	DefaultMat->Textures.Add(GetAssetByKey<UTexture2D>("WhiteTexture"));
 	DefaultMat->ParamBuffer = RenderCommand::CreateConstantBuffer(sizeof(FStaticMeshMaterialParams));
 	RegisterAsset("DefaultMaterial", DefaultMat);
 }
@@ -270,7 +270,7 @@ void UAssetManager::CreateParticleMaterial()
 {
 	UMaterial* ParticleMat = FObjectFactory::ConstructObject<UMaterial>();
 	ParticleMat->PSOType = EPSOType::Particle_AlphaBlend;
-	ParticleMat->Textures.Add(GetAssetByPath<UTexture2D>("Assets/SubUV/StarParticle.png"));
+	ParticleMat->Textures.Add(GetAssetByKey<UTexture2D>("Assets/SubUV/StarParticle.png"));
 	ParticleMat->ParamBuffer = RenderCommand::CreateConstantBuffer(256);
 	RegisterAsset("SubUVMaterial", ParticleMat);
 }
@@ -340,7 +340,7 @@ UFont* UAssetManager::LoadFontAtlas(const FString& JsonPath, const FString& Atla
 UStaticMesh* UAssetManager::LoadObjStaticMesh(const FString& Path)
 {
 	const FString Key = MakeAssetKey(Path);
-	if (UStaticMesh* Cached = GetAssetByPath<UStaticMesh>(Key))
+	if (UStaticMesh* Cached = GetAssetByKey<UStaticMesh>(Key))
 	{
 		return Cached;
 	}

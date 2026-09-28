@@ -39,7 +39,7 @@ AStaticMeshActor::AStaticMeshActor()
 void AStaticMeshActor::SetPrimitiveType(EPrimitiveType Type)
 {
 	//StaticMeshComponent->SetType(Type);
-	//StaticMeshComponent->SetMesh(UAssetManager::GetAssetByPath<UStaticMesh>(PrimitiveTypeToString(Type)));
+	//StaticMeshComponent->SetMesh(UAssetManager::GetAssetByKey<UStaticMesh>(PrimitiveTypeToString(Type)));
 }
 
 void AStaticMeshActor::BeginPlay()

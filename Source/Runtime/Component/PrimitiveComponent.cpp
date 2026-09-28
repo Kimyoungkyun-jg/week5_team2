@@ -31,12 +31,10 @@ namespace
 
 UPrimitiveComponent::UPrimitiveComponent()
 {
-	//SetMaterial(UAssetManager::GetAssetByPath<UMaterial>("DefaultMaterial"));
 }
 
 UPrimitiveComponent::~UPrimitiveComponent()
 {
-
 }
 
 void UPrimitiveComponent::BeginPlay()

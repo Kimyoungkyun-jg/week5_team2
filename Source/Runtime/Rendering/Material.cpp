@@ -13,7 +13,7 @@ namespace
 	// 저장된 경로로 텍스처를 찾고, 아직 로드 전이면 로드한다
 	UTexture2D* FindOrLoadTexture(const FString& Path)
 	{
-		if (UTexture2D* Texture = UAssetManager::GetAssetByPath<UTexture2D>(Path))
+		if (UTexture2D* Texture = UAssetManager::GetAssetByKey<UTexture2D>(Path))
 		{
 			return Texture;
 		}
@@ -99,17 +99,17 @@ UMaterial* UMaterial::LoadMaterial(const json& In)
 {
 	if (In.contains("Asset"))
 	{
-		return UAssetManager::GetAssetByPath<UMaterial>(In["Asset"].get<FString>());
+		return UAssetManager::GetAssetByKey<UMaterial>(In["Asset"].get<FString>());
 	}
 
 	UMaterial* Base = nullptr;
 	if (In.contains("Base"))
 	{
-		Base = UAssetManager::GetAssetByPath<UMaterial>(In["Base"].get<FString>());
+		Base = UAssetManager::GetAssetByKey<UMaterial>(In["Base"].get<FString>());
 	}
 	if (!Base)
 	{
-		Base = UAssetManager::GetAssetByPath<UMaterial>("DefaultMaterial");
+		Base = UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial");
 	}
 
 	UMaterial* Instance = UMaterial::CreateInstance(Base);

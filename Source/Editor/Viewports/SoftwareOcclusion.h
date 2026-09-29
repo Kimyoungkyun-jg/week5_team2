@@ -2,7 +2,6 @@
 
 #include "Editor/Viewports/MultipleViewports.h"
 
-#include <unordered_map>
 
 enum class ESoftwareOcclusionMode : uint8
 {
@@ -22,10 +21,13 @@ struct FSoftwareOcclusionSettings
     float CpuTimeBudgetMs = 4.0f;
     float DepthBias = 0.0001f;
     bool bDebugBounds = false;
+    float BoxOccluderDistanceThreshold = 10.0f;
 };
 
 struct FSoftwareOcclusionStats
 {
+    float NearestOccluderDistance = 0.0f;
+    bool bUsingMeshOccluder = false;
     uint32 CapturedPrimitives = 0;
     uint32 StaticObjects = 0;
     uint32 DynamicObjects = 0;
@@ -66,6 +68,12 @@ struct FSoftwareOcclusionDebugBounds
 class FSoftwareOcclusionCuller
 {
 public:
+    struct FCandidateDistance
+    {
+        uint32 Index = 0;
+        float DistSq = 0.0f;
+    };
+
     void ResetScene();
     void SetSettings(const FSoftwareOcclusionSettings& InSettings);
     const FSoftwareOcclusionSettings& GetSettings() const { return Settings; }
@@ -101,6 +109,7 @@ private:
 
     struct FObjectState
     {
+        uint32 SerialNumber = 0;
         uint64 BoundsRevision = 0;
         uint64 SeenSerial = 0;
         bool bDynamic = false;
@@ -148,7 +157,7 @@ private:
     };
 
     FSoftwareOcclusionSettings Settings{};
-    std::unordered_map<uint32, FObjectState> ObjectStates;
+    TArray<FObjectState> ObjectStates;
     uint64 SyncSerial = 0;
     bool bInitialized = false;
     bool bBVHDirty = true;
@@ -171,7 +180,21 @@ private:
     TArray<FVector4> TransformedVertices;
     TArray<uint32> CandidateIndices;
     TArray<uint8> VisibilityFlags;
+    struct FClippedTriangle
+    {
+        FVector4 V0;
+        FVector4 V1;
+        FVector4 V2;
+    };
+
     TArray<FSoftwareOcclusionDebugBounds> DebugBounds;
+    TArray<TArray<UPrimitiveComponent*>> WorkerVisibleBuffers;
+    TArray<uint32> WorkerRejectedBuffers;
+    TArray<TArray<uint32>> WorkerCandidateBuffers;
+    TArray<uint32> OccluderIndices;
+    TArray<TArray<FClippedTriangle>> WorkerClippedTriangleBuffers;
+    TArray<FCandidateDistance> CandidateDistances;
+    TArray<FCandidateDistance> CandidateDistancesTemp;
     int32 SuspendedFrames[MaxViews]{};
 
     FMatrix CurrentViewProjection{};
@@ -198,7 +221,7 @@ private:
     bool QueryHZBCell(int32 Level, int32 X, int32 Y, int32 MinTileX, int32 MinTileY, int32 MaxTileX, int32 MaxTileY, float NearestDepth) const;
     bool QueryEdgeSubcells(const FProjectedBounds& Bounds, int32 FullMinX, int32 FullMinY, int32 FullMaxX, int32 FullMaxY) const;
 
-    void RasterizeOccluder(const FRenderableObject& Object, const FProjectedBounds& Projected);
+    void RasterizeOccluder(const FRenderableObject& Object, const FProjectedBounds& Projected, bool bUseMesh = false);
     void RasterizeClippedTriangle(const FVector4& A, const FVector4& B, const FVector4& C);
     void UpdateDirtyHZB();
     void UpdateHZBParent(int32 Level, int32 X, int32 Y);

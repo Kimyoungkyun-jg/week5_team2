@@ -66,11 +66,16 @@ void UPrimitiveComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue
 bool UPrimitiveComponent::LineTraceComponent(const FRay& WorldRay, FHitResult& OutHit)
 {
 	const FStaticMeshData* Mesh = GetMeshData();
+
+	const FBox Bounds = GetWorldBounds();
+	if (!RayIntersectsAABB(WorldRay, Bounds.Min, Bounds.Max, OutHit.Distance)) return false;
+
 	return Mesh && TraceMesh(WorldRay, *Mesh, GetWorldMatrix(), OutHit);
 }
 
 bool UPrimitiveComponent::TraceMesh(const FRay& WorldRay, const FStaticMeshData& Mesh, const FMatrix& WorldMatrix, FHitResult& OutResult)
 {
+
 	FRay LocalRay = ToLocalRay(WorldRay, WorldMatrix);
 	float T;
 

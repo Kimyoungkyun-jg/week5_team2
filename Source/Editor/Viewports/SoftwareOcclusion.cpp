@@ -7,10 +7,12 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <mutex>
 
 namespace
 {
@@ -112,11 +114,72 @@ namespace
     {
         return (BX - AX) * (PY - AY) - (BY - AY) * (PX - AX);
     }
+
+    uint32 FloatToSortableUint(float Value)
+    {
+        const uint32 Bits = std::bit_cast<uint32>(Value);
+        const uint32 Mask = -static_cast<int32>(Bits >> 31) | 0x80000000u;
+        return Bits ^ Mask;
+    }
+
+    // 부동소수점 거리 기반 기수 정렬
+    void RadixSortCandidateDistances(
+        TArray<FSoftwareOcclusionCuller::FCandidateDistance>& Items,
+        TArray<FSoftwareOcclusionCuller::FCandidateDistance>& Temp)
+    {
+        const int32 Count = Items.Num();
+        if (Count <= 64)
+        {
+            std::sort(Items.begin(), Items.end(), [](const auto& A, const auto& B)
+            {
+                return A.DistSq < B.DistSq;
+            });
+            return;
+        }
+
+        Temp.SetNum(Count, false);
+        auto* Source = Items.GetData();
+        auto* Dest = Temp.GetData();
+
+        for (int32 ByteIndex = 0; ByteIndex < 4; ++ByteIndex)
+        {
+            const int32 Shift = ByteIndex * 8;
+            uint32 Hist[256] = { 0 };
+
+            for (int32 i = 0; i < Count; ++i)
+            {
+                const uint32 Key = FloatToSortableUint(Source[i].DistSq);
+                const uint8 Bucket = static_cast<uint8>((Key >> Shift) & 0xff);
+                ++Hist[Bucket];
+            }
+
+            uint32 Offset[256];
+            Offset[0] = 0;
+            for (int32 i = 1; i < 256; ++i)
+            {
+                Offset[i] = Offset[i - 1] + Hist[i - 1];
+            }
+
+            for (int32 i = 0; i < Count; ++i)
+            {
+                const uint32 Key = FloatToSortableUint(Source[i].DistSq);
+                const uint8 Bucket = static_cast<uint8>((Key >> Shift) & 0xff);
+                Dest[Offset[Bucket]++] = Source[i];
+            }
+
+            std::swap(Source, Dest);
+        }
+
+        if (Source != Items.GetData())
+        {
+            memcpy(Items.GetData(), Source, Count * sizeof(FSoftwareOcclusionCuller::FCandidateDistance));
+        }
+    }
 }
 
 void FSoftwareOcclusionCuller::ResetScene()
 {
-    ObjectStates.clear();
+    ObjectStates.Reset();
     SyncSerial = 0;
     bInitialized = false;
     bBVHDirty = true;
@@ -171,21 +234,28 @@ void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject
             continue;
         }
 
-        const uint32 Id = Object.Primitive->GetUUID();
-        auto Found = ObjectStates.find(Id);
-        if (Found == ObjectStates.end())
+        const uint32 InternalIndex = Object.Primitive->GetInternalIndex();
+        if (InternalIndex >= static_cast<uint32>(ObjectStates.Num()))
         {
-            FObjectState State{};
+            ObjectStates.SetNum(InternalIndex + 1);
+        }
+
+        FObjectState& State = ObjectStates[InternalIndex];
+        const uint32 SerialNumber = Object.Primitive->GetSerialNumber();
+
+        if (State.SerialNumber != SerialNumber) // 새로 생성된 객체
+        {
+            State.SerialNumber = SerialNumber;
             State.BoundsRevision = Object.BoundsRevision;
             State.SeenSerial = SyncSerial;
             State.bDynamic = bInitialized;
-            Found = ObjectStates.emplace(Id, State).first;
             if (State.bDynamic)
+            {
                 bBVHDirty = true;
+            }
         }
-        else
+        else // 기존에 있었던 객체
         {
-            FObjectState& State = Found->second;
             if (!State.bDynamic && State.BoundsRevision != Object.BoundsRevision)
             {
                 State.bDynamic = true;
@@ -195,28 +265,21 @@ void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject
             State.SeenSerial = SyncSerial;
         }
 
-        if (Found->second.bDynamic)
-            DynamicObjectIndices.Add(static_cast<uint32>(Index));
-        else
-            StaticObjectIndices.Add(static_cast<uint32>(Index));
-    }
-
-    for (auto It = ObjectStates.begin(); It != ObjectStates.end();)
-    {
-        if (It->second.SeenSerial != SyncSerial)
+        if (State.bDynamic)
         {
-            bBVHDirty = true;
-            It = ObjectStates.erase(It);
+            DynamicObjectIndices.Add(static_cast<uint32>(Index));
         }
         else
         {
-            ++It;
+            StaticObjectIndices.Add(static_cast<uint32>(Index));
         }
     }
 
     bool bSameStaticLayout = StaticObjectIndices.Num() == BuiltStaticObjectIndices.Num();
     for (int32 Index = 0; bSameStaticLayout && Index < StaticObjectIndices.Num(); ++Index)
+    {
         bSameStaticLayout = StaticObjectIndices[Index] == BuiltStaticObjectIndices[Index];
+    }
     bBVHDirty = bBVHDirty || !bSameStaticLayout;
     bInitialized = true;
 }
@@ -449,7 +512,14 @@ float FSoftwareOcclusionCuller::DistanceSquaredToBounds(const FAABB& Bounds) con
 void FSoftwareOcclusionCuller::AddDebugBounds(const FAABB& Bounds, const ESoftwareOcclusionDebugState State)
 {
     if (Settings.bDebugBounds && DebugBounds.Num() < 256)
-        DebugBounds.Add({Bounds, State});
+    {
+        static std::mutex BoundsMutex;
+        std::lock_guard<std::mutex> Lock(BoundsMutex);
+        if (DebugBounds.Num() < 256)
+        {
+            DebugBounds.Add({Bounds, State});
+        }
+    }
 }
 
 #if defined(ENGINE_DEBUG)
@@ -826,7 +896,7 @@ void FSoftwareOcclusionCuller::RasterizeClippedTriangle(const FVector4& A, const
     }
 }
 
-void FSoftwareOcclusionCuller::RasterizeOccluder(const FRenderableObject& Object, const FProjectedBounds& Projected)
+void FSoftwareOcclusionCuller::RasterizeOccluder(const FRenderableObject& Object, const FProjectedBounds& Projected, const bool bUseMesh)
 {
     if (!Object.StaticMeshData || !Projected.bValid || Projected.bUncertain || !bAllowRasterization)
         return;
@@ -844,9 +914,11 @@ void FSoftwareOcclusionCuller::RasterizeOccluder(const FRenderableObject& Object
     }
 
     const FStaticMeshData& Mesh = *Object.StaticMeshData;
-    const uint32 TriangleCount = static_cast<uint32>(Mesh.Indices.Num() / 3);
-    if (TriangleCount == 0 || Mesh.Vertices.IsEmpty())
-        return;
+    const int32 NumVerts = Mesh.Vertices.Num();
+    const int32 NumIndices = Mesh.Indices.Num();
+    const bool bValidMesh = bUseMesh && NumVerts > 0 && NumIndices >= 3;
+    const uint32 TriangleCount = bValidMesh ? static_cast<uint32>(NumIndices / 3) : 12;
+
     if (UsedTriangles + TriangleCount > Settings.TriangleBudget)
     {
         ActiveStats->bTriangleBudgetExceeded = true;
@@ -856,59 +928,166 @@ void FSoftwareOcclusionCuller::RasterizeOccluder(const FRenderableObject& Object
     UsedTriangles += TriangleCount;
     ActiveStats->SourceTriangles += TriangleCount;
     ++ActiveStats->OccludersRasterized;
+
     const FMatrix ModelViewProjection = Object.WorldMatrix * CurrentViewProjection;
-    TransformedVertices.SetNum(Mesh.Vertices.Num(), false);
-    for (int32 VertexIndex = 0; VertexIndex < Mesh.Vertices.Num(); ++VertexIndex)
-        TransformedVertices[VertexIndex] = FVector4(Mesh.Vertices[VertexIndex].Position, 1.0f) * ModelViewProjection;
 
-    for (int32 Index = 0; Index + 2 < Mesh.Indices.Num(); Index += 3)
+    if (bValidMesh)
     {
-        const uint32 I0 = Mesh.Indices[Index];
-        const uint32 I1 = Mesh.Indices[Index + 1];
-        const uint32 I2 = Mesh.Indices[Index + 2];
-        if (I0 >= static_cast<uint32>(TransformedVertices.Num()) ||
-            I1 >= static_cast<uint32>(TransformedVertices.Num()) ||
-            I2 >= static_cast<uint32>(TransformedVertices.Num()))
-            continue;
-
-        FVector4 PolygonA[16]{};
-        FVector4 PolygonB[16]{};
-        PolygonA[0] = TransformedVertices[I0];
-        PolygonA[1] = TransformedVertices[I1];
-        PolygonA[2] = TransformedVertices[I2];
-        int32 VertexCount = 3;
-        FVector4* Input = PolygonA;
-        FVector4* Output = PolygonB;
-        for (int32 Plane = 0; Plane < 6 && VertexCount > 0; ++Plane)
+        // 정점 메시 변환 및 클리핑
+        TransformedVertices.SetNum(NumVerts, false);
+        for (int32 i = 0; i < NumVerts; ++i)
         {
-            int32 OutputCount = 0;
-            FVector4 Previous = Input[VertexCount - 1];
-            float PreviousDistance = ClipPlaneDistance(Previous, Plane);
-            bool bPreviousInside = PreviousDistance >= 0.0f;
-            for (int32 Vertex = 0; Vertex < VertexCount; ++Vertex)
-            {
-                const FVector4 Current = Input[Vertex];
-                const float CurrentDistance = ClipPlaneDistance(Current, Plane);
-                const bool bCurrentInside = CurrentDistance >= 0.0f;
-                if (bCurrentInside != bPreviousInside)
-                {
-                    const float T = PreviousDistance / (PreviousDistance - CurrentDistance);
-                    Output[OutputCount++] = LerpClip(Previous, Current, T);
-                }
-                if (bCurrentInside)
-                    Output[OutputCount++] = Current;
-                Previous = Current;
-                PreviousDistance = CurrentDistance;
-                bPreviousInside = bCurrentInside;
-            }
-            VertexCount = OutputCount;
-            std::swap(Input, Output);
+            TransformedVertices[i] = FVector4(Mesh.Vertices[i].Position, 1.0f) * ModelViewProjection;
         }
 
-        for (int32 Triangle = 1; Triangle + 1 < VertexCount; ++Triangle)
+        for (int32 Index = 0; Index + 2 < NumIndices; Index += 3)
         {
-            RasterizeClippedTriangle(Input[0], Input[Triangle], Input[Triangle + 1]);
-            ++ActiveStats->ClippedTriangles;
+            const uint32 I0 = Mesh.Indices[Index];
+            const uint32 I1 = Mesh.Indices[Index + 1];
+            const uint32 I2 = Mesh.Indices[Index + 2];
+            if (I0 >= static_cast<uint32>(NumVerts) ||
+                I1 >= static_cast<uint32>(NumVerts) ||
+                I2 >= static_cast<uint32>(NumVerts))
+            {
+                continue;
+            }
+
+            FVector4 PolygonA[16]{};
+            FVector4 PolygonB[16]{};
+            PolygonA[0] = TransformedVertices[I0];
+            PolygonA[1] = TransformedVertices[I1];
+            PolygonA[2] = TransformedVertices[I2];
+            int32 VertexCount = 3;
+            FVector4* Input = PolygonA;
+            FVector4* Output = PolygonB;
+            for (int32 Plane = 0; Plane < 6 && VertexCount > 0; ++Plane)
+            {
+                int32 OutputCount = 0;
+                FVector4 Previous = Input[VertexCount - 1];
+                float PreviousDistance = ClipPlaneDistance(Previous, Plane);
+                bool bPreviousInside = PreviousDistance >= 0.0f;
+                for (int32 Vertex = 0; Vertex < VertexCount; ++Vertex)
+                {
+                    const FVector4 Current = Input[Vertex];
+                    const float CurrentDistance = ClipPlaneDistance(Current, Plane);
+                    const bool bCurrentInside = CurrentDistance >= 0.0f;
+                    if (bCurrentInside != bPreviousInside)
+                    {
+                        const float T = PreviousDistance / (PreviousDistance - CurrentDistance);
+                        Output[OutputCount++] = LerpClip(Previous, Current, T);
+                    }
+                    if (bCurrentInside)
+                    {
+                        Output[OutputCount++] = Current;
+                    }
+                    Previous = Current;
+                    PreviousDistance = CurrentDistance;
+                    bPreviousInside = bCurrentInside;
+                }
+                VertexCount = OutputCount;
+                std::swap(Input, Output);
+            }
+
+            for (int32 Triangle = 1; Triangle + 1 < VertexCount; ++Triangle)
+            {
+                RasterizeClippedTriangle(Input[0], Input[Triangle], Input[Triangle + 1]);
+                ++ActiveStats->ClippedTriangles;
+            }
+        }
+    }
+    else
+    {
+        const FBox& Box = Object.StaticMeshData->AABB;
+        const bool bValidBox = Box.Min.X < Box.Max.X && Box.Min.Y < Box.Max.Y && Box.Min.Z < Box.Max.Z;
+
+        // 바운딩 박스 정점 변환
+        TransformedVertices.SetNum(8, false);
+        if (bValidBox)
+        {
+            const FVector LocalCorners[8] = {
+                { Box.Min.X, Box.Min.Y, Box.Min.Z },
+                { Box.Max.X, Box.Min.Y, Box.Min.Z },
+                { Box.Min.X, Box.Max.Y, Box.Min.Z },
+                { Box.Max.X, Box.Max.Y, Box.Min.Z },
+                { Box.Min.X, Box.Min.Y, Box.Max.Z },
+                { Box.Max.X, Box.Min.Y, Box.Max.Z },
+                { Box.Min.X, Box.Max.Y, Box.Max.Z },
+                { Box.Max.X, Box.Max.Y, Box.Max.Z }
+            };
+            for (int32 i = 0; i < 8; ++i)
+            {
+                TransformedVertices[i] = FVector4(LocalCorners[i], 1.0f) * ModelViewProjection;
+            }
+        }
+        else
+        {
+            FVector WorldCorners[8];
+            GetBoundsCorners(Object.WorldBounds, WorldCorners);
+            for (int32 i = 0; i < 8; ++i)
+            {
+                TransformedVertices[i] = FVector4(WorldCorners[i], 1.0f) * CurrentViewProjection;
+            }
+        }
+
+        static constexpr uint32 BoxIndices[36] = {
+            7, 5, 1,  7, 1, 3,
+            4, 6, 2,  4, 2, 0,
+            6, 7, 3,  6, 3, 2,
+            5, 4, 0,  5, 0, 1,
+            4, 5, 7,  4, 7, 6,
+            0, 2, 3,  0, 3, 1
+        };
+
+        // 바운딩 박스 인덱스 순회
+        for (int32 Index = 0; Index + 2 < 36; Index += 3)
+        {
+            const uint32 I0 = BoxIndices[Index];
+            const uint32 I1 = BoxIndices[Index + 1];
+            const uint32 I2 = BoxIndices[Index + 2];
+            if (I0 >= static_cast<uint32>(TransformedVertices.Num()) ||
+                I1 >= static_cast<uint32>(TransformedVertices.Num()) ||
+                I2 >= static_cast<uint32>(TransformedVertices.Num()))
+                continue;
+
+            FVector4 PolygonA[16]{};
+            FVector4 PolygonB[16]{};
+            PolygonA[0] = TransformedVertices[I0];
+            PolygonA[1] = TransformedVertices[I1];
+            PolygonA[2] = TransformedVertices[I2];
+            int32 VertexCount = 3;
+            FVector4* Input = PolygonA;
+            FVector4* Output = PolygonB;
+            for (int32 Plane = 0; Plane < 6 && VertexCount > 0; ++Plane)
+            {
+                int32 OutputCount = 0;
+                FVector4 Previous = Input[VertexCount - 1];
+                float PreviousDistance = ClipPlaneDistance(Previous, Plane);
+                bool bPreviousInside = PreviousDistance >= 0.0f;
+                for (int32 Vertex = 0; Vertex < VertexCount; ++Vertex)
+                {
+                    const FVector4 Current = Input[Vertex];
+                    const float CurrentDistance = ClipPlaneDistance(Current, Plane);
+                    const bool bCurrentInside = CurrentDistance >= 0.0f;
+                    if (bCurrentInside != bPreviousInside)
+                    {
+                        const float T = PreviousDistance / (PreviousDistance - CurrentDistance);
+                        Output[OutputCount++] = LerpClip(Previous, Current, T);
+                    }
+                    if (bCurrentInside)
+                        Output[OutputCount++] = Current;
+                    Previous = Current;
+                    PreviousDistance = CurrentDistance;
+                    bPreviousInside = bCurrentInside;
+                }
+                VertexCount = OutputCount;
+                std::swap(Input, Output);
+            }
+
+            for (int32 Triangle = 1; Triangle + 1 < VertexCount; ++Triangle)
+            {
+                RasterizeClippedTriangle(Input[0], Input[Triangle], Input[Triangle + 1]);
+                ++ActiveStats->ClippedTriangles;
+            }
         }
     }
     UpdateDirtyHZB();
@@ -1059,32 +1238,44 @@ void FSoftwareOcclusionCuller::Cull(
             const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
             const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
 
-            std::vector<TArray<UPrimitiveComponent*>> LocalVisible(NumJobs);
-            std::vector<uint32> LocalRejected(NumJobs, 0);
+            if (WorkerVisibleBuffers.Num() < NumJobs)
+            {
+                WorkerVisibleBuffers.SetNum(NumJobs);
+            }
+            if (WorkerRejectedBuffers.Num() < NumJobs)
+            {
+                WorkerRejectedBuffers.SetNum(NumJobs);
+            }
+            for (int32 i = 0; i < NumJobs; ++i)
+            {
+                WorkerVisibleBuffers[i].Reset();
+                WorkerRejectedBuffers[i] = 0;
+            }
 
             // 절두체 검사 병렬 수행
             FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
             {
                 const int32 JobIndex = Start / ChunkSize;
-                LocalVisible[JobIndex].Reserve(End - Start);
+                TArray<UPrimitiveComponent*>& LocalVisible = WorkerVisibleBuffers[JobIndex];
+                LocalVisible.Reserve(End - Start);
                 for (int32 Index = Start; Index < End; ++Index)
                 {
                     const FRenderableObject& Object = Objects[Index];
                     if (Object.Primitive && IsAABBInFrustum(Object.WorldBounds, Frustum))
                     {
-                        LocalVisible[JobIndex].Add(Object.Primitive);
+                        LocalVisible.Add(Object.Primitive);
                     }
                     else if (Object.Primitive)
                     {
-                        ++LocalRejected[JobIndex];
+                        ++WorkerRejectedBuffers[JobIndex];
                     }
                 }
             });
 
             for (int32 JobIndex = 0; JobIndex < NumJobs; ++JobIndex)
             {
-                OutVisible.Append(LocalVisible[JobIndex]);
-                OutStats.FrustumRejected += LocalRejected[JobIndex];
+                OutVisible.Append(WorkerVisibleBuffers[JobIndex]);
+                OutStats.FrustumRejected += WorkerRejectedBuffers[JobIndex];
             }
         }
         OutStats.FinalVisible = static_cast<uint32>(OutVisible.Num());
@@ -1133,23 +1324,35 @@ void FSoftwareOcclusionCuller::Cull(
         const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
         const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
 
-        std::vector<TArray<uint32>> LocalCandidates(NumJobs);
-        std::vector<uint32> LocalRejected(NumJobs, 0);
+        if (WorkerCandidateBuffers.Num() < NumJobs)
+        {
+            WorkerCandidateBuffers.SetNum(NumJobs);
+        }
+        if (WorkerRejectedBuffers.Num() < NumJobs)
+        {
+            WorkerRejectedBuffers.SetNum(NumJobs);
+        }
+        for (int32 i = 0; i < NumJobs; ++i)
+        {
+            WorkerCandidateBuffers[i].Reset();
+            WorkerRejectedBuffers[i] = 0;
+        }
 
         // 절두체 검사 병렬 수행
         FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
         {
             const int32 JobIndex = Start / ChunkSize;
-            LocalCandidates[JobIndex].Reserve(End - Start);
+            TArray<uint32>& LocalCandidates = WorkerCandidateBuffers[JobIndex];
+            LocalCandidates.Reserve(End - Start);
             for (int32 Index = Start; Index < End; ++Index)
             {
                 if (Objects[Index].Primitive && IsAABBInFrustum(Objects[Index].WorldBounds, Frustum))
                 {
-                    LocalCandidates[JobIndex].Add(static_cast<uint32>(Index));
+                    LocalCandidates.Add(static_cast<uint32>(Index));
                 }
                 else if (Objects[Index].Primitive)
                 {
-                    ++LocalRejected[JobIndex];
+                    ++WorkerRejectedBuffers[JobIndex];
                 }
             }
         });
@@ -1158,18 +1361,11 @@ void FSoftwareOcclusionCuller::Cull(
         CandidateIndices.Reserve(TotalObjects);
         for (int32 JobIndex = 0; JobIndex < NumJobs; ++JobIndex)
         {
-            CandidateIndices.Append(LocalCandidates[JobIndex]);
-            OutStats.FrustumRejected += LocalRejected[JobIndex];
+            CandidateIndices.Append(WorkerCandidateBuffers[JobIndex]);
+            OutStats.FrustumRejected += WorkerRejectedBuffers[JobIndex];
         }
 
-        struct FCandidateDistance
-        {
-            uint32 Index;
-            float DistSq;
-        };
-
         const int32 TotalCandidates = CandidateIndices.Num();
-        TArray<FCandidateDistance> CandidateDistances;
         CandidateDistances.SetNum(TotalCandidates, false);
 
         if (TotalCandidates > 0)
@@ -1185,22 +1381,190 @@ void FSoftwareOcclusionCuller::Cull(
                 }
             });
 
-            std::sort(CandidateDistances.begin(), CandidateDistances.end(), [](const FCandidateDistance& A, const FCandidateDistance& B)
+            // 기수 정렬 수행
+            RadixSortCandidateDistances(CandidateDistances, CandidateDistancesTemp);
+
+            const float NearestDistance = CandidateDistances.IsEmpty() ? 0.0f : std::sqrt(CandidateDistances[0].DistSq);
+            OutStats.NearestOccluderDistance = NearestDistance;
+            const float BoxThresholdSq = Settings.BoxOccluderDistanceThreshold * Settings.BoxOccluderDistanceThreshold;
+            const bool bUsingMesh = CandidateDistances[0].DistSq <= BoxThresholdSq;
+            OutStats.bUsingMeshOccluder = bUsingMesh;
+
+            if (!bUsingMesh)
             {
-                return A.DistSq < B.DistSq;
+                // 거리 기준 박스 차폐막
+                uint32 RasterizedCount = 0;
+                const uint32 MaxOccluders = 1000;
+
+                for (const FCandidateDistance& Item : CandidateDistances)
+                {
+                    if (!bAllowRasterization || RasterizedCount >= MaxOccluders)
+                    {
+                        break;
+                    }
+
+                    const uint32 Index = Item.Index;
+                    const FRenderableObject& Object = Objects[Index];
+
+                    if (!Object.bCanOcclude || !Object.StaticMeshData || !Object.Primitive)
+                    {
+                        continue;
+                    }
+
+                    const uint32 InternalIndex = Object.Primitive->GetInternalIndex();
+                    bool bStatic = false;
+                    if (InternalIndex < static_cast<uint32>(ObjectStates.Num()))
+                    {
+                        const FObjectState& State = ObjectStates[InternalIndex];
+                        bStatic = (State.SerialNumber == Object.Primitive->GetSerialNumber()) && !State.bDynamic;
+                    }
+
+                    if (!bStatic)
+                    {
+                        continue;
+                    }
+
+                    const FProjectedBounds Projected = ProjectBounds(Object.WorldBounds);
+                    if (!Projected.bValid || Projected.bUncertain)
+                    {
+                        continue;
+                    }
+
+                    if (RasterizedCount > 0 && IsOccluded(Projected, true))
+                    {
+                        continue;
+                    }
+
+                    const uint32 PrevRasterized = ActiveStats->OccludersRasterized;
+                    RasterizeOccluder(Object, Projected, false);
+                    if (ActiveStats->OccludersRasterized > PrevRasterized)
+                    {
+                        ++RasterizedCount;
+                    }
+                }
+            }
+            else
+            {
+                // 거리 기준 정점 메시 차폐막
+                uint32 RasterizedCount = 0;
+                uint32 MeshRasterizedCount = 0;
+                const uint32 MaxOccluders = 1000;
+                constexpr uint32 MaxMeshOccluders = 64;
+
+                for (const FCandidateDistance& Item : CandidateDistances)
+                {
+                    if (!bAllowRasterization || RasterizedCount >= MaxOccluders)
+                    {
+                        break;
+                    }
+
+                    const uint32 Index = Item.Index;
+                    const FRenderableObject& Object = Objects[Index];
+
+                    if (!Object.bCanOcclude || !Object.StaticMeshData || !Object.Primitive)
+                    {
+                        continue;
+                    }
+
+                    const uint32 InternalIndex = Object.Primitive->GetInternalIndex();
+                    bool bStatic = false;
+                    if (InternalIndex < static_cast<uint32>(ObjectStates.Num()))
+                    {
+                        const FObjectState& State = ObjectStates[InternalIndex];
+                        bStatic = (State.SerialNumber == Object.Primitive->GetSerialNumber()) && !State.bDynamic;
+                    }
+
+                    if (!bStatic)
+                    {
+                        continue;
+                    }
+
+                    const FProjectedBounds Projected = ProjectBounds(Object.WorldBounds);
+                    if (!Projected.bValid || Projected.bUncertain)
+                    {
+                        continue;
+                    }
+
+                    if (RasterizedCount > 0 && IsOccluded(Projected, true))
+                    {
+                        continue;
+                    }
+
+                    if (MeshRasterizedCount >= MaxMeshOccluders)
+                    {
+                        break;
+                    }
+
+                    const uint32 PrevRasterized = ActiveStats->OccludersRasterized;
+                    RasterizeOccluder(Object, Projected, true);
+                    if (ActiveStats->OccludersRasterized > PrevRasterized)
+                    {
+                        ++RasterizedCount;
+                        ++MeshRasterizedCount;
+                    }
+                }
+            }
+
+            UpdateDirtyHZB();
+
+            // 가시성 병렬 판정
+            const int32 QueryChunkSize = (TotalCandidates + NumWorkers - 1) / NumWorkers;
+            const bool bUseHierarchy = Settings.Mode != ESoftwareOcclusionMode::LinearSubcells;
+
+            std::atomic<uint32> TotalOcclusionTested{ 0 };
+            std::atomic<uint32> TotalOcclusionRejected{ 0 };
+
+            FFiberJobManager::Get().ParallelFor(TotalCandidates, QueryChunkSize, [&](int32 Start, int32 End)
+            {
+                uint32 LocalTested = 0;
+                uint32 LocalRejected = 0;
+
+                for (int32 i = Start; i < End; ++i)
+                {
+                    const uint32 Index = CandidateDistances[i].Index;
+                    const FRenderableObject& Object = Objects[Index];
+                    if (!Object.Primitive)
+                    {
+                        continue;
+                    }
+
+                    if (!Object.bCanBeOccluded)
+                    {
+                        if (VisibilityFlags.IsValidIndex(static_cast<int32>(Object.StableIndex)))
+                        {
+                            VisibilityFlags[Object.StableIndex] = 1;
+                        }
+                        AddDebugBounds(Object.WorldBounds, ESoftwareOcclusionDebugState::Visible);
+                        continue;
+                    }
+
+                    const FProjectedBounds Projected = ProjectBounds(Object.WorldBounds);
+                    ++LocalTested;
+
+                    if (Projected.bValid && !Projected.bUncertain && IsOccluded(Projected, bUseHierarchy))
+                    {
+                        ++LocalRejected;
+                        AddDebugBounds(Object.WorldBounds, ESoftwareOcclusionDebugState::Occluded);
+                        continue;
+                    }
+
+                    if (VisibilityFlags.IsValidIndex(static_cast<int32>(Object.StableIndex)))
+                    {
+                        VisibilityFlags[Object.StableIndex] = 1;
+                    }
+
+                    AddDebugBounds(Object.WorldBounds,
+                        !Projected.bValid || Projected.bUncertain
+                            ? ESoftwareOcclusionDebugState::Fallback
+                            : ESoftwareOcclusionDebugState::Visible);
+                }
+
+                TotalOcclusionTested.fetch_add(LocalTested, std::memory_order_relaxed);
+                TotalOcclusionRejected.fetch_add(LocalRejected, std::memory_order_relaxed);
             });
 
-            for (const FCandidateDistance& Item : CandidateDistances)
-            {
-                const uint32 Index = Item.Index;
-                bool bStatic = false;
-                if (Objects[Index].bCanBeOccluded)
-                {
-                    const auto Found = ObjectStates.find(Objects[Index].Primitive->GetUUID());
-                    bStatic = Found != ObjectStates.end() && !Found->second.bDynamic;
-                }
-                ProcessObject(Objects[Index], bStatic, true, true, OutVisible);
-            }
+            ActiveStats->OcclusionTested += TotalOcclusionTested.load(std::memory_order_relaxed);
+            ActiveStats->OcclusionRejected += TotalOcclusionRejected.load(std::memory_order_relaxed);
         }
     }
 
@@ -1229,20 +1593,28 @@ void FSoftwareOcclusionCuller::Cull(
         const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
         const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
 
-        std::vector<TArray<UPrimitiveComponent*>> LocalVisible(NumJobs);
+        if (WorkerVisibleBuffers.Num() < NumJobs)
+        {
+            WorkerVisibleBuffers.SetNum(NumJobs);
+        }
+        for (int32 i = 0; i < NumJobs; ++i)
+        {
+            WorkerVisibleBuffers[i].Reset();
+        }
 
         // 가시성 결과 병렬 수집
         FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
         {
             const int32 JobIndex = Start / ChunkSize;
-            LocalVisible[JobIndex].Reserve(End - Start);
+            TArray<UPrimitiveComponent*>& Local = WorkerVisibleBuffers[JobIndex];
+            Local.Reserve(End - Start);
             for (int32 Index = Start; Index < End; ++Index)
             {
                 const FRenderableObject& Object = Objects[Index];
                 if (Object.Primitive && VisibilityFlags.IsValidIndex(static_cast<int32>(Object.StableIndex)) &&
                     VisibilityFlags[Object.StableIndex] != 0)
                 {
-                    LocalVisible[JobIndex].Add(Object.Primitive);
+                    Local.Add(Object.Primitive);
                 }
             }
         });
@@ -1250,7 +1622,7 @@ void FSoftwareOcclusionCuller::Cull(
         OutVisible.Reserve(TotalObjects);
         for (int32 JobIndex = 0; JobIndex < NumJobs; ++JobIndex)
         {
-            OutVisible.Append(LocalVisible[JobIndex]);
+            OutVisible.Append(WorkerVisibleBuffers[JobIndex]);
         }
     }
     OutStats.FinalVisible = static_cast<uint32>(OutVisible.Num());

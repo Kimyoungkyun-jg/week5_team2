@@ -213,16 +213,23 @@ bool UWorld::LineTraceSingle(const FRay& WorldRay, FHitResult& OutHit,
 	FBillboardTraceTransform ResolveBillboard, const void* ViewContext)
 {
 	OutHit = FHitResult();
+
 	for (TObjectIterator<UPrimitiveComponent> It; It; ++It)
 	{
+		//해당월드에 있음
 		if (!It->IsVisible() || !It->GetOwner() || It->GetOwner()->GetWorld() != this) continue;
 		FHitResult Hit;
 		bool bHit = false;
+
+		// 빌보드 분기를 여기서 처리하는게 맞나,..?
+		{
 		UBillboardComponent* Billboard = Cast<UBillboardComponent>(*It);
 		if (Billboard && ResolveBillboard)
 			bHit = Billboard->LineTraceComponentForView(WorldRay, Hit, ResolveBillboard(*Billboard, ViewContext));
 		else
 			bHit = It->LineTraceComponent(WorldRay, Hit);
+		}
+
 		if (bHit && Hit.HitComponent && Hit.Distance >= 0.0f && Hit.Distance < OutHit.Distance)
 			OutHit = Hit;
 	}

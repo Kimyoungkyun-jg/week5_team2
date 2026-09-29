@@ -109,6 +109,7 @@ public:
     }
     void AppendSoftwareOcclusionDebugBounds(FLineBatcher& LineBatcher) const;
     void PostRenderOpaque(int32 ViewIndex, FTexture2D* SceneDepthTexture) { SoftwareOcclusion.PostRenderOpaque(ViewIndex, SceneDepthTexture); }
+    void SettleDynamicObjects() { SoftwareOcclusion.SettleDynamicObjects(); }
 
     // 파이버 잡으로 월드 및 MVP 행렬을 병렬 연산하여 TArray에 수집한다.
     void BuildRenderPackets(int32 ViewIndex, TArray<FRenderPacket>& OutPackets);

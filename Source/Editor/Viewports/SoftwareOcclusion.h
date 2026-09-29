@@ -106,6 +106,9 @@ public:
     bool DidLastRayQueryRebuildBVH() const { return bLastRayQueryRebuiltBVH; }
     float GetLastRayQueryBVHBuildMs() const { return LastRayQueryBVHBuildMs; }
 
+    // 조작 종료 시 동적 객체를 정적으로 복귀
+    void SettleDynamicObjects() { bPendingSettle = true; }
+
     // World capture 당 한 번 호출하여 Static/Dynamic 상태와 BVH rebuild 필요성을 갱신한다.
     void SynchronizeObjects(const TArray<FRenderableObject>& Objects);
 
@@ -197,6 +200,8 @@ private:
     uint64 SyncSerial = 0;
     bool bInitialized = false;
     bool bBVHDirty = true;
+    bool bPendingSettle = false;
+    int32 LastBuiltObjectCount = -1;
 
     TArray<uint32> StaticObjectIndices;
     TArray<uint32> DynamicObjectIndices;
@@ -252,8 +257,8 @@ private:
     void ClearBuffers();
     void EnsureBVH(const TArray<FRenderableObject>& Objects);
     uint32 BuildBVHNode(const TArray<FRenderableObject>& Objects, uint32 First, uint32 Count);
-    void TraverseRayBVH(const FRay& Ray, const TArray<FRenderableObject>& Objects, uint32 NodeIndex,
-        TArray<FLineTraceCandidate>& OutCandidates) const;
+    void TraverseRayBVH(const FTraceContext& Context, const TArray<FRenderableObject>& Objects, uint32 NodeIndex,
+        float NodeDistance, float& ClosestDist, TArray<FLineTraceCandidate>& OutCandidates) const;
     void TraverseBVH(const TArray<FRenderableObject>& Objects, uint32 NodeIndex, bool bFrustumAccepted, bool bUseOcclusion, TArray<UPrimitiveComponent*>& OutVisible);
     void ProcessObject(const FRenderableObject& Object, bool bStatic, bool bFrustumAccepted, bool bUseOcclusion, TArray<UPrimitiveComponent*>& OutVisible);
 

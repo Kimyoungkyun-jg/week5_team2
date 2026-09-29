@@ -210,15 +210,21 @@ bool UWorld::DestroyActor(AActor* Actor)
 }
 
 // 다른 World의 객체를 제외하고 Component 교차 중 최근접 결과를 선택한다.
-bool UWorld::LineTraceSingle(const FRay& WorldRay, FHitResult& OutHit, const TArray<UPrimitiveComponent*>& Candidates,
+bool UWorld::LineTraceSingle(const FRay& WorldRay, FHitResult& OutHit, const TArray<FLineTraceCandidate>& Candidates,
 	FBillboardTraceTransform ResolveBillboard, const void* ViewContext)
 {
 	OutHit = FHitResult();
 	// 클릭당 한 번: 레이 역수, 최근접 거리, Billboard 행렬 공급자를 한 곳에 모은다
 	FTraceContext Context = MakeTraceContext(WorldRay, ResolveBillboard, ViewContext);
 	//for (TObjectIterator<UPrimitiveComponent> It; It; ++It)
-	for (UPrimitiveComponent* It : Candidates)
+	for (const FLineTraceCandidate& Candidate : Candidates)
 	{
+		UPrimitiveComponent* It = Candidate.Primitive;
+		if (!It) continue;
+		// Bounds 후보는 가까운 순서다. 현재 실제 Hit보다 뒤에서 시작하면 정밀 검사를 생략한다.
+		// Bounds를 신뢰할 수 없는 후보는 기존처럼 항상 검사한다.
+		if (Candidate.bHasBoundsDistance && Candidate.BoundsDistance >= Context.BestDistance)
+			continue;
 		//해당월드에 있음
 		if (!It->IsVisible()) continue;
 		FHitResult Hit;

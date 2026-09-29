@@ -90,6 +90,12 @@ public:
     // World capture 당 한 번 호출하여 Static/Dynamic 상태와 BVH rebuild 필요성을 갱신한다.
     void SynchronizeObjects(const TArray<FRenderableObject>& Objects);
 
+    // Ray와 교차하는 정적 BVH 리프의 객체와 BVH 밖의 동적 객체를 피킹 후보로 수집한다.
+    void GatherRayCandidates(
+        const FRay& Ray,
+        const TArray<FRenderableObject>& Objects,
+        TArray<UPrimitiveComponent*>& OutCandidates);
+
     // View 하나의 프러스텀과 Software Occlusion을 실행한다.
     void Cull(
         int32 ViewIndex,
@@ -223,6 +229,8 @@ private:
     void ClearBuffers();
     void EnsureBVH(const TArray<FRenderableObject>& Objects);
     uint32 BuildBVHNode(const TArray<FRenderableObject>& Objects, uint32 First, uint32 Count);
+    void TraverseRayBVH(const FRay& Ray, const TArray<FRenderableObject>& Objects, uint32 NodeIndex,
+        TArray<UPrimitiveComponent*>& OutCandidates) const;
     void TraverseBVH(const TArray<FRenderableObject>& Objects, uint32 NodeIndex, bool bFrustumAccepted, bool bUseOcclusion, TArray<UPrimitiveComponent*>& OutVisible);
     void ProcessObject(const FRenderableObject& Object, bool bStatic, bool bFrustumAccepted, bool bUseOcclusion, TArray<UPrimitiveComponent*>& OutVisible);
 

@@ -226,7 +226,7 @@ void FGridRenderer::OnRenderBatchGrid(const FMatrix& ViewProj, const FVector& Ca
     const bool Orthographic = std::fabs(ViewProj.M[0][3]) + std::fabs(ViewProj.M[1][3])
         + std::fabs(ViewProj.M[2][3]) < 1.0e-6f;
     const FVector FadeOrigin(CameraPos.X, CameraPos.Y, 0);
-    const float FadeRadius = Orthographic ? 0.0f : std::clamp(std::fabs(CameraPos.Z) * 25.0f, 5.0f, 50.0f);
+    const float FadeRadius = Orthographic ? 0.0f : std::clamp(std::fabs(CameraPos.Z) * 25.0f, 5.0f, 100.0f);
     const float CameraSide = Orthographic ? -CameraForward.Dot(Normal) : CameraPos.Dot(Normal);
     // Grid는 월드 원점에 고정하고 생성 범위만 절두체와 평면의 교차 영역을 따른다.
     const auto Position = [Plane](float U, float V) {
@@ -302,20 +302,20 @@ void FGridRenderer::OnRenderBatchGrid(const FMatrix& ViewProj, const FVector& Ca
 }
 
 // 반투명 XY Grid를 기준으로 Z축을 나눠 뒤쪽 축·Grid·앞쪽 축 순서로 합성한다.
-void FGridRenderer::OnRenderPSGrid(const FMatrix& ViewProj, const FVector& CameraPos,
-    const FEditorSettings& InEditorSettings, const FViewportSettings& Viewport)
+void FGridRenderer::OnRenderPSGrid(const FMatrix& ViewProj, const FVector& CameraPos, const FEditorSettings& InEditorSettings, const FViewportSettings& Viewport, float FarClip)
 {
     FGridFrustum Frustum{};
     if (!BuildGridFrustum(ViewProj, Frustum)) return;
     // 원근 축은 Grid의 거리 페이드를 공유하고 직교의 무한 가시 범위 정책과 분리한다.
     const FVector FadeOrigin(CameraPos.X, CameraPos.Y, 0);
-    const float FadeRadius = std::clamp(std::fabs(CameraPos.Z) * 25.0f, 5.0f, 50.0f);
+	const float FadeRadius = FarClip * 0.9f;
     FPSGridData Data{};
     // GridShader cbuffer가 row_major이므로 전치 없이 올린다. (필드명과 달리 역행렬이 아닌 VP)
     Data.invViewProj = ViewProj;
     Data.CameraPos = CameraPos;
     Data.CellSize = std::max(1, InEditorSettings.GridSpacing);
     Data.SubCellSize = Data.CellSize * 0.1f;
+	Data.FadeRadius = FadeRadius;
     // 깊이를 기록하지 않는 Grid 위로 뒤쪽 Z축이 덮이지 않도록 평면 반대편부터 그린다.
     const float AxisExtent = Frustum.AxisExtent.Z;
     const float FrontZ = CameraPos.Z >= 0.0f ? AxisExtent : -AxisExtent;

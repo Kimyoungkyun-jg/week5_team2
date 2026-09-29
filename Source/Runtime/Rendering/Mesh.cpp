@@ -15,5 +15,5 @@ UMaterial* UStaticMesh::GetMaterial(uint32 SlotIndex) const
 	if (SlotIndex < Materials.size() && Materials[SlotIndex]) {
 		return Materials[SlotIndex];
 	}
-	return UAssetManager::GetAssetByPath<UMaterial>("DefaultMaterial");
+	return UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial");
 }

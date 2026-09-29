@@ -219,16 +219,16 @@ bool FSettingsPanel::LoadSettings()
 		Settings.bViewRotationSaved[Index] = false;
 	}
 
-	std::string Line;
+	FString Line;
 	while (std::getline(File, Line))
 	{
 		if (Line.empty() || Line[0] == ';' || Line[0] == '[') continue;
 
 		std::istringstream Iss(Line);
-		std::string Key;
+		FString Key;
 		if (std::getline(Iss, Key, '='))
 		{
-			std::string ValueStr;
+			FString ValueStr;
 			if (std::getline(Iss, ValueStr))
 			{
 				// 새 View 키는 NaN·잘못된 숫자·범위 밖 값을 무시한다.

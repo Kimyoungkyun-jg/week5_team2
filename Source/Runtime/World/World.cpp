@@ -210,20 +210,28 @@ bool UWorld::DestroyActor(AActor* Actor)
 }
 
 // 다른 World의 객체를 제외하고 Component 교차 중 최근접 결과를 선택한다.
-bool UWorld::LineTraceSingle(const FRay& WorldRay, FHitResult& OutHit,
+bool UWorld::LineTraceSingle(const FRay& WorldRay, FHitResult& OutHit, const TArray<UPrimitiveComponent*>& Candidates,
 	FBillboardTraceTransform ResolveBillboard, const void* ViewContext)
 {
 	OutHit = FHitResult();
-	for (TObjectIterator<UPrimitiveComponent> It; It; ++It)
+	
+	//for (TObjectIterator<UPrimitiveComponent> It; It; ++It)
+	for (UPrimitiveComponent* It : Candidates)
 	{
+		//해당월드에 있음
 		if (!It->IsVisible() || !It->GetOwner() || It->GetOwner()->GetWorld() != this) continue;
 		FHitResult Hit;
 		bool bHit = false;
-		UBillboardComponent* Billboard = Cast<UBillboardComponent>(*It);
+
+		// 빌보드 분기를 여기서 처리하는게 맞나,..?
+		{
+		UBillboardComponent* Billboard = Cast<UBillboardComponent>(It);
 		if (Billboard && ResolveBillboard)
 			bHit = Billboard->LineTraceComponentForView(WorldRay, Hit, ResolveBillboard(*Billboard, ViewContext));
 		else
 			bHit = It->LineTraceComponent(WorldRay, Hit);
+		}
+
 		if (bHit && Hit.HitComponent && Hit.Distance >= 0.0f && Hit.Distance < OutHit.Distance)
 			OutHit = Hit;
 	}

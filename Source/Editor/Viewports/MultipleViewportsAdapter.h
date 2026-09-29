@@ -57,10 +57,15 @@ public:
     bool IsViewActive(int32 ViewIndex) const;
     // 현재 입력을 소비할 활성 View 인덱스를 반환한다.
     int32 GetActiveViewIndex() const { return ActiveViewIndex; }
+
     // 입력 영역 밖에서도 마지막 편집 대상을 유지하며 Single에서는 확대 View를 반환한다.
     int32 GetEditorViewIndex() const { return Views.Mode == ELayoutMode::Single ? SingleViewIndex : EditorViewIndex; }
+
+	const FViewCamera& GetEditorViewCamera() const { return GetViewCamera(GetEditorViewIndex()); }
+
     // 속성 창에서 선택한 View를 공통 편집 대상으로 지정한다.
     void SetEditorViewIndex(int32 Index) { if (Index >= 0 && Index < 4) EditorViewIndex = Index; }
+
     // View별 장면 래스터라이저 모드를 저장하고 조회한다.
     void SetViewWireframe(int32 Index, bool Value) { if (Index >= 0 && Index < 4) ViewWireframe[Index] = Value; }
     bool IsViewWireframe(int32 Index) const { return Index >= 0 && Index < 4 && ViewWireframe[Index]; }

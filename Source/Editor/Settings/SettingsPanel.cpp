@@ -3,7 +3,7 @@
 #include "Editor/Viewports/MultipleViewportsAdapter.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
-#include "Core/StatOverlay.h"
+
 
 #include "World/World.h"
 
@@ -68,13 +68,7 @@ void FSettingsPanel::OnRender()
 		ImGui::SliderFloat("Occlusion CPU Budget (ms)", &Settings.SoftwareOcclusionCpuBudgetMs, 0.0f, 16.0f, "%.1f");
 		ImGui::SetNextItemWidth(220.0f);
 		ImGui::SliderFloat("Box Distance Threshold", &Settings.SoftwareOcclusionBoxDistanceThreshold, 0.0f, 100.0f, "%.1f m");
-		const int32 ActiveViewIndex = ViewportAdapter->GetSingleViewIndex();
-		const FSoftwareOcclusionStats& Stats = ViewportAdapter->GetSoftwareOcclusionStats(ActiveViewIndex);
-		ImGui::Text("Nearest Candidate: %.2f m | Mesh Used: %s", Stats.NearestOccluderDistance, Stats.bUsingMeshOccluder ? "Yes" : "No");
 		ImGui::Checkbox("Debug Occlusion Bounds", &Settings.bSoftwareOcclusionDebugBounds);
-		bool bShowOcclusionStats = FStatOverlay::IsEnabled(EStatFlags::Occlusion);
-		if (ImGui::Checkbox("Show Occlusion Stats", &bShowOcclusionStats))
-			FStatOverlay::SetEnabled(EStatFlags::Occlusion, bShowOcclusionStats);
 
 		FSoftwareOcclusionSettings Occlusion = ViewportAdapter->GetSoftwareOcclusionSettings();
 		Occlusion.Mode = static_cast<ESoftwareOcclusionMode>(std::clamp(Settings.SoftwareOcclusionMode, 0, 5));

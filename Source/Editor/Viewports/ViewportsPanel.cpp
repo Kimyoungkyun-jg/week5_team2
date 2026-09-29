@@ -270,7 +270,6 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 	if (!DrawList || !FStatOverlay::IsAnyEnabled())
 		return;
 
-	constexpr float BytesPerMegabyte = 1024.0f * 1024.0f;
 
 	// 제목은 UE처럼 노란색, 값은 흰색으로 구분한다.
 	struct FStatLine { FString Text; ImU32 Color; };
@@ -278,63 +277,19 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 
 	if (FStatOverlay::IsEnabled(EStatFlags::FPS))
 	{
-		Lines.Add({"FPS", TitleColor});
+		Lines.Add({"Frame", TitleColor});
 		Lines.Add({std::format("  {:.0f} fps", FStatOverlay::GetFPS()), ValueColor});
-		Lines.Add({std::format("  {:.0f} ms", FStatOverlay::GetFrameTimeMs()), ValueColor});
-	}
-
-	if (FStatOverlay::IsEnabled(EStatFlags::Memory))
-	{
-		Lines.Add({"Memory", TitleColor});
-		Lines.Add({std::format("  Object  {:.2f} MB ({} allocs)",
-			static_cast<double>(FStatOverlay::GetObjectAllocationBytes()) / BytesPerMegabyte,
-			FStatOverlay::GetObjectAllocationCount()), ValueColor});
-		Lines.Add({std::format("  Process {:.2f} MB",
-			static_cast<double>(FStatOverlay::GetProcessWorkingSetBytes()) / BytesPerMegabyte), ValueColor});
+		Lines.Add({std::format("  {:.2f} ms", FStatOverlay::GetFrameTimeMs()), ValueColor});
 	}
 
 	if (FStatOverlay::IsEnabled(EStatFlags::Picking))
 	{
 		const FStatRecord& Picking = FStats::GetRecord(StatIds::PickingTotal());
-		const FStatRecord& Broad = FStats::GetRecord(StatIds::PickingBroad());
-		const FStatRecord& Narrow = FStats::GetRecord(StatIds::PickingNarrow());
 
 		Lines.Add({"Picking", TitleColor});
 		Lines.Add({std::format("  Last Pick {:.3f} ms", Picking.CurrentValue), ValueColor});
-		Lines.Add({std::format("  Broad {:.3f} ms   Narrow {:.3f} ms", Broad.CurrentValue, Narrow.CurrentValue), ValueColor});
-
-		if (ViewportAdapter)
-		{
-			Lines.Add({std::format("  Candidates {} / {}", ViewportAdapter->GetLastPickCandidateCount(), ViewportAdapter->GetLastPickObjectCount()), ValueColor});
-			Lines.Add({std::format("  BVH Rebuild {}   {:.3f} ms", ViewportAdapter->DidLastPickRebuildBVH() ? "Yes" : "No", ViewportAdapter->GetLastPickBVHBuildMs()), ValueColor});
-		}
-
 		Lines.Add({std::format("  Num Attempts {}", Picking.SampleCount), ValueColor});
 		Lines.Add({std::format("  Accumulated Time {:.0f} ms", Picking.TotalValue), ValueColor});
-	}
-
-	if (FStatOverlay::IsEnabled(EStatFlags::Occlusion) && ViewportAdapter)
-	{
-		const int32 ViewIndex = ViewportAdapter->GetEditorViewIndex();
-		const FSoftwareOcclusionStats& Stats = ViewportAdapter->GetSoftwareOcclusionStats(ViewIndex);
-		Lines.Add({"Software Occlusion", TitleColor});
-		Lines.Add({std::format("  captured {}  static {}  dynamic {}",
-			Stats.CapturedPrimitives, Stats.StaticObjects, Stats.DynamicObjects), ValueColor});
-		Lines.Add({std::format("  frustum {}  occluded {}  visible {}",
-			Stats.FrustumRejected, Stats.OcclusionRejected, Stats.FinalVisible), ValueColor});
-		Lines.Add({std::format("  draw packets {}  occluders {}",
-			Stats.RenderPackets, Stats.OccludersRasterized), ValueColor});
-		Lines.Add({std::format("  triangles {}  clipped {}",
-			Stats.SourceTriangles, Stats.ClippedTriangles), ValueColor});
-		Lines.Add({std::format("  coverage {:.1f}%  full tiles {:.1f}%",
-			Stats.SubcellCoveragePercent, Stats.FullTileCoveragePercent), ValueColor});
-		Lines.Add({std::format("  BVH tested {}  pruned {}",
-			Stats.BVHNodesTested, Stats.BVHNodesPruned), ValueColor});
-		Lines.Add({std::format("  cull {:.2f} ms  build {:.2f} ms{}{}{}",
-			Stats.CullMs, Stats.BVHBuildMs,
-			Stats.bTriangleBudgetExceeded ? "  TRI BUDGET" : "",
-			Stats.bCpuBudgetExceeded ? "  CPU BUDGET" : "",
-			Stats.bOcclusionSuspended ? "  SUSPENDED" : ""), ValueColor});
 	}
 
 	if (Lines.Num() == 0)

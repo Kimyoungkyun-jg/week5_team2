@@ -9,7 +9,7 @@
 #include "Component/BillboardComponent.h"
 #include "Component/ParticleSubUVComponent.h"
 #include "Core/ScopeStyleCounter.h"
-#include "Core/StatOverlay.h"
+
 #include "Core/Stats.h"
 #include "Core/StatDefinitions.h"
 #include "Component/PrimitiveComponent.h"
@@ -782,11 +782,37 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
         IsViewWireframe(ViewIndex),
         VisiblePrimitives[ViewIndex],
         OcclusionStats[ViewIndex]);
+	// Publish one view only; do not mix samples from four viewports.
+	if (ViewIndex == GetActiveViewIndex())
+	{
+		const FSoftwareOcclusionStats& Stats = OcclusionStats[ViewIndex];
+
+		FStats::Set(StatIds::OcclusionCaptured(), Stats.CapturedPrimitives);
+		FStats::Set(StatIds::OcclusionStatic(), Stats.StaticObjects);
+		FStats::Set(StatIds::OcclusionDynamic(), Stats.DynamicObjects);
+		FStats::Set(StatIds::OcclusionFrustumRejected(), Stats.FrustumRejected);
+		FStats::Set(StatIds::OcclusionRejected(), Stats.OcclusionRejected);
+		FStats::Set(StatIds::OcclusionVisible(), Stats.FinalVisible);
+
+		FStats::Set(StatIds::OcclusionOccluders(), Stats.OccludersRasterized);
+		FStats::Set(StatIds::OcclusionSourceTriangles(), Stats.SourceTriangles);
+
+		FStats::Set(StatIds::OcclusionBVHTested(), Stats.BVHNodesTested);
+		FStats::Set(StatIds::OcclusionBVHPruned(), Stats.BVHNodesPruned);
+
+		FStats::RecordEvent(StatIds::OcclusionCullTime(), Stats.CullMs);
+		FStats::Set(StatIds::OcclusionBVHBuildTime(), Stats.BVHBuildMs);
+
+		FStats::Set(StatIds::OcclusionTested(), Stats.OcclusionTested);
+		FStats::Set(StatIds::OcclusionTriangleBudget(), Stats.bTriangleBudgetExceeded);
+		FStats::Set(StatIds::OcclusionCpuBudget(), Stats.bCpuBudgetExceeded);
+	}
 
     const int32 TotalPrimitives = VisiblePrimitives[ViewIndex].Num();
     if (TotalPrimitives == 0)
     {
         OcclusionStats[ViewIndex].RenderPackets = 0;
+		if (ViewIndex == GetActiveViewIndex()) FStats::Set(StatIds::RenderPackets(), 0);
         return;
     }
 
@@ -847,6 +873,7 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
     }
 
     OcclusionStats[ViewIndex].RenderPackets = OutPackets.Num();
+	if (ViewIndex == GetActiveViewIndex()) FStats::Set(StatIds::RenderPackets(), OutPackets.Num());
 }
 
 void FMultipleViewportsAdapter::AppendSoftwareOcclusionDebugBounds(FLineBatcher& LineBatcher) const

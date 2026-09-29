@@ -4,7 +4,10 @@
 FStatId FStats::Register(const FStatDesc& Desc)
 {
 	const FStatId Id = static_cast<FStatId>(Records.Num());
-	Records.Add({Desc, 0.0});
+	FStatRecord Record{};
+	Record.Desc = Desc;
+	Record.bEnabled = Desc.bEnabledByDefault;
+	Records.Add(Record);
 	return Id;
 }
 

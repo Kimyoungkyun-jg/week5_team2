@@ -29,6 +29,7 @@ struct FStatDesc
 	FString Name;
 	EStatUnit Unit;
 	EStatMode Mode;
+	bool bEnabledByDefault = false;
 };
 
 struct FStatRecord

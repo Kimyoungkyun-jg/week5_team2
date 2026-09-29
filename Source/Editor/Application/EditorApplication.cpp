@@ -31,6 +31,7 @@
 
 #include "Editor/Application/EditorFileUtils.h"
 #include "Editor/Outliner/OutlinerPanel.h"
+#include "Editor/Stats/StatsPanel.h"
 #include "ObjectSystem/UObjectIterator.h"
 #include "Rendering/RenderCommand.h"
 
@@ -51,10 +52,7 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
   EditorUI = MakeUnique<FEditorUI>();
   EditorUI->Init();
 
-  // 항상 수집할 기본 Stat
-  FStats::SetEnabled(StatIds::PickingTotal(), true);
-  FStats::SetEnabled(StatIds::PickingBroad(), true);
-  FStats::SetEnabled(StatIds::PickingNarrow(), true);
+  StatIds::RegisterAll();
 
   EditorUI->SetNewSceneCallback([this]() { CreateNewScene(); });
   EditorUI->SetOpenSceneCallback([this]() { OpenScene(); });
@@ -112,6 +110,7 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
   EditorControlsPanel = EditorUI->AddEditorPanel<FEditorControlsPanel>();
   SettingsPanel = EditorUI->AddEditorPanel<FSettingsPanel>();
   ViewportsPanel = EditorUI->AddEditorPanel<FViewportsPanel>();
+  EditorUI->AddEditorPanel<FStatsPanel>();
 
   OutlineRenderer = MakeUnique<FOutlineRenderer>();
   OutlineRenderer->Init(Renderer.get());
@@ -192,6 +191,7 @@ bool FEditorApplication::BeginFrame(float &OutDeltaTime) {
 
   EngineTimer::Tick();
   OutDeltaTime = EngineTimer::GetDeltaTime();
+  FStats::BeginFrame();
   FStatOverlay::Tick(OutDeltaTime);
   EditorControlsPanel->FEditorControlsPanel::DeltaTime = OutDeltaTime;
   FInputSystem::UpdateInputStates();

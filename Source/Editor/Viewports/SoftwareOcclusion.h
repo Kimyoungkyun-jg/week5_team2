@@ -86,6 +86,8 @@ public:
     void SetSettings(const FSoftwareOcclusionSettings& InSettings);
     const FSoftwareOcclusionSettings& GetSettings() const { return Settings; }
     const TArray<FSoftwareOcclusionDebugBounds>& GetDebugBounds() const { return DebugBounds; }
+    bool DidLastRayQueryRebuildBVH() const { return bLastRayQueryRebuiltBVH; }
+    float GetLastRayQueryBVHBuildMs() const { return LastRayQueryBVHBuildMs; }
 
     // World capture 당 한 번 호출하여 Static/Dynamic 상태와 BVH rebuild 필요성을 갱신한다.
     void SynchronizeObjects(const TArray<FRenderableObject>& Objects);
@@ -94,7 +96,7 @@ public:
     void GatherRayCandidates(
         const FRay& Ray,
         const TArray<FRenderableObject>& Objects,
-        TArray<UPrimitiveComponent*>& OutCandidates);
+        TArray<FLineTraceCandidate>& OutCandidates);
 
     // View 하나의 프러스텀과 Software Occlusion을 실행한다.
     void Cull(
@@ -184,6 +186,8 @@ private:
     TArray<uint32> BVHObjectIndices;
     TArray<FBVHNode> BVHNodes;
     float LastBVHBuildMs = 0.0f;
+    bool bLastRayQueryRebuiltBVH = false;
+    float LastRayQueryBVHBuildMs = 0.0f;
 
     int32 BufferWidth = 0;
     int32 BufferHeight = 0;
@@ -230,7 +234,7 @@ private:
     void EnsureBVH(const TArray<FRenderableObject>& Objects);
     uint32 BuildBVHNode(const TArray<FRenderableObject>& Objects, uint32 First, uint32 Count);
     void TraverseRayBVH(const FRay& Ray, const TArray<FRenderableObject>& Objects, uint32 NodeIndex,
-        TArray<UPrimitiveComponent*>& OutCandidates) const;
+        TArray<FLineTraceCandidate>& OutCandidates) const;
     void TraverseBVH(const TArray<FRenderableObject>& Objects, uint32 NodeIndex, bool bFrustumAccepted, bool bUseOcclusion, TArray<UPrimitiveComponent*>& OutVisible);
     void ProcessObject(const FRenderableObject& Object, bool bStatic, bool bFrustumAccepted, bool bUseOcclusion, TArray<UPrimitiveComponent*>& OutVisible);
 

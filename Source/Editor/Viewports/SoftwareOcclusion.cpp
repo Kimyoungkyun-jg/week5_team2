@@ -351,10 +351,12 @@ void FSoftwareOcclusionCuller::EnsureBVH(const TArray<FRenderableObject>& Object
 void FSoftwareOcclusionCuller::GatherRayCandidates(
     const FRay& Ray,
     const TArray<FRenderableObject>& Objects,
-    TArray<UPrimitiveComponent*>& OutCandidates)
+    TArray<FLineTraceCandidate>& OutCandidates)
 {
     OutCandidates.Reset();
+    bLastRayQueryRebuiltBVH = bBVHDirty;
     EnsureBVH(Objects);
+    LastRayQueryBVHBuildMs = bLastRayQueryRebuiltBVH ? LastBVHBuildMs : 0.0f;
 
     if (!BVHNodes.IsEmpty())
         TraverseRayBVH(Ray, Objects, 0, OutCandidates);
@@ -369,22 +371,30 @@ void FSoftwareOcclusionCuller::GatherRayCandidates(
         float Distance = 0.0f;
         if (Object.Primitive && RayIntersectsAABB(
             Ray, BoundsMin(Object.WorldBounds), BoundsMax(Object.WorldBounds), Distance))
-            OutCandidates.Add(Object.Primitive);
+            OutCandidates.Add({Object.Primitive, Distance, true});
     }
 
     // Billboard 등 일반 WorldBounds와 실제 피킹 형상이 다른 객체는 기존 정밀 검사에 맡긴다.
     for (const uint32 ObjectIndex : BypassObjectIndices)
     {
         if (Objects.IsValidIndex(static_cast<int32>(ObjectIndex)) && Objects[ObjectIndex].Primitive)
-            OutCandidates.Add(Objects[ObjectIndex].Primitive);
+            OutCandidates.Add({Objects[ObjectIndex].Primitive, 0.0f, false});
     }
+
+    // 유효한 Bounds 후보를 가까운 순서로 배치한다. Bounds를 신뢰할 수 없는 후보는 뒤에서 항상 검사한다.
+    std::sort(OutCandidates.begin(), OutCandidates.end(), [](const FLineTraceCandidate& A, const FLineTraceCandidate& B)
+    {
+        if (A.bHasBoundsDistance != B.bHasBoundsDistance)
+            return A.bHasBoundsDistance;
+        return A.bHasBoundsDistance && A.BoundsDistance < B.BoundsDistance;
+    });
 }
 
 void FSoftwareOcclusionCuller::TraverseRayBVH(
     const FRay& Ray,
     const TArray<FRenderableObject>& Objects,
     const uint32 NodeIndex,
-    TArray<UPrimitiveComponent*>& OutCandidates) const
+    TArray<FLineTraceCandidate>& OutCandidates) const
 {
     if (!BVHNodes.IsValidIndex(static_cast<int32>(NodeIndex)))
         return;
@@ -408,8 +418,14 @@ void FSoftwareOcclusionCuller::TraverseRayBVH(
             continue;
 
         const uint32 ObjectIndex = BVHObjectIndices[BVHIndex];
-        if (Objects.IsValidIndex(static_cast<int32>(ObjectIndex)) && Objects[ObjectIndex].Primitive)
-            OutCandidates.Add(Objects[ObjectIndex].Primitive);
+        if (!Objects.IsValidIndex(static_cast<int32>(ObjectIndex)))
+            continue;
+
+        const FRenderableObject& Object = Objects[ObjectIndex];
+        float ObjectDistance = 0.0f;
+        if (Object.Primitive && RayIntersectsAABB(
+            Ray, BoundsMin(Object.WorldBounds), BoundsMax(Object.WorldBounds), ObjectDistance))
+            OutCandidates.Add({Object.Primitive, ObjectDistance, true});
     }
 }
 

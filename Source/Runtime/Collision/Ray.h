@@ -6,6 +6,7 @@
 
 struct FStaticMeshData;
 class UBillboardComponent;
+class UPrimitiveComponent;
 
 struct FRay
 {
@@ -18,6 +19,15 @@ struct FRay
 	{
 		return Origin + Direction * t;
 	}
+};
+
+// Broad phase에서 구한 객체 AABB 진입 거리를 정밀 피킹까지 전달한다.
+// Billboard처럼 일반 Bounds를 신뢰할 수 없는 후보는 거리 가지치기에서 제외한다.
+struct FLineTraceCandidate
+{
+	UPrimitiveComponent* Primitive = nullptr;
+	float BoundsDistance = 0.0f;
+	bool bHasBoundsDistance = false;
 };
 
 // 월드 레이를 로컬로. 방향은 정규화하지 않는다 (t가 월드 거리로 유지되도록)

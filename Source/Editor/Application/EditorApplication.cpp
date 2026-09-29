@@ -57,7 +57,7 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
   EditorUI->SetSaveSceneCallback([this]() { SaveCurrentScene(); });
   EditorUI->SetSaveSceneAsCallback([this]() { SaveSceneAs(); });
 
-  // OutputLogPanel = EditorUI->AddEditorPanel<FOutputLogPanel>();
+  OutputLogPanel = EditorUI->AddEditorPanel<FOutputLogPanel>();
   FLog::AddSink(OutputLogPanel);
   LOG(Info, "Engine Initialize...");
 

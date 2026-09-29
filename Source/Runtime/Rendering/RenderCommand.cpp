@@ -131,6 +131,21 @@ void RenderCommand::DrawInstance(uint32 IndexCount, uint32 StartIndexLocation, i
 	// 인스턴싱 드로우
 }
 
+void* RenderCommand::MapBufferWriteDiscard(FBuffer* Buffer, ID3D11DeviceContext* Context)
+{
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	D3D11_MAPPED_SUBRESOURCE Mapped{};
+	HRESULT hr = Ctx->Map(Buffer->GetBuffer(), 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
+	assert(SUCCEEDED(hr));
+	return Mapped.pData;
+}
+
+void RenderCommand::UnmapBuffer(FBuffer* Buffer, ID3D11DeviceContext* Context)
+{
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->Unmap(Buffer->GetBuffer(), 0);
+}
+
 void RenderCommand::UpdateBufferData(FBuffer* InBuffer, const void* Data, uint32 DataSize, ID3D11DeviceContext* Context)
 {
 	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
@@ -169,6 +184,26 @@ void RenderCommand::BindConstantBuffer(uint32 Slot, FConstantBuffer* ConstantBuf
 		Ctx->VSSetConstantBuffers(Slot, 1, &Buffer);
 	if (HasFlag(FlagBits, EShaderBindFlagBits::Pixel))
 		Ctx->PSSetConstantBuffers(Slot, 1, &Buffer);
+}
+
+void RenderCommand::BindConstantBufferRange(uint32 Slot, FConstantBuffer* ConstantBuffer, EShaderBindFlagBits FlagBits, uint32 FirstConstant, uint32 NumConstants, ID3D11DeviceContext1* Context)
+{
+	ID3D11DeviceContext1* Ctx1 = Context ? Context : RenderDevice->GetContext1();
+
+	assert(Ctx1);
+	assert(ConstantBuffer);
+
+	ID3D11Buffer* Buffer = ConstantBuffer->GetBuffer();
+
+	if (HasFlag(FlagBits, EShaderBindFlagBits::Vertex))
+	{
+		Ctx1->VSSetConstantBuffers1(Slot, 1, &Buffer, &FirstConstant, &NumConstants);
+	}
+
+	if (HasFlag(FlagBits, EShaderBindFlagBits::Pixel))
+	{
+		Ctx1->PSSetConstantBuffers1(Slot, 1, &Buffer, &FirstConstant, &NumConstants);
+	}
 }
 
 void RenderCommand::BindShaderResource(uint32 Slot, FTexture2D* Texture2D, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context)

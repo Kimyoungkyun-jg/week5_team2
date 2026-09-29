@@ -57,6 +57,9 @@ public:
 	static void DrawIndexed(uint32 IndexCount, uint32 StartIndexLocation = 0, int32 BaseVertexLocation = 0, ID3D11DeviceContext* Context = nullptr);
 	static void DrawInstance(uint32 IndexCount, uint32 StartIndexLocation = 0, int32 BaseVertexLocation = 0, ID3D11DeviceContext* Context = nullptr);
 
+	static void* MapBufferWriteDiscard(FBuffer* Buffer, ID3D11DeviceContext* Context = nullptr);
+	static void UnmapBuffer(FBuffer* Buffer, ID3D11DeviceContext* Context = nullptr);
+
 	template <typename T>
 	static void UpdateBufferData(FBuffer* InBuffer, T* Data, ID3D11DeviceContext* Context = nullptr)
 	{
@@ -67,6 +70,7 @@ public:
 	static void BindVertexBuffer(FVertexBuffer* VertexBuffer, ID3D11DeviceContext* Context = nullptr);
 	static void BindIndexBuffer(FIndexBuffer* IndexBuffer, ID3D11DeviceContext* Context = nullptr);
 	static void BindConstantBuffer(uint32 Slot, FConstantBuffer* ConstantBuffer, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context = nullptr);
+	static void BindConstantBufferRange(uint32 Slot, FConstantBuffer* ConstantBuffer, EShaderBindFlagBits FlagBits, uint32 FirstConstant, uint32 NumConstants, ID3D11DeviceContext1* Context = nullptr);
 	static void BindShaderResource(uint32 Slot, FTexture2D* Texture2D, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context = nullptr);
 	static void BindShaderResource(uint32 Slot, UTexture2D* Texture2D, EShaderBindFlagBits FlagBits, ID3D11DeviceContext* Context = nullptr);
 

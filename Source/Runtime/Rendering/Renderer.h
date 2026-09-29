@@ -14,6 +14,8 @@ struct FPerObjectConstants
 	FMatrix World;
 };
 
+static_assert(sizeof(FPerObjectConstants) == 128);
+
 class UCameraComponent;
 
 class FRenderer
@@ -48,6 +50,9 @@ private:
 	uint32 Height;
 
 	FLOAT ClearColor[4] = { 0.3f, 0.3f, 0.3f, 1.0f };
+
+	static constexpr uint32 PerObjectSlotSize = 256;
+	static constexpr uint32 MaxObjects = 50000;
 
 	// 워커 전용 지연 컨텍스트와 상수 버퍼
 	struct FDeferredWorker

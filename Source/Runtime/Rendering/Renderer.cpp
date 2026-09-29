@@ -34,9 +34,8 @@ static bool CompareRenderPackets(const FRenderPacket& A, const FRenderPacket& B)
 
 bool FRenderer::Init()
 {
-	Temp = RenderCommand::CreateConstantBuffer(sizeof(FPerObjectConstants));
-
-	return true;
+	Temp = RenderCommand::CreateConstantBuffer(PerObjectSlotSize * MaxObjects);
+	return Temp != nullptr;
 }
 
 // 지연 워커 초기화
@@ -103,40 +102,56 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 	}
 
 	const int32 NumWorkers = DeferredWorkers.Num();
+	assert(TotalPackets <= MaxObjects);
+
 	if (TotalPackets <= 500 || NumWorkers <= 1)
 	{
-		// 단일 스레드 직접 렌더 경로
-		RenderCommand::BindConstantBuffer(0, Temp.get(), EShaderBindFlagBits::Vertex);
-
 		const UStaticMesh* LastMesh = nullptr;
 		const UMaterial* LastMaterial = nullptr;
 
-		for (const FRenderPacket& RenderPacket : InPackets)
+		void* MappedData = RenderCommand::MapBufferWriteDiscard(Temp.get());
+		assert(MappedData);
+
+		uint8* Base = static_cast<uint8*>(MappedData);
+
+		for (int32 i = 0; i < TotalPackets; ++i)
 		{
-			if (RenderPacket.mesh != nullptr && RenderPacket.material != nullptr)
+			FPerObjectConstants Constants;
+			Constants.MVP = InPackets[i].MVP;
+			Constants.World = InPackets[i].model;
+
+			uint8* Dest = Base + i * PerObjectSlotSize;
+			std::memcpy(Dest, &Constants, sizeof(FPerObjectConstants));
+		}
+
+		RenderCommand::UnmapBuffer(Temp.get());
+
+		for (int32 i = 0; i < TotalPackets; ++i)
+		{
+			const FRenderPacket& RenderPacket = InPackets[i];
+
+			if (RenderPacket.mesh == nullptr || RenderPacket.material == nullptr)
 			{
-				if (LastMesh != RenderPacket.mesh)
-				{
-					RenderCommand::BindMesh(RenderPacket.mesh);
-					LastMesh = RenderPacket.mesh;
-				}
-
-				if (LastMaterial != RenderPacket.material)
-				{
-					BindMaterial(RenderPacket.material);
-					LastMaterial = RenderPacket.material;
-				}
-
-				FPerObjectConstants Constants;
-				Constants.MVP = RenderPacket.MVP;
-				Constants.World = RenderPacket.model;
-				RenderCommand::UpdateBufferData(Temp.get(), &Constants);
-
-				RenderCommand::DrawIndexed(
-					RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),
-					RenderPacket.StartIndex
-				);
+				continue;
 			}
+
+			if (LastMesh != RenderPacket.mesh)
+			{
+				RenderCommand::BindMesh(RenderPacket.mesh);
+				LastMesh = RenderPacket.mesh;
+			}
+
+			if (LastMaterial != RenderPacket.material)
+			{
+				BindMaterial(RenderPacket.material);
+				LastMaterial = RenderPacket.material;
+			}
+
+			const uint32 FirstConstant = i * (PerObjectSlotSize / 16);
+			const uint32 NumConstants = PerObjectSlotSize / 16;
+
+			RenderCommand::BindConstantBufferRange(0, Temp.get(), EShaderBindFlagBits::Vertex, FirstConstant, NumConstants);
+			RenderCommand::DrawIndexed(RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(), RenderPacket.StartIndex);
 		}
 		return;
 	}

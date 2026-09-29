@@ -39,6 +39,11 @@ FRenderDevice::FRenderDevice()
 		LOG(Error, "Failed to Create D3D11Device & DeviceContext!");
 	}
 
+	DeviceContext.As(&DeviceContext1);
+	D3D11_FEATURE_DATA_D3D11_OPTIONS Options{};
+	Device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS, &Options, sizeof(Options));
+	bConstantBufferOffsettingSupported = Options.ConstantBufferOffsetting;
+
 	ComPtr<IDXGIDevice> DXGIDevice;
 	Device->QueryInterface(IID_PPV_ARGS(DXGIDevice.GetAddressOf()));
 	ComPtr<IDXGIAdapter> DXGIAdapter;
@@ -60,7 +65,6 @@ ComPtr<ID3D11DeviceContext> FRenderDevice::CreateDeferredContext()
 	assert(SUCCEEDED(hr));
 	return DeferredContext;
 }
-
 
 TUniquePtr<FVertexBuffer> FRenderDevice::CreateStaticVertexBuffer(const void* InVertices, uint32 InSize, uint32 Stride)
 {
@@ -114,6 +118,7 @@ TUniquePtr<FIndexBuffer> FRenderDevice::CreateDynamicIndexBuffer(uint32 MaxIndex
 
 TUniquePtr<FConstantBuffer> FRenderDevice::CreateConstantBuffer(uint32 BufferSize)
 {
+
 	D3D11_BUFFER_DESC Desc = {};
 	Desc.Usage = D3D11_USAGE_DYNAMIC;
 	Desc.ByteWidth = BufferSize;

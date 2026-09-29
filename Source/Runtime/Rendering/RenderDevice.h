@@ -24,6 +24,7 @@ public:
 
 	ID3D11Device* GetDevice() const { return Device.Get(); }
 	ID3D11DeviceContext* GetContext() const { return DeviceContext.Get(); }
+	ID3D11DeviceContext1* GetContext1() const {	return DeviceContext1.Get(); }
 	IDXGIFactory* GetFactory() const { return DXGIFactory.Get(); }
 
 	ComPtr<ID3D11DeviceContext> CreateDeferredContext();
@@ -56,6 +57,8 @@ private:
 
 	ComPtr<ID3D11Device> Device;
 	ComPtr<ID3D11DeviceContext> DeviceContext;
+	ComPtr<ID3D11DeviceContext1> DeviceContext1;
+	bool bConstantBufferOffsettingSupported = false;
 	ComPtr<IDXGIFactory> DXGIFactory;
 
 	D3D_FEATURE_LEVEL FeatureLevel;

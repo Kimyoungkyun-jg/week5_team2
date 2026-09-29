@@ -40,6 +40,17 @@ struct FStaticMaterialSlot
 	FString DiffuseTexturePath;
 };
 
+// 메시 로컬 공간에서 피킹 Ray가 통과할 삼각형만 찾기 위한 가속 노드다.
+struct FMeshPickingBVHNode
+{
+	FBox Bounds{};
+	uint32 Left = 0;
+	uint32 Right = 0;
+	uint32 First = 0;
+	uint32 Count = 0;
+	bool bLeaf = false;
+};
+
 struct FStaticMeshData
 {
 	TArray<FVertexPNCT> Vertices;
@@ -48,9 +59,22 @@ struct FStaticMeshData
 	TArray<FStaticMaterialSlot> MaterialSlots;
 	FBox AABB;
 
+	// 동일 Mesh를 사용하는 모든 Component가 공유한다. 첫 정밀 피킹 때 한 번만 구축한다.
+	mutable TArray<uint32> PickingTriangleIndices;
+	mutable TArray<FMeshPickingBVHNode> PickingBVHNodes;
+	mutable bool bPickingBVHBuilt = false;
+
+	void InvalidatePickingBVH()
+	{
+		PickingTriangleIndices.Reset();
+		PickingBVHNodes.Reset();
+		bPickingBVHBuilt = false;
+	}
+
 	// TODO: 나중에 Sections, MaterialSlots 도 Append 해줘야 함.
 	void Append(const FStaticMeshData& Other)
 	{
+		InvalidatePickingBVH();
 		uint32 Base = (uint32)Vertices.Num();
 
 		Vertices.Append(Other.Vertices);
@@ -61,6 +85,7 @@ struct FStaticMeshData
 
 	void Translate(const FVector& Offset)
 	{
+		InvalidatePickingBVH();
 		for (auto& V : Vertices)
 			V.Position += Offset;
 	}

@@ -129,6 +129,7 @@ project "HitoriEngine"
 			"Source/Runtime/Rendering/RenderCommand.*", "Source/Runtime/Rendering/RenderingInfo.*",
 			"Source/Runtime/Rendering/RenderUtil.*", "Source/Runtime/Rendering/LineBatcher.*",
 			"Source/Runtime/Rendering/SkyboxRenderer.*",
+			"Source/Runtime/Rendering/GPUProfiler.*",
 		},
 		["Rendering/Device"] =
 		{

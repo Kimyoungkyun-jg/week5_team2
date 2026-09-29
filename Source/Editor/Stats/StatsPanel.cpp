@@ -20,7 +20,9 @@ void FStatsPanel::OnRender()
 
 	FString CurrentGroup;
 	TArray<FString> DrawnGroups;
-	ImGui::TextDisabled("Occlusion / Render: active view. Events: collected samples.");
+	ImGui::TextDisabled("Occlusion / Packets: active view. Frame counters: all rendered views.");
+	ImGui::TextDisabled("CPU/GPU pass timings: per call. GPU samples arrive asynchronously.");
+	ImGui::TextDisabled("Enable GPU timing rows to collect timestamps and capture markers.");
 	ImGui::TextDisabled("GPU mode: Frustum Rejected includes occlusion; CPU-only counters are zero.");
 
 	for (const FStatRecord& Record : Records)

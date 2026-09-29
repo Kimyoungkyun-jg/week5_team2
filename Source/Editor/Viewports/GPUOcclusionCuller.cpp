@@ -3,6 +3,8 @@
 
 #include "Component/PrimitiveComponent.h"
 #include "Rendering/RenderCommand.h"
+#include "Rendering/GPUProfiler.h"
+#include "Core/StatDefinitions.h"
 #include "Rendering/RenderUtil.h"
 #include "Rendering/Texture2D.h"
 #include "Tasks/Tasks.h"
@@ -286,6 +288,7 @@ void FGPUOcclusionCuller::BuildHZB(int32 ViewIndex, FTexture2D* SceneDepthTextur
         return;
     }
 
+    FGPUStatScope HZBScope(StatIds::GpuHZB(), L"HZB Build");
     // 깊이 버퍼 복사
     RenderCommand::CopyResource(DepthCopyTexture[ClampedView].Get(), SceneDepthTexture->GetRawPtr(), Context);
 
@@ -454,7 +457,10 @@ void FGPUOcclusionCuller::Cull(
 
     // 디스패치 실행
     const uint32 GroupCount = (TotalObjects + 63) / 64;
-    RenderCommand::Dispatch(GroupCount, 1, 1, Context);
+    {
+        FGPUStatScope CullScope(StatIds::GpuCull(), L"Occlusion Dispatch");
+        RenderCommand::Dispatch(GroupCount, 1, 1, Context);
+    }
 
     // 바인딩 해제
     ID3D11ShaderResourceView* NullSRVs[2] = { nullptr, nullptr };
@@ -492,7 +498,13 @@ void FGPUOcclusionCuller::Cull(
     ReadbackBits.SetNum(NumWords);
 
     D3D11_MAPPED_SUBRESOURCE ReadMapped{};
-    HRESULT hr = Context->Map(ReadStaging, 0, D3D11_MAP_READ, 0, &ReadMapped);
+    HRESULT hr;
+    {
+        FStatScope ReadbackScope(StatIds::GpuReadbackCPU());
+        hr = Context->Map(ReadStaging, 0, D3D11_MAP_READ, 0, &ReadMapped);
+    }
+    if (FAILED(hr))
+        FStats::Add(StatIds::GpuReadbackFailures(), 1);
     if (SUCCEEDED(hr))
     {
         std::memcpy(ReadbackBits.GetData(), ReadMapped.pData, NumWords * sizeof(uint32));

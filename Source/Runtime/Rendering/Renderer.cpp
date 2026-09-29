@@ -5,6 +5,8 @@
 #include "Material.h"
 
 #include "RenderCommand.h"
+#include "GPUProfiler.h"
+#include "Core/StatDefinitions.h"
 #include "Core/EngineTimer.h"
 #include "Camera/CameraComponent.h"
 #include "Tasks/Tasks.h"
@@ -15,6 +17,24 @@
 
 namespace
 {
+	struct FBatchCounters
+	{
+		uint64 Draws = 0;
+		uint64 Triangles = 0;
+		uint64 UploadBytes = 0;
+	};
+
+	// Destruction and publication occur on the calling thread, never on workers.
+	struct FBatchStats : FBatchCounters
+	{
+		~FBatchStats()
+		{
+			FStats::Add(StatIds::DrawCalls(), static_cast<double>(Draws));
+			FStats::Add(StatIds::Triangles(), static_cast<double>(Triangles));
+			FStats::Add(StatIds::CBUpload(), static_cast<double>(UploadBytes));
+		}
+	};
+
 	EPSOType GetPacketPSO(const FRenderPacket& Packet)
 	{
 		return Packet.material ? Packet.material->PSOType : EPSOType::Count;
@@ -133,6 +153,8 @@ void FRenderer::RenderAll(TArray<FRenderPacket>& InPackets, const FMatrix& ViewP
 // TArray 기반 불투명 메시 지연 컨텍스트 병렬 렌더링
 void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection)
 {
+	FStatScope SubmitScope(StatIds::RenderSubmit());
+	FBatchStats BatchStats;
 	const int32 TotalPackets = InPackets.Num();
 	if (TotalPackets == 0)
 	{
@@ -141,7 +163,10 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 	EnsureDeferredWorkers();
 
-	std::sort(InPackets.begin(), InPackets.end(), CompareStateThenDepth);
+	{
+		FStatScope SortScope(StatIds::RenderSort());
+		std::sort(InPackets.begin(), InPackets.end(), CompareStateThenDepth);
+	}
 
 	// 머티리얼 파라미터 사전 일괄 갱신
 	TArray<UMaterial*> UniqueMaterials;
@@ -163,6 +188,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 	if (TotalPackets <= 500 || NumWorkers <= 1)
 	{
+		FGPUStatScope OpaqueScope(StatIds::GpuOpaque(), L"Opaque Immediate");
 		const UStaticMesh* LastMesh = nullptr;
 		const UMaterial* LastMaterial = nullptr;
 		EPSOType LastPSO = EPSOType::Count;
@@ -187,6 +213,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 				std::memcpy(Base + static_cast<size_t>(i) * PerObjectSlotSize, &Constants, sizeof(Constants));
 			}
 			RenderCommand::UnmapBuffer(Temp.get());
+			BatchStats.UploadBytes += static_cast<uint64>(TotalPackets) * sizeof(FPerObjectConstants);
 		}
 
 		for (int32 i = 0; i < TotalPackets; ++i)
@@ -231,9 +258,12 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 				Constants.World = RenderPacket.model;
 				std::memcpy(MappedData, &Constants, sizeof(Constants));
 				RenderCommand::UnmapBuffer(Temp.get());
+				BatchStats.UploadBytes += sizeof(FPerObjectConstants);
 				RenderCommand::BindConstantBuffer(0, Temp.get(), EShaderBindFlagBits::Vertex);
 			}
 			RenderCommand::DrawIndexed(RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(), RenderPacket.StartIndex);
+			++BatchStats.Draws;
+			BatchStats.Triangles += (RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount()) / 3;
 		}
 		return;
 	}
@@ -268,6 +298,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 	RenderCommand::GetRenderDevice()->GetContext()->RSGetViewports(&NumViewports, &Viewport);
 
 	std::vector<ComPtr<ID3D11CommandList>> CommandLists(NumJobs);
+	std::vector<FBatchCounters> WorkerCounters(NumJobs);
 
 	Tasks::ParallelFor(TotalPackets, ChunkSize, [&](int32 Start, int32 End)
 	{
@@ -315,6 +346,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 		}
 
 		RenderCommand::UnmapBuffer(WorkerCB, Context);
+		WorkerCounters[JobIndex].UploadBytes = static_cast<uint64>(End - Start) * sizeof(FPerObjectConstants);
 
 		for (int32 i = Start; i < End; ++i)
 		{
@@ -347,6 +379,8 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 					0,
 					Context
 				);
+				++WorkerCounters[JobIndex].Draws;
+				WorkerCounters[JobIndex].Triangles += (RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount()) / 3;
 			}
 		}
 
@@ -365,11 +399,18 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 		DeferredWorkers.SetNum(0);
 		bDeferredWorkersInitialized = false;
 	}
-	for (int32 i = 0; bAllJobsSucceeded && i < NumJobs; ++i)
+	for (const FBatchCounters& Counters : WorkerCounters)
+		BatchStats.UploadBytes += Counters.UploadBytes;
 	{
-		if (CommandLists[i])
+		FGPUStatScope OpaqueScope(StatIds::GpuOpaque(), L"Opaque Command Lists");
+		for (int32 i = 0; bAllJobsSucceeded && i < NumJobs; ++i)
 		{
-			RenderCommand::ExecuteCommandList(CommandLists[i].Get(), false);
+			if (CommandLists[i])
+			{
+				RenderCommand::ExecuteCommandList(CommandLists[i].Get(), false);
+				BatchStats.Draws += WorkerCounters[i].Draws;
+				BatchStats.Triangles += WorkerCounters[i].Triangles;
+			}
 		}
 	}
 

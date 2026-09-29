@@ -148,9 +148,115 @@ inline FStatId MemoryProcess()
 	return Id;
 }
 
+inline FStatId CaptureWorld()
+{
+	static const FStatId Id = FStats::Register({"Scene", "Capture World CPU", EStatUnit::Milliseconds, EStatMode::Event, true});
+	return Id;
+}
+
+inline FStatId PacketBuild()
+{
+	static const FStatId Id = FStats::Register({"Render", "Packet Build CPU (excl. cull)", EStatUnit::Milliseconds, EStatMode::Event, true});
+	return Id;
+}
+
+inline FStatId RenderSort()
+{
+	static const FStatId Id = FStats::Register({"Render", "Sort CPU", EStatUnit::Milliseconds, EStatMode::Event, true});
+	return Id;
+}
+
+inline FStatId RenderSubmit()
+{
+	static const FStatId Id = FStats::Register({"Render", "Opaque Submit CPU (incl. workers)", EStatUnit::Milliseconds, EStatMode::Event, true});
+	return Id;
+}
+
+inline FStatId DrawCalls()
+{
+	static const FStatId Id = FStats::Register({"Render", "Opaque Draw Calls / Frame", EStatUnit::Count, EStatMode::FrameSum, true});
+	return Id;
+}
+
+inline FStatId Triangles()
+{
+	static const FStatId Id = FStats::Register({"Render", "Opaque Triangles / Frame", EStatUnit::Count, EStatMode::FrameSum, true});
+	return Id;
+}
+
+inline FStatId CBUpload()
+{
+	static const FStatId Id = FStats::Register({"Render", "Object CB Written Bytes / Frame", EStatUnit::Bytes, EStatMode::FrameSum, true});
+	return Id;
+}
+
+inline FStatId PickCandidates()
+{
+	static const FStatId Id = FStats::Register({"Picking", "Candidates / Pick", EStatUnit::Count, EStatMode::Event, true});
+	return Id;
+}
+
+inline FStatId GpuReadbackCPU()
+{
+	static const FStatId Id = FStats::Register({"GPU Culling CPU", "Result Map Wait", EStatUnit::Milliseconds, EStatMode::Event, true});
+	return Id;
+}
+
+inline FStatId GpuReadbackFailures()
+{
+	static const FStatId Id = FStats::Register({"GPU Culling CPU", "Result Map Failures / Frame", EStatUnit::Count, EStatMode::FrameSum, true});
+	return Id;
+}
+
+inline FStatId GpuFrame()
+{
+	static const FStatId Id = FStats::Register({"GPU", "Viewport Render (excl. UI/Present)", EStatUnit::Milliseconds, EStatMode::Event, false});
+	return Id;
+}
+
+inline FStatId GpuOpaque()
+{
+	static const FStatId Id = FStats::Register({"GPU", "Opaque / Pass", EStatUnit::Milliseconds, EStatMode::Event, false});
+	return Id;
+}
+
+inline FStatId GpuHZB()
+{
+	static const FStatId Id = FStats::Register({"GPU", "HZB Build / Pass", EStatUnit::Milliseconds, EStatMode::Event, false});
+	return Id;
+}
+
+inline FStatId GpuCull()
+{
+	static const FStatId Id = FStats::Register({"GPU", "Occlusion Dispatch / Pass", EStatUnit::Milliseconds, EStatMode::Event, false});
+	return Id;
+}
+
+inline FStatId GpuSkipped()
+{
+	static const FStatId Id = FStats::Register({"GPU", "Profiler Frames Skipped / Frame", EStatUnit::Count, EStatMode::FrameSum, true});
+	return Id;
+}
+
 // Register before UI iteration; defaults belong to each definition.
 inline void RegisterAll()
 {
+	CaptureWorld();
+	PacketBuild();
+	RenderSort();
+	RenderSubmit();
+	DrawCalls();
+	Triangles();
+	CBUpload();
+	PickCandidates();
+	GpuReadbackCPU();
+	GpuReadbackFailures();
+	GpuFrame();
+	GpuOpaque();
+	GpuHZB();
+	GpuCull();
+	GpuSkipped();
+
 	PickingTotal();
 	PickingBroad();
 	PickingNarrow();

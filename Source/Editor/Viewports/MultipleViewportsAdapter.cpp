@@ -490,6 +490,7 @@ void FMultipleViewportsAdapter::UpdateInput(const float DeltaTime,
 
 // 현재 월드의 가시 컴포넌트에서 경계와 컴포넌트 정보를 수집한다
 void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
+	FStatScope CaptureScope(StatIds::CaptureWorld());
     const auto& Primitives = World.GetWorldPrimitiveComponents();
     RenderObjects.Reset();
     bCapturedBillboard = false;
@@ -770,7 +771,7 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
     if (!IsViewActive(ViewIndex)) return;
     const PreparedView& View = PrepareView(ViewIndex);
     const FViewCamera RenderCamera = GetRenderCamera(ViewIndex);
-   
+
     SoftwareOcclusion.Cull(
         ViewIndex,
         RenderObjects,
@@ -808,6 +809,7 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
 		FStats::Set(StatIds::OcclusionCpuBudget(), Stats.bCpuBudgetExceeded);
 	}
 
+	FStatScope PacketScope(StatIds::PacketBuild());
     const int32 TotalPrimitives = VisiblePrimitives[ViewIndex].Num();
     if (TotalPrimitives == 0)
     {
@@ -921,6 +923,7 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
 			}
 
 			LastPickCandidateCount = PickCandidates.Num();
+			FStats::RecordEvent(StatIds::PickCandidates(), LastPickCandidateCount);
 			{
 				FStatScope NarrowScope(StatIds::PickingNarrow());
 				bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);

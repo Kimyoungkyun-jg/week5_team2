@@ -34,6 +34,7 @@
 #include "Editor/Stats/StatsPanel.h"
 #include "ObjectSystem/UObjectIterator.h"
 #include "Rendering/RenderCommand.h"
+#include "Rendering/GPUProfiler.h"
 
 #include "Core/EngineLog.h"
 #include "Core/Stats.h"
@@ -181,7 +182,12 @@ void FEditorApplication::Run() {
 
     UpdateMultipleViewportState(DeltaTime);
     TickWorldAndEditor(DeltaTime);
-    RenderMultipleViewports();
+    FGPUProfiler::Get().BeginFrame(RenderDevice->GetDevice(), RenderDevice->GetContext());
+    {
+      FGPUStatScope Scope(StatIds::GpuFrame(), L"Viewport Render");
+      RenderMultipleViewports();
+    }
+    FGPUProfiler::Get().EndFrame();
     EndFrame();
   }
 }
@@ -415,6 +421,7 @@ void FEditorApplication::PresentFrame() {
 
 // 엔진 종료에 필요한 자원 정리를 수행한다.
 void FEditorApplication::Shutdown() {
+  FGPUProfiler::Get().Shutdown();
   UAssetManager::Get().Shutdown();
   FRenderResourceManager::Shutdown();
 

@@ -53,6 +53,59 @@ bool RayIntersectsAABB(const FRay& Ray, const FVector& BoxMin, const FVector& Bo
     return true;
 }
 
+namespace
+{
+    // 방향 성분이 0이면 부호를 유지한 아주 작은 값으로 바꾼 뒤 역수를 구한다.
+    // (직교 뷰처럼 축과 나란한 레이에서 무한대·NaN이 생기는 것을 막는다)
+    float SafeReciprocal(float Value)
+    {
+        constexpr float MinMagnitude = 1e-20f;
+        if (fabsf(Value) < MinMagnitude)
+        {
+            Value = (Value < 0.0f) ? -MinMagnitude : MinMagnitude;
+        }
+        return 1.0f / Value;
+    }
+}
+
+FTraceContext MakeTraceContext(const FRay& WorldRay, FBillboardTraceFn ResolveBillboard, const void* ViewContext)
+{
+    FTraceContext Context;
+    Context.Ray = WorldRay;
+    Context.InvDir = FVector(
+        SafeReciprocal(WorldRay.Direction.X),
+        SafeReciprocal(WorldRay.Direction.Y),
+        SafeReciprocal(WorldRay.Direction.Z));
+    Context.ResolveBillboard = ResolveBillboard;
+    Context.ViewContext = ViewContext;
+    return Context;
+}
+
+// 기존 RayIntersectsAABB와 같은 slab 판정이지만, 역수를 컨텍스트에서 받아 나눗셈이 없다.
+bool RayIntersectsAABB(const FTraceContext& Context, const FVector& BoxMin, const FVector& BoxMax, float& OutTEnter)
+{
+    const FVector& O = Context.Ray.Origin;
+    const FVector& I = Context.InvDir;
+
+    const float tX1 = (BoxMin.X - O.X) * I.X;
+    const float tX2 = (BoxMax.X - O.X) * I.X;
+    const float tY1 = (BoxMin.Y - O.Y) * I.Y;
+    const float tY2 = (BoxMax.Y - O.Y) * I.Y;
+    const float tZ1 = (BoxMin.Z - O.Z) * I.Z;
+    const float tZ2 = (BoxMax.Z - O.Z) * I.Z;
+
+    const float tEnter = fmaxf(fmaxf(fminf(tX1, tX2), fminf(tY1, tY2)), fminf(tZ1, tZ2));   // 진입점
+    const float tExit  = fminf(fminf(fmaxf(tX1, tX2), fmaxf(tY1, tY2)), fmaxf(tZ1, tZ2));   // 이탈점
+
+    if (tEnter > tExit || tExit < 0.0f)
+    {   // 빗나감, 또는 박스가 레이 뒤에 있음
+        return false;
+    }
+
+    OutTEnter = fmaxf(tEnter, 0.0f);   // 레이 시작점이 박스 안이면 0
+    return true;
+}
+
 bool RayIntersectsTriangle(const FRay& Ray, const FVector& v1, const FVector& v2, const FVector& v3, float& OutT)
 {
     constexpr float epsilon = 1e-5f;

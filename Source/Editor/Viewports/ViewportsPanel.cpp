@@ -294,7 +294,7 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 	if (FStatOverlay::IsEnabled(EStatFlags::Picking))
 	{
 		Lines.Add({ "Picking", TitleColor });
-		Lines.Add({std::format("  Last Pick {:.0f} ms",
+		Lines.Add({std::format("  Last Pick {:.3f} ms",
 			FStatOverlay::GetLastPickingTimeMs()), ValueColor});
 		Lines.Add({std::format("  Num Attempts {}",
 			FStatOverlay::GetTotalPickCount()), ValueColor});

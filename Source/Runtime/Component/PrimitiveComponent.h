@@ -6,6 +6,7 @@
 #include "Rendering/RenderPacket.h"
 #include "Rendering/GeometryGenerator.h"
 #include "Collision/HitResult.h"
+#include "Collision/Ray.h"
 
 enum class EPrimitiveType
 {
@@ -52,6 +53,9 @@ public:
 	void SetVisible(bool bInVisible) { bVisible = bInVisible; }
 
 	virtual bool LineTraceComponent(const FRay& WorldRay, FHitResult& OutHit);
+	// 피킹 전용 판정: 클릭당 한 번 준비한 컨텍스트(레이 역수, 최근접 거리, Billboard 행렬 공급자)를 쓴다.
+	// View에 따라 형상이 정해지는 컴포넌트(Billboard·Particle)는 이 함수를 override한다.
+	virtual bool LineTraceWithContext(const FTraceContext& Context, FHitResult& OutHit);
 	virtual FBox CalcLocalBounds() const override
 	{
 		const FStaticMeshData* Data = GetMeshData();

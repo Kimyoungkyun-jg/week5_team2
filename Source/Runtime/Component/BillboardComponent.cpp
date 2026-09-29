@@ -49,6 +49,17 @@ bool UBillboardComponent::LineTraceComponentForView(
 	return QuadMesh && TraceMesh(WorldRay, QuadMesh->GetMeshData(), BillboardWorldMatrix, OutHit);
 }
 
+// View별 행렬 공급자가 있으면 클릭한 View의 실제 렌더 행렬로, 없으면 메인 카메라 기준으로 판정한다.
+// (기존 World 루프의 Billboard 분기와 같은 동작. ParticleSubUV도 이 함수를 상속받는다)
+bool UBillboardComponent::LineTraceWithContext(const FTraceContext& Context, FHitResult& OutHit)
+{
+	if (Context.ResolveBillboard)
+	{
+		return LineTraceComponentForView(Context.Ray, OutHit, Context.ResolveBillboard(*this, Context.ViewContext));
+	}
+	return LineTraceComponent(Context.Ray, OutHit);
+}
+
 // 기본 카메라 기준으로 패킷 배열에 추가
 void UBillboardComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets)
 {

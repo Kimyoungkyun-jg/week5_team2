@@ -75,6 +75,12 @@ public:
     int32 GetCapturedViewIndex() const { return InputState.CapturedViewIndex; }
     // 마지막 엔진 피킹 결과를 공통 Hit 형식으로 반환한다.
     const FPickHit& GetLastPick() const { return LastPick; }
+    int32 GetLastPickObjectCount() const { return LastPickObjectCount; }
+    int32 GetLastPickCandidateCount() const { return LastPickCandidateCount; }
+    double GetLastPickBroadPhaseMs() const { return LastPickBroadPhaseMs; }
+    double GetLastPickNarrowPhaseMs() const { return LastPickNarrowPhaseMs; }
+    bool DidLastPickRebuildBVH() const { return SoftwareOcclusion.DidLastRayQueryRebuildBVH(); }
+    float GetLastPickBVHBuildMs() const { return SoftwareOcclusion.GetLastRayQueryBVHBuildMs(); }
     // 지정 View의 로컬 화면 Rect를 반환한다.
     const FRect& GetViewRect(int32 ViewIndex) const;
     // Native View·Projection을 row-vector 순서로 합성한 엔진 행렬을 반환한다.
@@ -154,6 +160,10 @@ private:
     TArray<ObjectId> SortedParticleIds;
     TArray<UPrimitiveComponent*> VisiblePrimitives[4];
     TArray<FLineTraceCandidate> PickCandidates;
+    int32 LastPickObjectCount = 0;
+    int32 LastPickCandidateCount = 0;
+    double LastPickBroadPhaseMs = 0.0;
+    double LastPickNarrowPhaseMs = 0.0;
     FSoftwareOcclusionCuller SoftwareOcclusion;
     FSoftwareOcclusionStats OcclusionStats[4]{};
     bool bCapturedBillboard = false;

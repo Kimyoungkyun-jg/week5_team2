@@ -56,6 +56,9 @@ bool RayIntersectsAABB(const FTraceContext& Context, const FVector& BoxMin, cons
 
 bool RayIntersectsTriangle(const FRay& Ray, const FVector& v1, const FVector& v2, const FVector& v3, float& OutT);
 
+// StaticMesh 로드 시 피킹용 Triangle BVH를 미리 구축해 첫 클릭 비용을 제거한다.
+void PrepareMeshPickingBVH(const FStaticMeshData& Mesh);
+
 bool RayIntersectsMesh(const FRay& LocalRay, const FStaticMeshData& Mesh, float& OutT);
 
 FVector2 WorldToScreen(const FVector& WorldPos, const FMatrix& ViewProj, int ScreenW, int ScreenH);

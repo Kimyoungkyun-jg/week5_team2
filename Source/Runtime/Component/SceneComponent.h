@@ -24,7 +24,8 @@ public:
 	void SetRelativeRotation(const FRotator& InRotation) { Transform.Rotation = InRotation; MarkBoundsDirtyRecursive(); }
 
 	const FVector& GetRelativeScale3D() const { return Transform.Scale; }
-	void SetRelativeScale3D(const FVector& InScale) { Transform.Scale = InScale; MarkBoundsDirtyRecursive(); }
+	void SetRelativeScale3D(const FVector& InScale) { Transform.Scale = InScale; MarkBoundsDirtyRecursive();
+	}
 
 	// 쿼터니언 적용된 회전행렬
 	FQuat GetRelativeRotationQuat() const { return Transform.GetOrientation(); }

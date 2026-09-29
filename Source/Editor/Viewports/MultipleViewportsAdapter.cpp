@@ -905,7 +905,8 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
 
     // 충돌 검사 시간 측정
     if (FStatOverlay::IsEnabled(EStatFlags::Picking))
-    {
+    {  
+
         FScopeCycleCounter PickCounter;
         bHit = World.LineTraceSingle(Ray, Hit, ResolveBillboardTransform, this);
 

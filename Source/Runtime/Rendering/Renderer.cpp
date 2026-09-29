@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <functional>
 
-
 static bool CompareRenderPackets(const FRenderPacket& A, const FRenderPacket& B)
 {
 	const EPSOType APSO = A.material ? A.material->PSOType : EPSOType::Count;
@@ -53,10 +52,25 @@ void FRenderer::EnsureDeferredWorkers()
 	}
 
 	DeferredWorkers.SetNum(WorkerCount);
+
+	const uint32 MaxPacketsPerWorker = (MaxObjects + WorkerCount - 1) / WorkerCount;
+	const uint32 WorkerBufferSize = MaxPacketsPerWorker * PerObjectSlotSize;
+
 	for (uint32 Index = 0; Index < WorkerCount; ++Index)
 	{
 		DeferredWorkers[Index].Context = RenderCommand::CreateDeferredContext();
-		DeferredWorkers[Index].PerObjectCB = RenderCommand::CreateConstantBuffer(sizeof(FPerObjectConstants));
+
+		assert(DeferredWorkers[Index].Context);
+
+		HRESULT Hr = DeferredWorkers[Index].Context.As(&DeferredWorkers[Index].Context1);
+
+		assert(SUCCEEDED(Hr));
+		assert(DeferredWorkers[Index].Context1);
+
+		DeferredWorkers[Index].PerObjectCB = RenderCommand::CreateConstantBuffer(WorkerBufferSize);
+
+		assert(DeferredWorkers[Index].PerObjectCB);
+		assert(DeferredWorkers[Index].PerObjectCB->GetBuffer());
 	}
 }
 
@@ -189,14 +203,36 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 		ID3D11DeviceContext* Context = DeferredWorkers[JobIndex].Context.Get();
 		FConstantBuffer* WorkerCB = DeferredWorkers[JobIndex].PerObjectCB.get();
+		ID3D11DeviceContext1* Context1 = DeferredWorkers[JobIndex].Context1.Get();
 
 		Context->OMSetRenderTargets(NumRTVs, RTVs, DSV);
 		Context->RSSetViewports(NumViewports, &Viewport);
 
-		RenderCommand::BindConstantBuffer(0, WorkerCB, EShaderBindFlagBits::Vertex, Context);
-
 		const UStaticMesh* LastMesh  = nullptr;
 		const UMaterial* LastMaterial = nullptr;
+
+		assert(static_cast<uint32>(End - Start) * PerObjectSlotSize <= WorkerCB->GetBufferSize());
+
+		void* MappedData = RenderCommand::MapBufferWriteDiscard(WorkerCB, Context);
+
+		assert(MappedData);
+
+		uint8* Base = static_cast<uint8*>(MappedData);
+
+		for (int32 i = Start; i < End; ++i)
+		{
+			FPerObjectConstants Constants;
+			Constants.MVP = InPackets[i].MVP;
+			Constants.World = InPackets[i].model;
+
+			const uint32 LocalIndex = i - Start;
+
+			uint8* Dest = Base + LocalIndex * PerObjectSlotSize;
+
+			std::memcpy(Dest, &Constants, sizeof(FPerObjectConstants));
+		}
+
+		RenderCommand::UnmapBuffer(WorkerCB, Context);
 
 		for (int32 i = Start; i < End; ++i)
 		{
@@ -215,10 +251,11 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 					LastMaterial = RenderPacket.material;
 				}
 
-				FPerObjectConstants Constants;
-				Constants.MVP = RenderPacket.MVP;
-				Constants.World = RenderPacket.model;
-				RenderCommand::UpdateBufferData(WorkerCB, &Constants, sizeof(FPerObjectConstants), Context);
+				const uint32 LocalIndex = i - Start;
+				const uint32 FirstConstant = LocalIndex * (PerObjectSlotSize / 16);
+				const uint32 NumConstants = PerObjectSlotSize / 16;
+
+				RenderCommand::BindConstantBufferRange(0, WorkerCB, EShaderBindFlagBits::Vertex, FirstConstant, NumConstants, Context1);
 
 				RenderCommand::DrawIndexed(
 					RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),

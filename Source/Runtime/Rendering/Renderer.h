@@ -58,6 +58,7 @@ private:
 	struct FDeferredWorker
 	{
 		ComPtr<ID3D11DeviceContext> Context;
+		ComPtr<ID3D11DeviceContext1> Context1;
 		TUniquePtr<FConstantBuffer> PerObjectCB;
 	};
 	TArray<FDeferredWorker> DeferredWorkers;

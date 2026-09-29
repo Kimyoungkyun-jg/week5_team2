@@ -28,22 +28,20 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 
 	LOG(Info, "Loading Default.scene (Single-Pass)...");
 
-	// 사과 메시 사전 캐싱
-	UStaticMesh* AppleMesh = UAssetManager::GetAssetByPath<UStaticMesh>("Models/Apple/apple_mid.obj");
-	UStaticMesh* BittenAppleMesh = UAssetManager::GetAssetByPath<UStaticMesh>("Models/Apple/bitten_apple_mid.obj");
-	if (!AppleMesh) AppleMesh = UAssetManager::GetAssetByPath<UStaticMesh>("Cube");
-	if (!BittenAppleMesh) BittenAppleMesh = AppleMesh;
-
 	FString Line;
 	bool bInPrimitives = false;
 	bool bInCamera = false;
 
 	uint32 CurrentUUID = 0;
+
 	FVector Loc(0.0f, 0.0f, 0.0f);
 	FRotator Rot(0.0f, 0.0f, 0.0f);
 	FVector Scale(1.0f, 1.0f, 1.0f);
-	bool bIsBitten = false;
+
 	bool bHasObject = false;
+	FString MeshAssetPath = "";
+
+	TMap<FString, UStaticMesh*> MeshCache;
 
 	int32 SpawnedCount = 0;
 
@@ -95,7 +93,7 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 						float Deg1 = R1 * 180.0f / 3.14159265f;
 						float Deg2 = R2 * 180.0f / 3.14159265f;
 						FTransform CamTransform = World->GetMainCamera()->GetActorTransform();
-						CamTransform.Rotation = FRotator(Deg2, Deg1, Deg0);
+						CamTransform.Rotation = FRotator(Deg1, Deg2, Deg0);
 						if (World->GetMainCamera()->GetRootComponent())
 							World->GetMainCamera()->GetRootComponent()->SetTransform(CamTransform);
 					}
@@ -147,8 +145,9 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 							Loc = FVector(0.0f, 0.0f, 0.0f);
 							Rot = FRotator(0.0f, 0.0f, 0.0f);
 							Scale = FVector(1.0f, 1.0f, 1.0f);
-							bIsBitten = false;
+
 							bHasObject = true;
+							MeshAssetPath = "";
 						}
 					}
 				}
@@ -195,10 +194,11 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 				}
 				else if (Line.find("\"ObjStaticMeshAsset\"") != FString::npos)
 				{
-					if (Line.find("bitten") != FString::npos)
-					{
-						bIsBitten = true;
-					}
+					size_t Colon = Line.find(':');
+					size_t Q1 = Line.find('"', Colon);
+					size_t Q2 = Line.find('"', Q1 + 1);
+
+					MeshAssetPath = Line.substr(Q1 + 1, Q2 - Q1 - 1);
 				}
 				else if (Line.find('}') != FString::npos)
 				{
@@ -215,8 +215,29 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 						if (UStaticMeshComponent* Comp = Actor->GetStaticMeshComponent())
 						{
 							Comp->SetUUID(CurrentUUID);
-							Comp->SetStaticMesh(bIsBitten ? BittenAppleMesh : AppleMesh);
+
+							FString FileName = fs::path(MeshAssetPath).filename().generic_string();
+							UStaticMesh* Mesh = nullptr;
+							if (UStaticMesh** CachedMesh = MeshCache.FindOrNull(FileName))
+							{
+								Mesh = *CachedMesh;
+							}
+							else
+							{
+								Mesh = UAssetManager::GetAssetByFileName<UStaticMesh>(FileName);
+								MeshCache.Add(FileName, Mesh);
+							}
+
+							if (Mesh)
+							{
+								Comp->SetStaticMesh(Mesh);
+							}
+							else
+							{
+								LOG(Warning, "Mesh asset not found: {}", MeshAssetPath);
+							}
 							Comp->MarkBoundsDirty();
+							FBox Box = Comp->CalcBounds();
 						}
 						++SpawnedCount;
 					}

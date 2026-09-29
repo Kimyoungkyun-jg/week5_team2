@@ -60,16 +60,11 @@ bool RayIntersectsTriangle(const FRay& Ray, const FVector& v1, const FVector& v2
     FVector edge1 = v2 - v1;
     FVector edge2 = v3 - v1;
 
-    const FVector normal = FVector::Cross(edge1, edge2);
     FVector RayVector = Ray.Direction;
-    if (normal.Dot(RayVector) > 0.0f) // 내적의 결과가 양수면 뒷면임
-    {
-        return false;
-    }
 
     const FVector rayCrossVec = FVector::Cross(RayVector, edge2);
     float det = FVector::Dot(rayCrossVec, edge1);
-    if (fabs(det) < epsilon)
+    if (det < epsilon)
     {   // 내적의 결과가 0에 가까우면 180도. 평행한 관계
         return false;
     }
@@ -110,10 +105,10 @@ bool RayIntersectsMesh(const FRay& LocalRay, const FStaticMeshData& Mesh, float&
 {
     FBox Box = Mesh.AABB;
     float BoxT{};
-    if (!RayIntersectsAABB(LocalRay, Box.Min, Box.Max, BoxT))
-    {
-        return false;
-    }
+    //if (!RayIntersectsAABB(LocalRay, Box.Min, Box.Max, BoxT))
+    //{
+    //    return false;
+    //}
 
     bool bHit = false;
     float NearestT = FLT_MAX;

@@ -257,7 +257,7 @@ void FEditorApplication::TickWorldAndEditor(const float DeltaTime) {
   World->Tick(DeltaTime);
   EditorUI->Tick(DeltaTime);
   MultipleViewportsAdapter.CaptureWorld(*World);
-  //culling/node 관리 
+  //culling
   UpdateGizmoAndPicking();
 }
 

@@ -3,6 +3,8 @@
 #include "Editor/Viewports/MultipleViewportsAdapter.h"
 
 #include "Core/StatOverlay.h"
+#include "Core/Stats.h"
+#include "Core/StatDefinitions.h"
 #include "Rendering/RenderCommand.h"
 
 #include <algorithm>
@@ -293,13 +295,12 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 
 	if (FStatOverlay::IsEnabled(EStatFlags::Picking))
 	{
-		Lines.Add({ "Picking", TitleColor });
-		Lines.Add({std::format("  Last Pick {:.3f} ms",
-			FStatOverlay::GetLastPickingTimeMs()), ValueColor});
-		Lines.Add({std::format("  Num Attempts {}",
-			FStatOverlay::GetTotalPickCount()), ValueColor});
-		Lines.Add({std::format("  Accumulated Time {:.0f} ms",
-			FStatOverlay::GetTotalPickingTimeMs()), ValueColor});
+		const FStatRecord& Picking = FStats::GetRecord(StatIds::PickingTotal());
+
+		Lines.Add({"Picking", TitleColor});
+		Lines.Add({std::format("  Last Pick {:.3f} ms", Picking.CurrentValue), ValueColor});
+		Lines.Add({std::format("  Num Attempts {}", Picking.SampleCount), ValueColor});
+		Lines.Add({std::format("  Accumulated Time {:.0f} ms", Picking.TotalValue), ValueColor});
 	}
 
 	if (FStatOverlay::IsEnabled(EStatFlags::Occlusion) && ViewportAdapter)

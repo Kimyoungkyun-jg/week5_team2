@@ -10,6 +10,8 @@
 #include "Component/ParticleSubUVComponent.h"
 #include "Core/ScopeStyleCounter.h"
 #include "Core/StatOverlay.h"
+#include "Core/Stats.h"
+#include "Core/StatDefinitions.h"
 #include "Component/PrimitiveComponent.h"
 #include "Editor/Outliner/OutlinerPanel.h"
 #include "Editor/Rendering/GridRenderer.h"
@@ -868,6 +870,10 @@ void FMultipleViewportsAdapter::AppendSoftwareOcclusionDebugBounds(FLineBatcher&
 FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosition, UWorld& World)
 {
     LastPick = {};
+	FStats::SetEnabled(StatIds::PickingTotal(), true);
+	FStats::SetEnabled(StatIds::PickingBroad(), true);
+	FStats::SetEnabled(StatIds::PickingNarrow(), true);
+
     FRay Ray{};
     if (!TryGetActiveViewRay(LocalMousePosition, Ray)) return LastPick;
 
@@ -882,25 +888,22 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
     FHitResult Hit;
     bool bHit = false;
 
-    SoftwareOcclusion.GatherRayCandidates(Ray, RenderObjects, PickCandidates);
+	FStatScope TotalScope(StatIds::PickingTotal());
+	FStatScope BroadScope(StatIds::PickingBroad());
+	FStatScope NarrowScope(StatIds::PickingNarrow());
 
     // 충돌 검사 시간 측정
-    if (FStatOverlay::IsEnabled(EStatFlags::Picking))
-    {  
-        
-        FScopeCycleCounter PickCounter;
-        
-        bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
-
-        const uint64 PickCycles = PickCounter.Finish();
-        const double PickTimeMs = FPlatformTime::ToMilliseconds(PickCycles);
-
-        FStatOverlay::RecordPickingTime(PickTimeMs);
-    }
-    else
-    {
-        bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
-    }
+	{
+		FStatScope TotalScope(StatIds::PickingTotal());
+		{
+			FStatScope BroadScope(StatIds::PickingBroad());
+			SoftwareOcclusion.GatherRayCandidates(Ray, RenderObjects, PickCandidates);
+		}
+		{
+			FStatScope NarrowScope(StatIds::PickingNarrow());
+			bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
+		}
+	}
 
     if (bHit)
     {

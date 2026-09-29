@@ -20,7 +20,7 @@
 #include "World/World.h"
 
 
-#include "Job/FiberJobManager.h"
+#include "Tasks/Tasks.h"
 
 #include <algorithm>
 #include <cassert>
@@ -500,7 +500,7 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
         return;
     }
 
-    const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+    const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
     const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
     const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
 
@@ -514,7 +514,7 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
     }
 
     // 컴포넌트 정보 병렬 수집
-    FFiberJobManager::Get().ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
+    Tasks::ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
     {
         const int32 JobIndex = Start / ChunkSize;
         TArray<FRenderableObject>& LocalList = WorkerRenderObjectBuffers[JobIndex];
@@ -768,6 +768,7 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
     if (!IsViewActive(ViewIndex)) return;
     const PreparedView& View = PrepareView(ViewIndex);
     const FViewCamera RenderCamera = GetRenderCamera(ViewIndex);
+   
     SoftwareOcclusion.Cull(
         ViewIndex,
         RenderObjects,
@@ -789,7 +790,7 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
 
     const FMatrix& VP = View.EngineViewProjection;
     const FMatrixRegister VPReg = FMatrixRegister::Load(VP);
-    const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+    const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
     const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
     const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
 
@@ -802,7 +803,7 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
         WorkerPacketBuffers[i].Reset();
     }
 
-    FFiberJobManager::Get().ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
+    Tasks::ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
     {
         const int32 JobIndex = Start / ChunkSize;
         TArray<FRenderPacket>& LocalList = WorkerPacketBuffers[JobIndex];

@@ -7,7 +7,7 @@
 #include "RenderCommand.h"
 #include "Core/EngineTimer.h"
 #include "Camera/CameraComponent.h"
-#include "Job/FiberJobManager.h"
+#include "Tasks/Tasks.h"
 
 #include <algorithm>
 #include <functional>
@@ -95,7 +95,7 @@ void FRenderer::EnsureDeferredWorkers()
 		return;
 	}
 
-	uint32 WorkerCount = FFiberJobManager::Get().GetNumWorkers();
+	uint32 WorkerCount = Tasks::FTaskScheduler::Get().GetNumWorkers();
 	if (WorkerCount == 0)
 	{
 		WorkerCount = (std::max)(1u, std::thread::hardware_concurrency());
@@ -269,7 +269,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 	std::vector<ComPtr<ID3D11CommandList>> CommandLists(NumJobs);
 
-	FFiberJobManager::Get().ParallelFor(TotalPackets, ChunkSize, [&](int32 Start, int32 End)
+	Tasks::ParallelFor(TotalPackets, ChunkSize, [&](int32 Start, int32 End)
 	{
 		const int32 JobIndex = Start / ChunkSize;
 		if (JobIndex >= DeferredWorkers.Num())

@@ -11,8 +11,8 @@ struct FRenderPacket {
   UStaticMesh *mesh = nullptr;
   UMaterial *material = nullptr;
 
-  // 카메라와의 거리 제곱. 반투명 정렬에 사용
-  float CameraToParticleDistance = 0.0f;
+  // 카메라와의 거리 제곱. 불투명은 front-to-back, 반투명은 back-to-front 정렬에 사용한다.
+  float CameraDistanceSquared = 0.0f;
 
   const void *MaterialParamData = nullptr;
   uint32 MaterialParamDataSize = 0;

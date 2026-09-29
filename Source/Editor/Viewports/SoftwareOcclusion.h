@@ -12,9 +12,17 @@ enum class ESoftwareOcclusionMode : uint8
     StaticBVHFrustumOnly,
 };
 
+enum class ESoftwareOccluderGeometry : uint8
+{
+    DistanceAdaptive,
+    Bounds,
+    MeshTriangles,
+};
+
 struct FSoftwareOcclusionSettings
 {
     ESoftwareOcclusionMode Mode = ESoftwareOcclusionMode::Disabled;
+    ESoftwareOccluderGeometry OccluderGeometry = ESoftwareOccluderGeometry::DistanceAdaptive;
     int32 TileSize = 8;
     int32 MinimumOccluderTiles = 16;
     uint32 TriangleBudget = 500000;
@@ -126,6 +134,7 @@ private:
     {
         float Depth = 1.0f;
         bool bCovered = false;
+        bool bDirty = false;
     };
 
     struct FHZBLevel
@@ -177,6 +186,8 @@ private:
     TArray<FOcclusionTile> Tiles;
     TArray<FHZBLevel> HZBLevels;
     TArray<uint32> DirtyTiles;
+    TArray<uint32> DirtyHZBCells;
+    TArray<uint32> NextDirtyHZBCells;
     TArray<FVector4> TransformedVertices;
     TArray<uint32> CandidateIndices;
     TArray<uint8> VisibilityFlags;
@@ -226,6 +237,7 @@ private:
     void UpdateDirtyHZB();
     void UpdateHZBParent(int32 Level, int32 X, int32 Y);
 
+    bool ShouldUseMeshOccluder(const FRenderableObject& Object) const;
     float DistanceSquaredToBounds(const FAABB& Bounds) const;
     void AddDebugBounds(const FAABB& Bounds, ESoftwareOcclusionDebugState State);
 #if defined(ENGINE_DEBUG)

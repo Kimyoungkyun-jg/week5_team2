@@ -36,7 +36,7 @@ void USceneComponent::SetupAttachment(USceneComponent* InParent)
 	{
 		AttachParent->AttachChildren.Add(this);
 	}
-	MarkBoundsDirtyRecursive();
+	MarkTransformDirtyRecursive();
 }
 
 void USceneComponent::DetachFromParent()
@@ -53,7 +53,7 @@ void USceneComponent::DetachFromParent()
 		}
 	}
 	AttachParent = nullptr;
-	MarkBoundsDirtyRecursive();
+	MarkTransformDirtyRecursive();
 }
 
 void USceneComponent::MarkBoundsDirtyRecursive()
@@ -69,6 +69,28 @@ void USceneComponent::MarkBoundsDirtyRecursive()
 		if (Child)
 			Child->MarkBoundsDirtyRecursive();
 	}
+}
+
+void USceneComponent::MarkTransformDirtyRecursive()
+{
+	bWorldMatrixDirty = true;
+	bBoundsDirty = true;
+	++BoundsRevision;
+	if (BoundsRevision == 0)
+		BoundsRevision = 1;
+
+	for (USceneComponent* Child : AttachChildren)
+	{
+		if (Child)
+			Child->MarkTransformDirtyRecursive();
+	}
+}
+
+void USceneComponent::Serialize(json& Handle, const bool bIsLoading)
+{
+	Super::Serialize(Handle, bIsLoading);
+	if (bIsLoading)
+		MarkTransformDirtyRecursive();
 }
 
 FRotator USceneComponent::GetWorldRotation() const
@@ -109,13 +131,13 @@ FVector USceneComponent::GetWorldScale3D() const
 
 FMatrix USceneComponent::GetWorldMatrix() const
 {
-	FMatrix LocalMatrix = Transform.GetLocalMatrix(); // 부모 컴포넌트 연결 없을 때
-
-	if (AttachParent)
+	if (bWorldMatrixDirty)
 	{
-		return LocalMatrix * AttachParent->GetWorldMatrix();
+		CachedWorldMatrix = Transform.GetLocalMatrix();
+		if (AttachParent)
+			CachedWorldMatrix = CachedWorldMatrix * AttachParent->GetWorldMatrix();
+		bWorldMatrixDirty = false;
 	}
-
-	return LocalMatrix;
+	return CachedWorldMatrix;
 }
 

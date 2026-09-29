@@ -28,10 +28,8 @@ public:
 
 	void GetWorldTransformedMatrix(FMatrix* OutWorldMatrix) const;
 	// 기본 카메라 기준 월드 행렬로 Billboard 렌더 패킷을 제출한다.
-	virtual void SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue) override;
 	virtual void SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets) override;
 	// View별 Adapter가 계산한 Billboard 행렬을 사용해 같은 렌더 패킷 형식으로 제출한다.
-	void SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue, const FMatrix& BillboardWorldMatrix);
 	void SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets, const FMatrix& BillboardWorldMatrix);
 
 	virtual void Serialize(json& Handle, bool bIsLoading) override;

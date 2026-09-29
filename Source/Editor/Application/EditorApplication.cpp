@@ -266,14 +266,13 @@ void FEditorApplication::RenderMultipleViewports() {
   const bool bActive = MultipleViewportsAdapter.IsViewActive(0);
   ViewportsPanel->SetView(0, MultipleViewportsAdapter.GetViewRect(0), bActive);
 
-  TArray<FRenderPacket> RenderPackets;
-  MultipleViewportsAdapter.BuildRenderPackets(0, RenderPackets);
+  MultipleViewportsAdapter.BuildRenderPackets(0, SceneRenderPackets);
 
   RenderFrame(0, ViewportsPanel->GetRenderingInfo(0),
               MultipleViewportsAdapter.GetEngineViewProjection(0),
               MultipleViewportsAdapter.GetEngineCameraLocation(0),
               MultipleViewportsAdapter.GetEngineCameraForward(0),
-              RenderPackets);
+              SceneRenderPackets);
 
   EMultipleViewportsCameraPreset CameraPresets[4]{};
   // for (int32 ViewIndex = 0; ViewIndex < 4; ++ViewIndex)

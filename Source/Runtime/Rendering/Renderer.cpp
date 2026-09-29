@@ -13,12 +13,23 @@
 #include <functional>
 
 
-bool cmp(const FRenderPacket& A, const FRenderPacket& B)
+static bool CompareRenderPackets(const FRenderPacket& A, const FRenderPacket& B)
 {
+	const EPSOType APSO = A.material ? A.material->PSOType : EPSOType::Count;
+	const EPSOType BPSO = B.material ? B.material->PSOType : EPSOType::Count;
+	if (APSO != BPSO)
+		return static_cast<uint8>(APSO) < static_cast<uint8>(BPSO);
+
 	if (A.material != B.material)
 		return std::less<>{}(A.material, B.material);
 
-	return std::less<>{}(A.mesh, B.mesh);
+	if (A.mesh != B.mesh)
+		return std::less<>{}(A.mesh, B.mesh);
+
+	const bool bOpaque = APSO == EPSOType::StaticMesh_Opaque || APSO == EPSOType::StaticMesh_Wireframe;
+	return bOpaque
+		? A.CameraDistanceSquared < B.CameraDistanceSquared
+		: A.CameraDistanceSquared > B.CameraDistanceSquared;
 }
 
 bool FRenderer::Init()
@@ -50,55 +61,17 @@ void FRenderer::EnsureDeferredWorkers()
 	}
 }
 
-// 기존 단일 카메라의 ViewProjection으로 렌더 큐 전체를 그린다.
-void FRenderer::RenderAll(TQueue<FRenderPacket>& InQueue, UCameraComponent* CameraComponent)
+// 기존 단일 카메라의 ViewProjection으로 렌더 패킷 배열 전체를 그린다.
+void FRenderer::RenderAll(TArray<FRenderPacket>& InPackets, UCameraComponent* CameraComponent)
 {
-	RenderAll(InQueue, CameraComponent->GetViewProjectionMatrix());
+	RenderAll(InPackets, CameraComponent->GetViewProjectionMatrix());
 }
 
-// 불투명 우선·반투명 거리순으로 정렬해 View 행렬과 Section 범위로 그린다.
-void FRenderer::RenderAll(TQueue<FRenderPacket>& InQueue, const FMatrix& ViewProjection)
+// 불투명 우선·반투명 거리순으로 배열을 정렬해 View 행렬과 Section 범위로 그린다.
+void FRenderer::RenderAll(TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection)
 {
-	RenderOpaque(InQueue, ViewProjection);
+	RenderOpaque(InPackets, ViewProjection);
 	RenderTranslucent(ViewProjection);
-}
-
-// 불투명 메시를 큐에서 직접 꺼내 즉시 렌더링
-void FRenderer::RenderOpaque(TQueue<FRenderPacket>& InQueue, const FMatrix& ViewProjection)
-{
-	RenderCommand::BindConstantBuffer(0, Temp.get(), EShaderBindFlagBits::Vertex);
-
-	const UStaticMesh* LastMesh = nullptr;
-	const UMaterial* LastMaterial = nullptr;
-
-	FMatrixRegister VP = FMatrixRegister::Load(ViewProjection);
-	while (InQueue.IsEmpty() == false)
-	{
-		const FRenderPacket& RenderPacket = InQueue.Peek();
-		if (RenderPacket.mesh != nullptr && RenderPacket.material != nullptr)
-		{
-			if (LastMesh != RenderPacket.mesh)
-			{
-				RenderCommand::BindMesh(RenderPacket.mesh);
-				LastMesh = RenderPacket.mesh;
-			}
-
-			if (LastMaterial != RenderPacket.material)
-			{
-				BindMaterial(RenderPacket.material);
-				UpdateMaterialParams(RenderPacket.material);
-				LastMaterial = RenderPacket.material;
-			}
-
-			UpdatePerObjectConstants(RenderPacket, VP);
-
-			RenderCommand::DrawIndexed(
-				RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),
-				RenderPacket.StartIndex
-			);
-		}
-		InQueue.Dequeue();
-	}
 }
 
 // TArray 기반 불투명 메시 지연 컨텍스트 병렬 렌더링
@@ -112,7 +85,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 	EnsureDeferredWorkers();
 
-	sort(InPackets.begin(), InPackets.end(), cmp);
+	sort(InPackets.begin(), InPackets.end(), CompareRenderPackets);
 
 	// 머티리얼 파라미터 사전 일괄 갱신
 	TArray<UMaterial*> UniqueMaterials;

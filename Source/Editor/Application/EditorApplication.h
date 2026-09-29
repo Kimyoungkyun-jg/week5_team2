@@ -50,7 +50,6 @@ public:
 	// Active View의 입력과 Picking 결과만 Gizmo 및 선택 상태에 반영한다.
 	void UpdateGizmoAndPicking();
 	// View 하나의 Scene·Grid·Gizmo·텍스트를 해당 ViewProjection으로 렌더한다.
-	void RenderFrame(int32 ViewIndex, const FRenderingInfo& ViewRenderingInfo, const FMatrix& ViewProjection, const FVector& ViewCameraLocation, const FVector& ViewCameraForward, TQueue<FRenderPacket>& RenderQueue);
 	void RenderFrame(int32 ViewIndex, const FRenderingInfo& ViewRenderingInfo, const FMatrix& ViewProjection, const FVector& ViewCameraLocation, const FVector& ViewCameraForward, TArray<FRenderPacket>& RenderPackets);
 	// 네 View 결과와 ImGui를 메인 Swapchain에 합성해 화면에 표시한다.
 	void PresentFrame();
@@ -107,6 +106,8 @@ private:
 	FSettingsPanel* SettingsPanel = nullptr;
 	FViewportsPanel* ViewportsPanel = nullptr;
 	FMultipleViewportsAdapter MultipleViewportsAdapter;
+	// 프레임마다 Reset해 기존 capacity를 재사용하는 연속 RenderPacket 버퍼.
+	TArray<FRenderPacket> SceneRenderPackets;
 	FOutlinerPanel* OutlinerPanel = nullptr;
 	FContentDrawerPanel* ContentDrawerPanel = nullptr;
 

@@ -69,6 +69,9 @@ public:
     // 씬 리셋
     void ResetScene();
 
+    // 인스턴스 버퍼 재업로드 요청
+    void MarkNeedsUpload() { bNeedsUpload = true; }
+
     bool IsInitialized() const { return bInitialized; }
 
 private:
@@ -85,6 +88,7 @@ private:
     uint32 CurrentWordCapacity = 0;
     uint32 CachedObjectCount = 0;
     bool bNeedsUpload = true;
+    TArray<uint64> CachedBoundsRevisions;
 
     TUniquePtr<FComputeShader> ComputeShader;
     TUniquePtr<FConstantBuffer> ConstantBuffer;

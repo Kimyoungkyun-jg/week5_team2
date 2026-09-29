@@ -74,6 +74,7 @@ bool FGPUOcclusionCuller::Init()
 void FGPUOcclusionCuller::ResetScene()
 {
     CachedObjectCount = 0;
+    CachedBoundsRevisions.Reset();
     bNeedsUpload = true;
     for (int32 View = 0; View < MaxSupportedViews; ++View)
     {
@@ -343,7 +344,25 @@ void FGPUOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject>& Ob
     if (ObjectCount != CachedObjectCount)
     {
         CachedObjectCount = ObjectCount;
+        CachedBoundsRevisions.SetNum(ObjectCount);
+        for (uint32 i = 0; i < ObjectCount; ++i)
+        {
+            CachedBoundsRevisions[i] = Objects[i].BoundsRevision;
+        }
         bNeedsUpload = true;
+        return;
+    }
+
+    if (!bNeedsUpload)
+    {
+        for (uint32 i = 0; i < ObjectCount; ++i)
+        {
+            if (CachedBoundsRevisions[i] != Objects[i].BoundsRevision)
+            {
+                CachedBoundsRevisions[i] = Objects[i].BoundsRevision;
+                bNeedsUpload = true;
+            }
+        }
     }
 }
 

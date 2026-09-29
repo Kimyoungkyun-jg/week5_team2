@@ -295,6 +295,17 @@ void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject
     }
     bBVHDirty = bBVHDirty || !bSameStaticLayout;
     bInitialized = true;
+
+    if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute)
+    {
+        if (FGPUOcclusionCuller* Culler = GetGPUCuller())
+        {
+            if (bBVHDirty || !DynamicObjectIndices.IsEmpty())
+            {
+                Culler->MarkNeedsUpload();
+            }
+        }
+    }
 }
 
 void FSoftwareOcclusionCuller::PrepareBuffers(const int32 ViewWidth, const int32 ViewHeight)

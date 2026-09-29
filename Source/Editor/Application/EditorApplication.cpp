@@ -352,10 +352,6 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
 
   // 렌더 루프 — 반드시 RenderAll보다 먼저
   // SkyboxRenderer->OnRender(ViewProjection, ViewCameraLocation);
-  if (bDrawPrimitives) {
-
-    Renderer->RenderOpaque(RenderQueue, ViewProjection);
-  }
 
 	if (MultipleViewportsAdapter.GetSoftwareOcclusionSettings().bDebugBounds)
 	{
@@ -364,6 +360,11 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
 		LineBatcher->OnRender(ViewProjection);
 	}
 
+  if (bDrawPrimitives) {
+
+    Renderer->RenderOpaque(RenderQueue, ViewProjection);
+  
+  }
 	// 스텐실 기반이라 선택 대상의 가시성이 꺼져 있어도 외곽선만 그린다.
 	if (Outline->GetTarget())
 	{
@@ -419,11 +420,11 @@ void FEditorApplication::RenderFrame(
   RenderCommand::BeginRenderPass(ViewRenderingInfo);
 
   FEditorSettings DefaultSettings;
+
+  Renderer->RenderOpaque(RenderPackets, ViewProjection);
   GridRenderer->OnRenderPSGrid(ViewProjection, ViewCameraLocation,
                                DefaultSettings,
                                ViewRenderingInfo.ViewportSetting);
-
-  Renderer->RenderOpaque(RenderPackets, ViewProjection);
 
   if (Outline && Outline->GetTarget() && OutlineRenderer) {
     OutlineRenderer->OnRender(*Outline, ViewProjection,

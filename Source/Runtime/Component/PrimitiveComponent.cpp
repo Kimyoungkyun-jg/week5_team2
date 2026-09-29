@@ -48,11 +48,12 @@ void UPrimitiveComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPacket
 
 bool UPrimitiveComponent::LineTraceComponent(const FRay& WorldRay, FHitResult& OutHit)
 {
-	const FStaticMeshData* Mesh = GetMeshData();
 
+	// world Ray와 world AABB 선비교
 	const FBox Bounds = GetWorldBounds();
 	if (!RayIntersectsAABB(WorldRay, Bounds.Min, Bounds.Max, OutHit.Distance)) return false;
 
+	const FStaticMeshData* Mesh = GetMeshData();
 	return Mesh && TraceMesh(WorldRay, *Mesh, GetWorldMatrix(), OutHit);
 }
 

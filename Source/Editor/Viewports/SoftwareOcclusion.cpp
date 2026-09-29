@@ -348,6 +348,71 @@ void FSoftwareOcclusionCuller::EnsureBVH(const TArray<FRenderableObject>& Object
     bBVHDirty = false;
 }
 
+void FSoftwareOcclusionCuller::GatherRayCandidates(
+    const FRay& Ray,
+    const TArray<FRenderableObject>& Objects,
+    TArray<UPrimitiveComponent*>& OutCandidates)
+{
+    OutCandidates.Reset();
+    EnsureBVH(Objects);
+
+    if (!BVHNodes.IsEmpty())
+        TraverseRayBVH(Ray, Objects, 0, OutCandidates);
+
+    // 이동 객체는 정적 BVH에서 제외되므로 최신 Bounds로 개별 broad phase를 수행한다.
+    for (const uint32 ObjectIndex : DynamicObjectIndices)
+    {
+        if (!Objects.IsValidIndex(static_cast<int32>(ObjectIndex)))
+            continue;
+
+        const FRenderableObject& Object = Objects[ObjectIndex];
+        float Distance = 0.0f;
+        if (Object.Primitive && RayIntersectsAABB(
+            Ray, BoundsMin(Object.WorldBounds), BoundsMax(Object.WorldBounds), Distance))
+            OutCandidates.Add(Object.Primitive);
+    }
+
+    // Billboard 등 일반 WorldBounds와 실제 피킹 형상이 다른 객체는 기존 정밀 검사에 맡긴다.
+    for (const uint32 ObjectIndex : BypassObjectIndices)
+    {
+        if (Objects.IsValidIndex(static_cast<int32>(ObjectIndex)) && Objects[ObjectIndex].Primitive)
+            OutCandidates.Add(Objects[ObjectIndex].Primitive);
+    }
+}
+
+void FSoftwareOcclusionCuller::TraverseRayBVH(
+    const FRay& Ray,
+    const TArray<FRenderableObject>& Objects,
+    const uint32 NodeIndex,
+    TArray<UPrimitiveComponent*>& OutCandidates) const
+{
+    if (!BVHNodes.IsValidIndex(static_cast<int32>(NodeIndex)))
+        return;
+
+    const FBVHNode& Node = BVHNodes[NodeIndex];
+    float Distance = 0.0f;
+    if (!RayIntersectsAABB(Ray, BoundsMin(Node.Bounds), BoundsMax(Node.Bounds), Distance))
+        return;
+
+    if (!Node.bLeaf)
+    {
+        TraverseRayBVH(Ray, Objects, Node.Left, OutCandidates);
+        TraverseRayBVH(Ray, Objects, Node.Right, OutCandidates);
+        return;
+    }
+
+    for (uint32 Offset = 0; Offset < Node.Count; ++Offset)
+    {
+        const uint32 BVHIndex = Node.First + Offset;
+        if (!BVHObjectIndices.IsValidIndex(static_cast<int32>(BVHIndex)))
+            continue;
+
+        const uint32 ObjectIndex = BVHObjectIndices[BVHIndex];
+        if (Objects.IsValidIndex(static_cast<int32>(ObjectIndex)) && Objects[ObjectIndex].Primitive)
+            OutCandidates.Add(Objects[ObjectIndex].Primitive);
+    }
+}
+
 uint32 FSoftwareOcclusionCuller::BuildBVHNode(const TArray<FRenderableObject>& Objects, const uint32 First, const uint32 Count)
 {
     FAABB NodeBounds = Objects[BVHObjectIndices[First]].WorldBounds;

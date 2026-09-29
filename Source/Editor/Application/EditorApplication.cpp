@@ -335,11 +335,13 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
   RenderCommand::BeginRenderPass(ViewRenderingInfo);
 
 	const FEditorSettings& EditorSettings = SettingsPanel->GetSettings();
+	const float FarClip = MultipleViewportsAdapter.GetViewCamera(ViewIndex).Projection.FarClip;
 	GridRenderer->OnRenderPSGrid(
 		ViewProjection,
 		ViewCameraLocation,
 		EditorSettings,
-		ViewRenderingInfo.ViewportSetting
+		ViewRenderingInfo.ViewportSetting, 
+		FarClip
 	);
 
 	const bool bDrawPrimitives = EditorSettings.bDrawPrimitives;
@@ -422,9 +424,10 @@ void FEditorApplication::RenderFrame(
   FEditorSettings DefaultSettings;
 
   Renderer->RenderOpaque(RenderPackets, ViewProjection);
+  const float FarClip = MultipleViewportsAdapter.GetViewCamera(ViewIndex).Projection.FarClip;
   GridRenderer->OnRenderPSGrid(ViewProjection, ViewCameraLocation,
                                DefaultSettings,
-                               ViewRenderingInfo.ViewportSetting);
+                               ViewRenderingInfo.ViewportSetting, FarClip);
 
   if (Outline && Outline->GetTarget() && OutlineRenderer) {
     OutlineRenderer->OnRender(*Outline, ViewProjection,

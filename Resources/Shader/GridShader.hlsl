@@ -5,7 +5,8 @@ cbuffer GridCB : register(b0)
     int CellSize;
     float SubCellSize;
     int GridPlaneType;
-    float2 Padding;
+    float FadeRadius;
+    float Padding;
 };
 
 static const float GridSize = 400.0f; 
@@ -46,14 +47,10 @@ PS_INPUT mainVS(uint vid : SV_VertexID)
 static const float4 CellColor = float4(1.0, 1.0, 1.0, 0.6);
 static const float4 SubCellColor = float4(1.0, 1.0, 1.0, 0.35);
 
-static const float HeightToFadeRatio = 25.0f;
-static const float MinFadeDistance = 5.0f;
-static const float MaxFadeDistance = 100.0f;
-
 // 흰 Grid에 거리 페이드를 적용하며 월드 축은 별도 공통 픽셀 두께 경로에서 그린다.
 float4 mainPS(PS_INPUT input) : SV_TARGET
 {
-    float fadeDist = clamp(abs(input.camPos.z) * HeightToFadeRatio, MinFadeDistance, MaxFadeDistance);
+    float fadeDist = FadeRadius;
 
     // 화면 1픽셀당 월드 좌표의 변화량
     float2 derivative = max(fwidth(input.coords), float2(1.0e-6, 1.0e-6));

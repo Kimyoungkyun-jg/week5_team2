@@ -56,6 +56,7 @@ void FRenderResourceManager::ScanShaders(const fs::path& ShaderRoot)
 	{
 		if (!Entry.is_regular_file()) continue;
 		if (Entry.path().extension() != ".hlsl") continue;
+		if (Entry.path().filename().string().find("CS.hlsl") != std::string::npos) continue;
 
 		FString Path = Entry.path().generic_string();
 		LoadOrCompileShader(Path);

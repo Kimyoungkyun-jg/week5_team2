@@ -1,5 +1,7 @@
 #include "EnginePCH.h"
 #include "Editor/Viewports/SoftwareOcclusion.h"
+#include "Editor/Viewports/GPUOcclusionCuller.h"
+#include "Rendering/Texture2D.h"
 
 #include "Component/PrimitiveComponent.h"
 #include "Tasks/Tasks.h"
@@ -157,8 +159,25 @@ namespace
     }
 }
 
+FSoftwareOcclusionCuller::FSoftwareOcclusionCuller() = default;
+FSoftwareOcclusionCuller::~FSoftwareOcclusionCuller() = default;
+
+FGPUOcclusionCuller* FSoftwareOcclusionCuller::GetGPUCuller()
+{
+    if (!GPUCuller)
+    {
+        GPUCuller = MakeUnique<FGPUOcclusionCuller>();
+        GPUCuller->Init();
+    }
+    return GPUCuller.get();
+}
+
 void FSoftwareOcclusionCuller::ResetScene()
 {
+    if (GPUCuller)
+    {
+        GPUCuller->ResetScene();
+    }
     ObjectStates.Reset();
     SyncSerial = 0;
     bInitialized = false;
@@ -203,6 +222,14 @@ void FSoftwareOcclusionCuller::SetSettings(const FSoftwareOcclusionSettings& InS
 
 void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject>& Objects)
 {
+    if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute)
+    {
+        if (FGPUOcclusionCuller* Culler = GetGPUCuller())
+        {
+            Culler->SynchronizeObjects(Objects);
+        }
+    }
+
     ++SyncSerial;
     StaticObjectIndices.Reset();
     DynamicObjectIndices.Reset();
@@ -1335,6 +1362,18 @@ void FSoftwareOcclusionCuller::Cull(
     CurrentCameraLocation = CameraLocation;
     CurrentFrustum = Frustum;
 
+    if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute && !bWireframe && ViewWidth > 0 && ViewHeight > 0)
+    {
+        if (FGPUOcclusionCuller* Culler = GetGPUCuller())
+        {
+            Culler->SynchronizeObjects(Objects);
+            Culler->Cull(ViewIndex, Objects, Frustum, ViewProjection, OutVisible, OutStats);
+            OutStats.CullMs = static_cast<float>((NowSeconds() - CullStartSeconds) * 1000.0);
+            ActiveStats = nullptr;
+            return;
+        }
+    }
+
     if (Settings.Mode == ESoftwareOcclusionMode::Disabled || bWireframe || ViewWidth <= 0 || ViewHeight <= 0)
     {
         const int32 TotalObjects = Objects.Num();
@@ -1663,6 +1702,17 @@ void FSoftwareOcclusionCuller::Cull(
             static_cast<float>(OutStats.OcclusionRejected) < MinOcclusionRejectRatio * static_cast<float>(Candidates))
         { }
             
-            //Suspended = OcclusionProbeInterval;
+        //Suspended = OcclusionProbeInterval;
+    }
+}
+
+void FSoftwareOcclusionCuller::PostRenderOpaque(int32 ViewIndex, FTexture2D* SceneDepthTexture)
+{
+    if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute)
+    {
+        if (FGPUOcclusionCuller* Culler = GetGPUCuller())
+        {
+            Culler->BuildHZB(ViewIndex, SceneDepthTexture);
+        }
     }
 }

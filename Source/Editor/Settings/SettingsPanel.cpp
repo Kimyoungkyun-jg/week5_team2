@@ -49,9 +49,9 @@ void FSettingsPanel::OnRender()
 
 	if (ViewportAdapter)
 	{
-		const char* OcclusionModes[]{"Disabled", "Linear Subcells", "Hierarchical Subcells", "Static BVH + HZB", "Static BVH Frustum Only"};
+		const char* OcclusionModes[]{"Disabled", "Linear Subcells", "Hierarchical Subcells", "Static BVH + HZB", "Static BVH Frustum Only", "GPU Compute (Frustum + HZB)"};
 		ImGui::SetNextItemWidth(220.0f);
-		ImGui::Combo("Software Occlusion", &Settings.SoftwareOcclusionMode, OcclusionModes, 5);
+		ImGui::Combo("Software Occlusion", &Settings.SoftwareOcclusionMode, OcclusionModes, 6);
 		const char* OccluderGeometryModes[]{"Auto by Distance", "AABB", "Mesh Triangles"};
 		ImGui::SetNextItemWidth(220.0f);
 		ImGui::Combo("Occluder Geometry", &Settings.SoftwareOccluderGeometry, OccluderGeometryModes, 3);
@@ -77,7 +77,7 @@ void FSettingsPanel::OnRender()
 			FStatOverlay::SetEnabled(EStatFlags::Occlusion, bShowOcclusionStats);
 
 		FSoftwareOcclusionSettings Occlusion = ViewportAdapter->GetSoftwareOcclusionSettings();
-		Occlusion.Mode = static_cast<ESoftwareOcclusionMode>(std::clamp(Settings.SoftwareOcclusionMode, 0, 4));
+		Occlusion.Mode = static_cast<ESoftwareOcclusionMode>(std::clamp(Settings.SoftwareOcclusionMode, 0, 5));
 		Occlusion.OccluderGeometry = static_cast<ESoftwareOccluderGeometry>(std::clamp(Settings.SoftwareOccluderGeometry, 0, 2));
 		Occlusion.TileSize = Settings.SoftwareOcclusionTileSize;
 		Occlusion.MinimumOccluderTiles = Settings.SoftwareOcclusionMinimumTiles;
@@ -305,7 +305,7 @@ bool FSettingsPanel::LoadSettings()
 
 				else if (Key == "CameraMoveSpeed") Settings.CameraSpeed = std::stof(ValueStr);
 				else if (Key == "CameraRotateSensitivity") Settings.MouseSensitivity = std::stof(ValueStr);
-				else if (Key == "GridSpacing") Settings.GridSpacing = std::stof(ValueStr);
+				else if (Key == "GridSpacing") Settings.GridSpacing = std::stoi(ValueStr);
 				else if (Key == "Horizontal") Settings.MultipleViewportsHorizontal = std::stof(ValueStr);
 				else if (Key == "Vertical") Settings.MultipleViewportsVertical = std::stof(ValueStr);
 				else if (Key == "Layout") Settings.bMultipleViewportsSingle = ValueStr == "Single";
@@ -385,7 +385,7 @@ void FSettingsPanel::ApplyViewportSettings()
 {
     if (!ViewportAdapter) return;
 	FSoftwareOcclusionSettings Occlusion = ViewportAdapter->GetSoftwareOcclusionSettings();
-	Occlusion.Mode = static_cast<ESoftwareOcclusionMode>(std::clamp(Settings.SoftwareOcclusionMode, 0, 4));
+	Occlusion.Mode = static_cast<ESoftwareOcclusionMode>(std::clamp(Settings.SoftwareOcclusionMode, 0, 5));
 	Occlusion.OccluderGeometry = static_cast<ESoftwareOccluderGeometry>(std::clamp(Settings.SoftwareOccluderGeometry, 0, 2));
 	Occlusion.TileSize = Settings.SoftwareOcclusionTileSize;
 	Occlusion.MinimumOccluderTiles = Settings.SoftwareOcclusionMinimumTiles;

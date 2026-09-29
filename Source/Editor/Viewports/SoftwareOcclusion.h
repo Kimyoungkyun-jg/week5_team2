@@ -10,7 +10,11 @@ enum class ESoftwareOcclusionMode : uint8
     HierarchicalSubcells,
     StaticBVHHierarchical,
     StaticBVHFrustumOnly,
+    GPUCompute,
 };
+
+class FGPUOcclusionCuller;
+class FTexture2D;
 
 enum class ESoftwareOccluderGeometry : uint8
 {
@@ -76,6 +80,9 @@ struct FSoftwareOcclusionDebugBounds
 class FSoftwareOcclusionCuller
 {
 public:
+    FSoftwareOcclusionCuller();
+    ~FSoftwareOcclusionCuller();
+
     struct FCandidateDistance
     {
         uint32 Index = 0;
@@ -86,6 +93,7 @@ public:
     void SetSettings(const FSoftwareOcclusionSettings& InSettings);
     const FSoftwareOcclusionSettings& GetSettings() const { return Settings; }
     const TArray<FSoftwareOcclusionDebugBounds>& GetDebugBounds() const { return DebugBounds; }
+    FGPUOcclusionCuller* GetGPUCuller();
 
     // World capture 당 한 번 호출하여 Static/Dynamic 상태와 BVH rebuild 필요성을 갱신한다.
     void SynchronizeObjects(const TArray<FRenderableObject>& Objects);
@@ -102,6 +110,8 @@ public:
         bool bWireframe,
         TArray<UPrimitiveComponent*>& OutVisible,
         FSoftwareOcclusionStats& OutStats);
+
+    void PostRenderOpaque(int32 ViewIndex, FTexture2D* SceneDepthTexture);
 
 private:
     static constexpr int32 MaxBufferExtent = 320;
@@ -243,4 +253,6 @@ private:
 #if defined(ENGINE_DEBUG)
     void RunDebugSelfTests();
 #endif
+
+    TUniquePtr<FGPUOcclusionCuller> GPUCuller;
 };

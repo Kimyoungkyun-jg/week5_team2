@@ -339,6 +339,8 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
     Renderer->RenderOpaque(RenderPackets, ViewProjection);
   }
 
+  MultipleViewportsAdapter.PostRenderOpaque(ViewIndex, ViewRenderingInfo.DepthSteincil.Texture);
+
   if (MultipleViewportsAdapter.GetSoftwareOcclusionSettings().bDebugBounds) {
     LineBatcher->BeginFrame();
     MultipleViewportsAdapter.AppendSoftwareOcclusionDebugBounds(*LineBatcher);

@@ -8,6 +8,7 @@ class UTexture2D;
 class FShaderProgram;
 class FVertexShader;
 class FPixelShader;
+class FComputeShader;
 struct FRenderingInfo;
 
 enum class EShaderBindFlagBits : uint32
@@ -42,10 +43,23 @@ public:
 
 	static TUniquePtr<FVertexShader> CreateVertexShader(const FShaderByteCode& ByteCode);
 	static TUniquePtr<FPixelShader> CreatePixelShader(const FShaderByteCode& ByteCode);
+	static TUniquePtr<FComputeShader> CreateComputeShader(const FShaderByteCode& ByteCode);
 
 	static ComPtr<ID3D11DeviceContext> CreateDeferredContext();
 	static void ExecuteCommandList(ID3D11CommandList* CommandList, bool bRestoreState = false);
 	static FRenderDevice* GetRenderDevice() { return RenderDevice; }
+	static ID3D11Device* GetDevice() { return RenderDevice ? RenderDevice->GetDevice() : nullptr; }
+	static ID3D11DeviceContext* GetContext() { return RenderDevice ? RenderDevice->GetContext() : nullptr; }
+
+	static void Dispatch(uint32 X, uint32 Y, uint32 Z, ID3D11DeviceContext* Context = nullptr);
+	static void CSSetShader(FComputeShader* Shader, ID3D11DeviceContext* Context = nullptr);
+	static void CSSetShaderResource(uint32 Slot, ID3D11ShaderResourceView* SRV, ID3D11DeviceContext* Context = nullptr);
+	static void CSSetShaderResources(uint32 StartSlot, uint32 NumViews, ID3D11ShaderResourceView* const* ppShaderResourceViews, ID3D11DeviceContext* Context = nullptr);
+	static void CSSetUnorderedAccessView(uint32 Slot, ID3D11UnorderedAccessView* UAV, ID3D11DeviceContext* Context = nullptr);
+	static void CSSetUnorderedAccessViews(uint32 StartSlot, uint32 NumUAVs, ID3D11UnorderedAccessView* const* ppUnorderedAccessViews, const uint32* pUAVInitialCounts = nullptr, ID3D11DeviceContext* Context = nullptr);
+	static void CSSetConstantBuffer(uint32 Slot, FConstantBuffer* ConstantBuffer, ID3D11DeviceContext* Context = nullptr);
+	static void CSSetSampler(uint32 Slot, ESamplerState SamplerState, ID3D11DeviceContext* Context = nullptr);
+	static void CopyResource(ID3D11Resource* Dst, ID3D11Resource* Src, ID3D11DeviceContext* Context = nullptr);
 
 	static void BindPipelineState(const FPipelineState* PipelineState, ID3D11DeviceContext* Context = nullptr);
 

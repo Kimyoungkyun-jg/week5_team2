@@ -52,6 +52,11 @@ private:
 	static constexpr float SectionGap = 10.0f;
 	static constexpr float SubsectionGap = 4.0f;
 
+	int32 GridCount[3] = {2, 2, 2};
+	float GridSpacing = 2.0f;
+	FVector GetSpawnOrigin() const;
+	void AddActorsGrid(uint32 Index);
+
     void DrawCameraProperties();
     FMultipleViewportsAdapter* ViewportAdapter = nullptr;
 

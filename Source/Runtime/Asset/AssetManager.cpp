@@ -16,6 +16,7 @@
 #include "ObjectSystem/ObjectFactory.h"
 
 #include "Rendering/ImageLoader.h"
+#include "Collision/Ray.h"
 
 
 namespace
@@ -53,6 +54,9 @@ namespace
 
 			Mesh->MeshData.Sections.Add(DefaultSection);
 		}
+
+		// 피킹 중 최초 구축 비용이 들어가지 않도록 로드 단계에서 Triangle BVH를 준비한다.
+		PrepareMeshPickingBVH(Mesh->MeshData);
 
 		// Vertex/Index GPU 업로드
 		Mesh->VertexBuffer = std::move(VB);

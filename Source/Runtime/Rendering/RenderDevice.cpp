@@ -42,8 +42,12 @@ FRenderDevice::FRenderDevice()
 
 	DeviceContext.As(&DeviceContext1);
 	D3D11_FEATURE_DATA_D3D11_OPTIONS Options{};
-	Device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS, &Options, sizeof(Options));
-	bConstantBufferOffsettingSupported = Options.ConstantBufferOffsetting;
+	bConstantBufferOffsettingSupported = DeviceContext1
+		&& SUCCEEDED(Device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS, &Options, sizeof(Options)))
+		&& Options.ConstantBufferOffsetting;
+	D3D11_FEATURE_DATA_THREADING Threading{};
+	bNativeCommandListsSupported = SUCCEEDED(Device->CheckFeatureSupport(D3D11_FEATURE_THREADING, &Threading, sizeof(Threading)))
+		&& Threading.DriverCommandLists;
 
 	ComPtr<IDXGIDevice> DXGIDevice;
 	Device->QueryInterface(IID_PPV_ARGS(DXGIDevice.GetAddressOf()));
@@ -63,7 +67,11 @@ ComPtr<ID3D11DeviceContext> FRenderDevice::CreateDeferredContext()
 {
 	ComPtr<ID3D11DeviceContext> DeferredContext;
 	HRESULT hr = Device->CreateDeferredContext(0, DeferredContext.GetAddressOf());
-	assert(SUCCEEDED(hr));
+	if (FAILED(hr))
+	{
+		LOG(Warning, "Failed to create deferred context: 0x{:08X}", static_cast<uint32>(hr));
+		return nullptr;
+	}
 	return DeferredContext;
 }
 

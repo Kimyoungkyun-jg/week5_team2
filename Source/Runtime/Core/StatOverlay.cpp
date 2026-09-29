@@ -136,10 +136,3 @@ uint64 FStatOverlay::GetProcessWorkingSetBytes()
 		return 0;
 	return static_cast<uint64>(Counters.WorkingSetSize);
 }
-
-void FStatOverlay::RecordPickingTime(double Milliseconds)
-{
-	LastPickingTimeMs = Milliseconds;
-	TotalPickingTimeMs += Milliseconds;
-	++TotalPickCount;
-}

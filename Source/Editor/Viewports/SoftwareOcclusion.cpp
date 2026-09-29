@@ -1480,8 +1480,6 @@ void FSoftwareOcclusionCuller::Cull(const int32 ViewIndex,
 	int32& Suspended = SuspendedFrames[std::clamp(ViewIndex, 0, MaxViews - 1)];
 	bool bSuspended = Settings.Mode != ESoftwareOcclusionMode::StaticBVHFrustumOnly && Suspended > 0;
 
-	bSuspended = false; //항상 오쿨루전 작동
-
 	if (bSuspended)
 		--Suspended;
 	OutStats.bOcclusionSuspended = bSuspended;
@@ -1750,9 +1748,8 @@ void FSoftwareOcclusionCuller::Cull(const int32 ViewIndex,
 		const uint32 Candidates = OutStats.OcclusionRejected + OutStats.FinalVisible;
 		if (Candidates > 0 && static_cast<float>(OutStats.OcclusionRejected) < MinOcclusionRejectRatio * static_cast<float>(Candidates))
 		{
+			Suspended = OcclusionProbeInterval;
 		}
-
-		//Suspended = OcclusionProbeInterval;
 	}
 }
 

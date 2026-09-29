@@ -10,6 +10,8 @@
 #include "Component/ParticleSubUVComponent.h"
 #include "Core/ScopeStyleCounter.h"
 #include "Core/StatOverlay.h"
+#include "Core/Stats.h"
+#include "Core/StatDefinitions.h"
 #include "Component/PrimitiveComponent.h"
 #include "Editor/Outliner/OutlinerPanel.h"
 #include "Editor/Rendering/GridRenderer.h"
@@ -910,39 +912,36 @@ void FMultipleViewportsAdapter::AppendSoftwareOcclusionDebugBounds(FLineBatcher&
 FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosition, UWorld& World)
 {
     LastPick = {};
+    LastPickObjectCount = RenderObjects.Num();
+
     FRay Ray{};
     if (!TryGetActiveViewRay(LocalMousePosition, Ray)) return LastPick;
 
     // 렌더와 같은 함수로 각 Billboard의 위치·크기에 맞는 View 행렬을 만든다.
-    const auto ResolveBillboardTransform = [](const UBillboardComponent& Billboard, const void* Context) -> FMatrix
-    {
-        const auto& Adapter = *static_cast<const FMultipleViewportsAdapter*>(Context);
-        const FVector Scale = Billboard.GetWorldScale3D();
-        return Adapter.BuildEngineBillboardMatrix(Adapter.GetActiveViewIndex(),
-            Billboard.GetWorldLocation(), Scale.Y, Scale.Z);
-    };
-    FHitResult Hit;
-    bool bHit = false;
+	const auto ResolveBillboardTransform = [](const UBillboardComponent& Billboard, const void* Context) -> FMatrix
+	{
+		const auto& Adapter = *static_cast<const FMultipleViewportsAdapter*>(Context);
+		const FVector Scale = Billboard.GetWorldScale3D();
+		return Adapter.BuildEngineBillboardMatrix(Adapter.GetActiveViewIndex(), Billboard.GetWorldLocation(), Scale.Y, Scale.Z);
+	};
 
-    SoftwareOcclusion.GatherRayCandidates(Ray, RenderObjects, PickCandidates);
+	FHitResult Hit;
+	bool bHit = false;
+	{
+		{
+			FStatScope TotalScope(StatIds::PickingTotal());
+			{
+				FStatScope BroadScope(StatIds::PickingBroad());
+				SoftwareOcclusion.GatherRayCandidates(Ray, RenderObjects, PickCandidates);
+			}
 
-    // 충돌 검사 시간 측정
-    if (FStatOverlay::IsEnabled(EStatFlags::Picking))
-    {  
-        
-        FScopeCycleCounter PickCounter;
-        
-        bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
-
-        const uint64 PickCycles = PickCounter.Finish();
-        const double PickTimeMs = FPlatformTime::ToMilliseconds(PickCycles);
-
-        FStatOverlay::RecordPickingTime(PickTimeMs);
-    }
-    else
-    {
-        bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
-    }
+			LastPickCandidateCount = PickCandidates.Num();
+			{
+				FStatScope NarrowScope(StatIds::PickingNarrow());
+				bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
+			}
+		}
+	}
 
     if (bHit)
     {

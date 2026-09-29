@@ -47,18 +47,6 @@ public:
 	// 프로세스 전체가 점유한 물리 메모리(Working Set).
 	static uint64 GetProcessWorkingSetBytes();
 
-	static void RecordPickingTime(double Milliseconds);
-
-	static double GetLastPickingTimeMs() { return LastPickingTimeMs; }
-	static double GetTotalPickingTimeMs() { return TotalPickingTimeMs; }
-	//static double GetAveragePickingTimeMs()
-	//{
-	//	return TotalPickCount > 0
-	//		? TotalPickingTimeMs / static_cast<double>(TotalPickCount)
-	//		: 0.0;
-	//}
-	static uint64 GetTotalPickCount() { return TotalPickCount; }
-
 private:
 	// 표시 수치 갱신 주기(초). 너무 짧으면 숫자가 읽히지 않는다.
 	static constexpr float SampleInterval = 0.25f;
@@ -69,8 +57,4 @@ private:
 	inline static int32 AccumulatedFrames = 0;
 	inline static float DisplayFPS = 0.0f;
 	inline static float DisplayFrameTimeMs = 0.0f;
-
-	inline static double LastPickingTimeMs = 0.0;
-	inline static double TotalPickingTimeMs = 0.0;
-	inline static uint64 TotalPickCount = 0;
 };

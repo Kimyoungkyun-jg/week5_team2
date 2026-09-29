@@ -3,6 +3,180 @@
 #include "Rendering/StaticMeshData.h"
 #include "Math/EngineMath.h"
 
+#include <algorithm>
+
+namespace
+{
+    constexpr uint32 PickingBVHLeafTriangles = 8;
+
+    FVector MinVector(const FVector& A, const FVector& B)
+    {
+        return {std::min(A.X, B.X), std::min(A.Y, B.Y), std::min(A.Z, B.Z)};
+    }
+
+    FVector MaxVector(const FVector& A, const FVector& B)
+    {
+        return {std::max(A.X, B.X), std::max(A.Y, B.Y), std::max(A.Z, B.Z)};
+    }
+
+    FBox GetTriangleBounds(const FStaticMeshData& Mesh, const uint32 TriangleIndex)
+    {
+        const uint32 FirstIndex = TriangleIndex * 3;
+        const FVector& A = Mesh.Vertices[Mesh.Indices[FirstIndex]].Position;
+        const FVector& B = Mesh.Vertices[Mesh.Indices[FirstIndex + 1]].Position;
+        const FVector& C = Mesh.Vertices[Mesh.Indices[FirstIndex + 2]].Position;
+        return {MinVector(A, MinVector(B, C)), MaxVector(A, MaxVector(B, C))};
+    }
+
+    FVector GetTriangleCentroid(const FStaticMeshData& Mesh, const uint32 TriangleIndex)
+    {
+        const uint32 FirstIndex = TriangleIndex * 3;
+        return (Mesh.Vertices[Mesh.Indices[FirstIndex]].Position +
+            Mesh.Vertices[Mesh.Indices[FirstIndex + 1]].Position +
+            Mesh.Vertices[Mesh.Indices[FirstIndex + 2]].Position) / 3.0f;
+    }
+
+    float AxisValue(const FVector& Value, const int32 Axis)
+    {
+        if (Axis == 0) return Value.X;
+        if (Axis == 1) return Value.Y;
+        return Value.Z;
+    }
+
+    uint32 BuildPickingBVHNode(const FStaticMeshData& Mesh, const uint32 First, const uint32 Count)
+    {
+        const uint32 NodeIndex = Mesh.PickingBVHNodes.Add(FMeshPickingBVHNode{});
+        FBox Bounds = GetTriangleBounds(Mesh, Mesh.PickingTriangleIndices[First]);
+        FVector CentroidMin = GetTriangleCentroid(Mesh, Mesh.PickingTriangleIndices[First]);
+        FVector CentroidMax = CentroidMin;
+
+        for (uint32 Offset = 1; Offset < Count; ++Offset)
+        {
+            const uint32 TriangleIndex = Mesh.PickingTriangleIndices[First + Offset];
+            const FBox TriangleBounds = GetTriangleBounds(Mesh, TriangleIndex);
+            Bounds.Min = MinVector(Bounds.Min, TriangleBounds.Min);
+            Bounds.Max = MaxVector(Bounds.Max, TriangleBounds.Max);
+            const FVector Centroid = GetTriangleCentroid(Mesh, TriangleIndex);
+            CentroidMin = MinVector(CentroidMin, Centroid);
+            CentroidMax = MaxVector(CentroidMax, Centroid);
+        }
+
+        if (Count <= PickingBVHLeafTriangles)
+        {
+            FMeshPickingBVHNode& Node = Mesh.PickingBVHNodes[NodeIndex];
+            Node.Bounds = Bounds;
+            Node.First = First;
+            Node.Count = Count;
+            Node.bLeaf = true;
+            return NodeIndex;
+        }
+
+        const FVector CentroidExtent = CentroidMax - CentroidMin;
+        int32 SplitAxis = 0;
+        if (CentroidExtent.Y > CentroidExtent.X) SplitAxis = 1;
+        if (AxisValue(CentroidExtent, 2) > AxisValue(CentroidExtent, SplitAxis)) SplitAxis = 2;
+
+        const uint32 LeftCount = Count / 2;
+        auto Begin = Mesh.PickingTriangleIndices.begin() + First;
+        auto Middle = Begin + LeftCount;
+        auto End = Begin + Count;
+        std::nth_element(Begin, Middle, End, [&](const uint32 A, const uint32 B)
+        {
+            return AxisValue(GetTriangleCentroid(Mesh, A), SplitAxis) <
+                AxisValue(GetTriangleCentroid(Mesh, B), SplitAxis);
+        });
+
+        const uint32 Left = BuildPickingBVHNode(Mesh, First, LeftCount);
+        const uint32 Right = BuildPickingBVHNode(Mesh, First + LeftCount, Count - LeftCount);
+        FMeshPickingBVHNode& Node = Mesh.PickingBVHNodes[NodeIndex];
+        Node.Bounds = Bounds;
+        Node.Left = Left;
+        Node.Right = Right;
+        return NodeIndex;
+    }
+
+    void EnsurePickingBVH(const FStaticMeshData& Mesh)
+    {
+        if (Mesh.bPickingBVHBuilt)
+            return;
+
+        Mesh.PickingTriangleIndices.Reset();
+        Mesh.PickingBVHNodes.Reset();
+        const uint32 TriangleCount = static_cast<uint32>(Mesh.Indices.Num() / 3);
+        if (TriangleCount > PickingBVHLeafTriangles)
+        {
+            Mesh.PickingTriangleIndices.Reserve(TriangleCount);
+            for (uint32 TriangleIndex = 0; TriangleIndex < TriangleCount; ++TriangleIndex)
+                Mesh.PickingTriangleIndices.Add(TriangleIndex);
+            Mesh.PickingBVHNodes.Reserve(TriangleCount * 2);
+            BuildPickingBVHNode(Mesh, 0, TriangleCount);
+        }
+        Mesh.bPickingBVHBuilt = true;
+    }
+
+    void TraceTriangle(const FRay& Ray, const FStaticMeshData& Mesh, const uint32 TriangleIndex,
+        float& InOutNearestT, bool& bInOutHit)
+    {
+        const uint32 FirstIndex = TriangleIndex * 3;
+        const FVector& A = Mesh.Vertices[Mesh.Indices[FirstIndex]].Position;
+        const FVector& B = Mesh.Vertices[Mesh.Indices[FirstIndex + 1]].Position;
+        const FVector& C = Mesh.Vertices[Mesh.Indices[FirstIndex + 2]].Position;
+        float T = FLT_MAX;
+        if (RayIntersectsTriangle(Ray, A, B, C, T) && T < InOutNearestT)
+        {
+            InOutNearestT = T;
+            bInOutHit = true;
+        }
+    }
+
+    void TracePickingBVHNode(const FRay& Ray, const FStaticMeshData& Mesh, const uint32 NodeIndex,
+        float& InOutNearestT, bool& bInOutHit)
+    {
+        const FMeshPickingBVHNode& Node = Mesh.PickingBVHNodes[NodeIndex];
+        float NodeDistance = 0.0f;
+        if (!RayIntersectsAABB(Ray, Node.Bounds.Min, Node.Bounds.Max, NodeDistance) ||
+            NodeDistance >= InOutNearestT)
+            return;
+
+        if (Node.bLeaf)
+        {
+            for (uint32 Offset = 0; Offset < Node.Count; ++Offset)
+                TraceTriangle(Ray, Mesh, Mesh.PickingTriangleIndices[Node.First + Offset], InOutNearestT, bInOutHit);
+            return;
+        }
+
+        const FMeshPickingBVHNode& LeftNode = Mesh.PickingBVHNodes[Node.Left];
+        const FMeshPickingBVHNode& RightNode = Mesh.PickingBVHNodes[Node.Right];
+        float LeftDistance = 0.0f;
+        float RightDistance = 0.0f;
+        const bool bHitLeft = RayIntersectsAABB(Ray, LeftNode.Bounds.Min, LeftNode.Bounds.Max, LeftDistance);
+        const bool bHitRight = RayIntersectsAABB(Ray, RightNode.Bounds.Min, RightNode.Bounds.Max, RightDistance);
+
+        if (bHitLeft && bHitRight)
+        {
+            const uint32 NearNode = LeftDistance <= RightDistance ? Node.Left : Node.Right;
+            const uint32 FarNode = LeftDistance <= RightDistance ? Node.Right : Node.Left;
+            const float FarDistance = LeftDistance <= RightDistance ? RightDistance : LeftDistance;
+            TracePickingBVHNode(Ray, Mesh, NearNode, InOutNearestT, bInOutHit);
+            if (FarDistance < InOutNearestT)
+                TracePickingBVHNode(Ray, Mesh, FarNode, InOutNearestT, bInOutHit);
+        }
+        else if (bHitLeft)
+        {
+            TracePickingBVHNode(Ray, Mesh, Node.Left, InOutNearestT, bInOutHit);
+        }
+        else if (bHitRight)
+        {
+            TracePickingBVHNode(Ray, Mesh, Node.Right, InOutNearestT, bInOutHit);
+        }
+    }
+}
+
+void PrepareMeshPickingBVH(const FStaticMeshData& Mesh)
+{
+    EnsurePickingBVH(Mesh);
+}
+
 
 FRay ToLocalRay(const FRay& WorldRay, const FMatrix& WorldMatrix)
 {
@@ -156,34 +330,19 @@ bool RayIntersectsTriangle(const FRay& Ray, const FVector& v1, const FVector& v2
 // Mesh AABB를 통과한 Ray에 삼각형 교차를 적용해 가장 가까운 거리만 반환한다.
 bool RayIntersectsMesh(const FRay& LocalRay, const FStaticMeshData& Mesh, float& OutT)
 {
-    FBox Box = Mesh.AABB;
-    float BoxT{};
-    //if (!RayIntersectsAABB(LocalRay, Box.Min, Box.Max, BoxT))
-    //{
-    //    return false;
-    //}
-
+    PrepareMeshPickingBVH(Mesh);
     bool bHit = false;
     float NearestT = FLT_MAX;
-    
-    for (uint32 i = 0; i + 2 < Mesh.Indices.Num(); i += 3)
+
+    if (!Mesh.PickingBVHNodes.IsEmpty())
     {
-        FVector vertices[3]{};	// 3 vertex
-        for (uint32 j = 0; j < 3; ++j)
-        {
-            uint32 index = Mesh.Indices[i + j];
-
-            vertices[j].X = Mesh.Vertices[index].Position.X;
-            vertices[j].Y = Mesh.Vertices[index].Position.Y;
-            vertices[j].Z = Mesh.Vertices[index].Position.Z;
-        }
-
-        float T = FLT_MAX;
-        if (RayIntersectsTriangle(LocalRay, vertices[0], vertices[1], vertices[2], T) && T < NearestT)
-        {
-            NearestT = T;
-            bHit = true;
-        }
+        TracePickingBVHNode(LocalRay, Mesh, 0, NearestT, bHit);
+    }
+    else
+    {
+        const uint32 TriangleCount = static_cast<uint32>(Mesh.Indices.Num() / 3);
+        for (uint32 TriangleIndex = 0; TriangleIndex < TriangleCount; ++TriangleIndex)
+            TraceTriangle(LocalRay, Mesh, TriangleIndex, NearestT, bHit);
     }
 
     if (bHit) OutT = NearestT;

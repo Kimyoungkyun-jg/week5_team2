@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <limits>
 
 namespace
 {
@@ -46,14 +47,50 @@ namespace
 
 bool FRenderer::Init()
 {
-	Temp = RenderCommand::CreateConstantBuffer(PerObjectSlotSize * MaxObjects);
-	return Temp != nullptr;
+	if (RenderCommand::GetRenderDevice()->SupportsConstantBufferOffsetting())
+	{
+		return EnsureConstantBufferCapacity(Temp, InitialPacketCapacity);
+	}
+	Temp = RenderCommand::CreateConstantBuffer(sizeof(FPerObjectConstants));
+	return Temp && Temp->GetBuffer();
+}
+
+bool FRenderer::EnsureConstantBufferCapacity(TUniquePtr<FConstantBuffer>& Buffer, uint32 PacketCount)
+{
+	const uint64 RequiredBytes = static_cast<uint64>(PacketCount) * PerObjectSlotSize;
+	const uint64 MaxBytes = (std::numeric_limits<uint32>::max)() / PerObjectSlotSize * static_cast<uint64>(PerObjectSlotSize);
+	if (RequiredBytes > MaxBytes)
+	{
+		LOG(Warning, "Per-object constant buffer size exceeds the D3D11 byte-width limit.");
+		return false;
+	}
+	const uint64 CurrentBytes = Buffer && Buffer->GetBuffer() ? Buffer->GetBufferSize() : 0;
+	if (CurrentBytes >= RequiredBytes)
+	{
+		return true;
+	}
+	const uint32 NewBytes = static_cast<uint32>((std::min)(MaxBytes, (std::max)(RequiredBytes, CurrentBytes * 2)));
+	auto NewBuffer = RenderCommand::CreateConstantBuffer(NewBytes);
+	if (!NewBuffer || !NewBuffer->GetBuffer())
+	{
+		LOG(Warning, "Failed to allocate per-object constant buffer ({} bytes).", NewBytes);
+		return false;
+	}
+	Buffer = std::move(NewBuffer);
+	return true;
 }
 
 // 지연 워커 초기화
 void FRenderer::EnsureDeferredWorkers()
 {
-	if (DeferredWorkers.Num() > 0)
+	if (bDeferredWorkersInitialized)
+	{
+		return;
+	}
+	bDeferredWorkersInitialized = true;
+	const FRenderDevice* Device = RenderCommand::GetRenderDevice();
+	// 에뮬레이션된 커맨드 리스트에서는 오프셋만 바꾸는 바인딩을 사용하지 않는다.
+	if (!Device->SupportsConstantBufferOffsetting() || !Device->SupportsNativeCommandLists())
 	{
 		return;
 	}
@@ -66,24 +103,17 @@ void FRenderer::EnsureDeferredWorkers()
 
 	DeferredWorkers.SetNum(WorkerCount);
 
-	const uint32 MaxPacketsPerWorker = (MaxObjects + WorkerCount - 1) / WorkerCount;
-	const uint32 WorkerBufferSize = MaxPacketsPerWorker * PerObjectSlotSize;
-
 	for (uint32 Index = 0; Index < WorkerCount; ++Index)
 	{
 		DeferredWorkers[Index].Context = RenderCommand::CreateDeferredContext();
 
-		assert(DeferredWorkers[Index].Context);
-
-		HRESULT Hr = DeferredWorkers[Index].Context.As(&DeferredWorkers[Index].Context1);
-
-		assert(SUCCEEDED(Hr));
-		assert(DeferredWorkers[Index].Context1);
-
-		DeferredWorkers[Index].PerObjectCB = RenderCommand::CreateConstantBuffer(WorkerBufferSize);
-
-		assert(DeferredWorkers[Index].PerObjectCB);
-		assert(DeferredWorkers[Index].PerObjectCB->GetBuffer());
+		if (!DeferredWorkers[Index].Context
+			|| FAILED(DeferredWorkers[Index].Context.As(&DeferredWorkers[Index].Context1)))
+		{
+			LOG(Warning, "Deferred rendering unavailable; using immediate context.");
+			DeferredWorkers.SetNum(0);
+			return;
+		}
 	}
 }
 
@@ -129,7 +159,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 	}
 
 	const int32 NumWorkers = DeferredWorkers.Num();
-	assert(TotalPackets <= MaxObjects);
+	const bool bUseOffsets = RenderCommand::GetRenderDevice()->SupportsConstantBufferOffsetting();
 
 	if (TotalPackets <= 500 || NumWorkers <= 1)
 	{
@@ -138,22 +168,27 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 		const UMaterial* LastMaterial = nullptr;
 		EPSOType LastPSO = EPSOType::Count;
 
-		void* MappedData = RenderCommand::MapBufferWriteDiscard(Temp.get());
-		assert(MappedData);
-
-		uint8* Base = static_cast<uint8*>(MappedData);
-
-		for (int32 i = 0; i < TotalPackets; ++i)
+		if (bUseOffsets)
 		{
-			FPerObjectConstants Constants;
-			Constants.MVP = InPackets[i].MVP;
-			Constants.World = InPackets[i].model;
-
-			uint8* Dest = Base + i * PerObjectSlotSize;
-			std::memcpy(Dest, &Constants, sizeof(FPerObjectConstants));
+			if (!EnsureConstantBufferCapacity(Temp, TotalPackets))
+			{
+				return;
+			}
+			void* MappedData = RenderCommand::MapBufferWriteDiscard(Temp.get());
+			if (!MappedData)
+			{
+				return;
+			}
+			uint8* Base = static_cast<uint8*>(MappedData);
+			for (int32 i = 0; i < TotalPackets; ++i)
+			{
+				FPerObjectConstants Constants;
+				Constants.MVP = InPackets[i].MVP;
+				Constants.World = InPackets[i].model;
+				std::memcpy(Base + static_cast<size_t>(i) * PerObjectSlotSize, &Constants, sizeof(Constants));
+			}
+			RenderCommand::UnmapBuffer(Temp.get());
 		}
-
-		RenderCommand::UnmapBuffer(Temp.get());
 
 		for (int32 i = 0; i < TotalPackets; ++i)
 		{
@@ -182,11 +217,38 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 			const uint32 FirstConstant = i * (PerObjectSlotSize / 16);
 			const uint32 NumConstants = PerObjectSlotSize / 16;
 
-			RenderCommand::BindConstantBufferRange(0, Temp.get(), EShaderBindFlagBits::Vertex, FirstConstant, NumConstants);
-			const uint32 IndexCount = RenderPacket.mesh ? RenderPacket.mesh->GetIndexCount(RenderPacket.LODIndex) : RenderPacket.IndexCount;
-			RenderCommand::DrawIndexed(IndexCount, RenderPacket.StartIndex);
+			if (bUseOffsets)
+			{
+				RenderCommand::BindConstantBufferRange(0, Temp.get(), EShaderBindFlagBits::Vertex, FirstConstant, NumConstants);
+			}
+			else
+			{
+				void* MappedData = RenderCommand::MapBufferWriteDiscard(Temp.get());
+				if (!MappedData)
+				{
+					return;
+				}
+				FPerObjectConstants Constants;
+				Constants.MVP = RenderPacket.MVP;
+				Constants.World = RenderPacket.model;
+				std::memcpy(MappedData, &Constants, sizeof(Constants));
+				RenderCommand::UnmapBuffer(Temp.get());
+				RenderCommand::BindConstantBuffer(0, Temp.get(), EShaderBindFlagBits::Vertex);
+			}
+			RenderCommand::DrawIndexed(RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(), RenderPacket.StartIndex);
 		}
 		return;
+	}
+
+	const int32 ChunkSize = 1 + (TotalPackets - 1) / NumWorkers;
+	const int32 NumJobs = 1 + (TotalPackets - 1) / ChunkSize;
+	for (int32 Index = 0; Index < NumJobs; ++Index)
+	{
+		const int32 PacketCount = (std::min)(ChunkSize, TotalPackets - Index * ChunkSize);
+		if (!EnsureConstantBufferCapacity(DeferredWorkers[Index].PerObjectCB, PacketCount))
+		{
+			return;
+		}
 	}
 
 	// 현재 바인딩된 렌더 타깃과 뷰포트 정보 획득
@@ -206,9 +268,6 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 	UINT NumViewports = 1;
 	D3D11_VIEWPORT Viewport{};
 	RenderCommand::GetRenderDevice()->GetContext()->RSGetViewports(&NumViewports, &Viewport);
-
-	const int32 ChunkSize = (TotalPackets + NumWorkers - 1) / NumWorkers;
-	const int32 NumJobs = (TotalPackets + ChunkSize - 1) / ChunkSize;
 
 	std::vector<ComPtr<ID3D11CommandList>> CommandLists(NumJobs);
 
@@ -236,7 +295,12 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 		void* MappedData = RenderCommand::MapBufferWriteDiscard(WorkerCB, Context);
 
-		assert(MappedData);
+		if (!MappedData)
+		{
+			ComPtr<ID3D11CommandList> Discarded;
+			Context->FinishCommandList(FALSE, Discarded.GetAddressOf());
+			return;
+		}
 
 		uint8* Base = static_cast<uint8*>(MappedData);
 
@@ -291,11 +355,22 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 			}
 		}
 
-		Context->FinishCommandList(FALSE, CommandLists[JobIndex].GetAddressOf());
+		if (FAILED(Context->FinishCommandList(FALSE, CommandLists[JobIndex].GetAddressOf())))
+		{
+			CommandLists[JobIndex].Reset();
+		}
 	});
 
 	// 메인 스레드에서 커맨드 리스트 순차 실행
-	for (int32 i = 0; i < NumJobs; ++i)
+	const bool bAllJobsSucceeded = std::all_of(CommandLists.begin(), CommandLists.end(), [](const auto& List) { return List != nullptr; });
+	if (!bAllJobsSucceeded)
+	{
+		// 로그와 컨텍스트 폐기는 워커가 모두 종료된 뒤 메인 스레드에서 처리한다.
+		LOG(Warning, "Per-object buffer upload or command-list recording failed; skipping this render batch.");
+		DeferredWorkers.SetNum(0);
+		bDeferredWorkersInitialized = false;
+	}
+	for (int32 i = 0; bAllJobsSucceeded && i < NumJobs; ++i)
 	{
 		if (CommandLists[i])
 		{

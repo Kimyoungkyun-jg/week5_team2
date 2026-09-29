@@ -242,7 +242,8 @@ void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject
 
         FObjectState& State = ObjectStates[InternalIndex];
         const uint32 SerialNumber = Object.Primitive->GetSerialNumber();
-        if (State.SerialNumber != SerialNumber)
+
+        if (State.SerialNumber != SerialNumber) // 새로 생성된 객체
         {
             State.SerialNumber = SerialNumber;
             State.BoundsRevision = Object.BoundsRevision;
@@ -253,7 +254,7 @@ void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject
                 bBVHDirty = true;
             }
         }
-        else
+        else // 기존에 있었던 객체
         {
             if (!State.bDynamic && State.BoundsRevision != Object.BoundsRevision)
             {

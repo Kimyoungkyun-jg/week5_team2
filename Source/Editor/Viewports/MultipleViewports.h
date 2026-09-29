@@ -133,8 +133,8 @@ struct FRenderableObject
     const FStaticMeshData* StaticMeshData = nullptr;
     uint64 BoundsRevision = 0;
     uint32 StableIndex = 0;
-    bool bCanBeOccluded = false;
-    bool bCanOcclude = false;
+    bool bCanBeOccluded = false; //가려질 수 있는가?
+    bool bCanOcclude = false; //남을 가릴 수 있는가?
 };
 
 // View 절두체를 이루는 여섯 개의 정규화 평면을 담는다.

@@ -1,9 +1,10 @@
 #include "EnginePCH.h"
 #include "Editor/Viewports/SoftwareOcclusion.h"
+#include "Editor/Viewports/GPUOcclusionCuller.h"
+#include "Rendering/Texture2D.h"
 
 #include "Component/PrimitiveComponent.h"
-#include "Rendering/StaticMeshData.h"
-#include "Job/FiberJobManager.h"
+#include "Tasks/Tasks.h"
 
 #include <algorithm>
 #include <array>
@@ -158,8 +159,25 @@ namespace
     }
 }
 
+FSoftwareOcclusionCuller::FSoftwareOcclusionCuller() = default;
+FSoftwareOcclusionCuller::~FSoftwareOcclusionCuller() = default;
+
+FGPUOcclusionCuller* FSoftwareOcclusionCuller::GetGPUCuller()
+{
+    if (!GPUCuller)
+    {
+        GPUCuller = MakeUnique<FGPUOcclusionCuller>();
+        GPUCuller->Init();
+    }
+    return GPUCuller.get();
+}
+
 void FSoftwareOcclusionCuller::ResetScene()
 {
+    if (GPUCuller)
+    {
+        GPUCuller->ResetScene();
+    }
     ObjectStates.Reset();
     SyncSerial = 0;
     bInitialized = false;
@@ -204,6 +222,14 @@ void FSoftwareOcclusionCuller::SetSettings(const FSoftwareOcclusionSettings& InS
 
 void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject>& Objects)
 {
+    if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute)
+    {
+        if (FGPUOcclusionCuller* Culler = GetGPUCuller())
+        {
+            Culler->SynchronizeObjects(Objects);
+        }
+    }
+
     ++SyncSerial;
     StaticObjectIndices.Reset();
     DynamicObjectIndices.Reset();
@@ -269,6 +295,17 @@ void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject
     }
     bBVHDirty = bBVHDirty || !bSameStaticLayout;
     bInitialized = true;
+
+    if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute)
+    {
+        if (FGPUOcclusionCuller* Culler = GetGPUCuller())
+        {
+            if (bBVHDirty || !DynamicObjectIndices.IsEmpty())
+            {
+                Culler->MarkNeedsUpload();
+            }
+        }
+    }
 }
 
 void FSoftwareOcclusionCuller::PrepareBuffers(const int32 ViewWidth, const int32 ViewHeight)
@@ -1417,12 +1454,24 @@ void FSoftwareOcclusionCuller::Cull(
     CurrentCameraLocation = CameraLocation;
     CurrentFrustum = Frustum;
 
+    if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute && !bWireframe && ViewWidth > 0 && ViewHeight > 0)
+    {
+        if (FGPUOcclusionCuller* Culler = GetGPUCuller())
+        {
+            Culler->SynchronizeObjects(Objects);
+            Culler->Cull(ViewIndex, Objects, Frustum, ViewProjection, OutVisible, OutStats);
+            OutStats.CullMs = static_cast<float>((NowSeconds() - CullStartSeconds) * 1000.0);
+            ActiveStats = nullptr;
+            return;
+        }
+    }
+
     if (Settings.Mode == ESoftwareOcclusionMode::Disabled || bWireframe || ViewWidth <= 0 || ViewHeight <= 0)
     {
         const int32 TotalObjects = Objects.Num();
         if (TotalObjects > 0)
         {
-            const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+            const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
             const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
             const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
 
@@ -1441,7 +1490,7 @@ void FSoftwareOcclusionCuller::Cull(
             }
 
             // 절두체 검사 병렬 수행
-            FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
+            Tasks::ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
             {
                 const int32 JobIndex = Start / ChunkSize;
                 TArray<UPrimitiveComponent*>& LocalVisible = WorkerVisibleBuffers[JobIndex];
@@ -1508,7 +1557,7 @@ void FSoftwareOcclusionCuller::Cull(
     else
     {
         const int32 TotalObjects = Objects.Num();
-        const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+        const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
         const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
         const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
 
@@ -1527,7 +1576,7 @@ void FSoftwareOcclusionCuller::Cull(
         }
 
         // 절두체 검사 병렬 수행
-        FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
+        Tasks::ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
         {
             const int32 JobIndex = Start / ChunkSize;
             TArray<uint32>& LocalCandidates = WorkerCandidateBuffers[JobIndex];
@@ -1560,7 +1609,7 @@ void FSoftwareOcclusionCuller::Cull(
         {
             const int32 DistChunkSize = (TotalCandidates + NumWorkers - 1) / NumWorkers;
             // 거리 계산 병렬 수행
-            FFiberJobManager::Get().ParallelFor(TotalCandidates, DistChunkSize, [&](int32 Start, int32 End)
+            Tasks::ParallelFor(TotalCandidates, DistChunkSize, [&](int32 Start, int32 End)
             {
                 for (int32 i = Start; i < End; ++i)
                 {
@@ -1616,13 +1665,14 @@ void FSoftwareOcclusionCuller::Cull(
             UpdateDirtyHZB();
 
             // 가시성 병렬 판정
-            const int32 QueryChunkSize = (TotalCandidates + NumWorkers - 1) / NumWorkers;
+            const uint32 TaskWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
+            const int32 QueryChunkSize = (TotalCandidates + TaskWorkers - 1) / TaskWorkers;
             const bool bUseHierarchy = Settings.Mode != ESoftwareOcclusionMode::LinearSubcells;
 
             std::atomic<uint32> TotalOcclusionTested{ 0 };
             std::atomic<uint32> TotalOcclusionRejected{ 0 };
 
-            FFiberJobManager::Get().ParallelFor(TotalCandidates, QueryChunkSize, [&](int32 Start, int32 End)
+            Tasks::ParallelFor(TotalCandidates, QueryChunkSize, [&](int32 Start, int32 End)
             {
                 uint32 LocalTested = 0;
                 uint32 LocalRejected = 0;
@@ -1697,7 +1747,7 @@ void FSoftwareOcclusionCuller::Cull(
     const int32 TotalObjects = Objects.Num();
     if (TotalObjects > 0)
     {
-        const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+        const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
         const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
         const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
 
@@ -1711,7 +1761,7 @@ void FSoftwareOcclusionCuller::Cull(
         }
 
         // 가시성 결과 병렬 수집
-        FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
+        Tasks::ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
         {
             const int32 JobIndex = Start / ChunkSize;
             TArray<UPrimitiveComponent*>& Local = WorkerVisibleBuffers[JobIndex];
@@ -1744,6 +1794,17 @@ void FSoftwareOcclusionCuller::Cull(
             static_cast<float>(OutStats.OcclusionRejected) < MinOcclusionRejectRatio * static_cast<float>(Candidates))
         { }
             
-            //Suspended = OcclusionProbeInterval;
+        //Suspended = OcclusionProbeInterval;
+    }
+}
+
+void FSoftwareOcclusionCuller::PostRenderOpaque(int32 ViewIndex, FTexture2D* SceneDepthTexture)
+{
+    if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute)
+    {
+        if (FGPUOcclusionCuller* Culler = GetGPUCuller())
+        {
+            Culler->BuildHZB(ViewIndex, SceneDepthTexture);
+        }
     }
 }

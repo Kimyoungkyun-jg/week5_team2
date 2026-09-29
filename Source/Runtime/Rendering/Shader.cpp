@@ -167,3 +167,16 @@ FPixelShader::FPixelShader(ID3D11Device* Device, const FShaderByteCode& ByteCode
 
 	BindingReflection(ByteCode);
 }
+
+FComputeShader::FComputeShader(ID3D11Device* Device, const FShaderByteCode& ByteCode)
+{
+	Type = EShaderType::Compute;
+	if (!ByteCode.IsValid()) return;
+
+	if (FAILED(Device->CreateComputeShader(ByteCode.GetData(), ByteCode.GetSize(), nullptr, ComputeShader.GetAddressOf())))
+	{
+		return;
+	}
+
+	BindingReflection(ByteCode);
+}

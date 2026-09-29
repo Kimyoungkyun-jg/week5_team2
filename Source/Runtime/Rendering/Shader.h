@@ -86,6 +86,19 @@ private:
 	ComPtr<ID3D11PixelShader> PixelShader = nullptr;
 };
 
+class FComputeShader : public FShader
+{
+public:
+	FComputeShader(ID3D11Device* Device, const FShaderByteCode& ByteCode);
+	virtual ~FComputeShader() = default;
+
+	ID3D11ComputeShader* GetShader() const { return ComputeShader.Get(); }
+	virtual bool IsValid() const { return ComputeShader != nullptr; }
+
+private:
+	ComPtr<ID3D11ComputeShader> ComputeShader = nullptr;
+};
+
 class FShaderProgram
 {
 public:

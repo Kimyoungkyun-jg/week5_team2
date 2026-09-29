@@ -870,29 +870,24 @@ void FMultipleViewportsAdapter::AppendSoftwareOcclusionDebugBounds(FLineBatcher&
 FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosition, UWorld& World)
 {
     LastPick = {};
-	FStats::SetEnabled(StatIds::PickingTotal(), true);
-	FStats::SetEnabled(StatIds::PickingBroad(), true);
-	FStats::SetEnabled(StatIds::PickingNarrow(), true);
+    LastPickObjectCount = RenderObjects.Num();
+    FStats::SetEnabled(StatIds::PickingTotal(), true);
+    FStats::SetEnabled(StatIds::PickingBroad(), true);
+    FStats::SetEnabled(StatIds::PickingNarrow(), true);
 
     FRay Ray{};
     if (!TryGetActiveViewRay(LocalMousePosition, Ray)) return LastPick;
 
     // 렌더와 같은 함수로 각 Billboard의 위치·크기에 맞는 View 행렬을 만든다.
-    const auto ResolveBillboardTransform = [](const UBillboardComponent& Billboard, const void* Context) -> FMatrix
-    {
-        const auto& Adapter = *static_cast<const FMultipleViewportsAdapter*>(Context);
-        const FVector Scale = Billboard.GetWorldScale3D();
-        return Adapter.BuildEngineBillboardMatrix(Adapter.GetActiveViewIndex(),
-            Billboard.GetWorldLocation(), Scale.Y, Scale.Z);
-    };
-    FHitResult Hit;
-    bool bHit = false;
+	const auto ResolveBillboardTransform = [](const UBillboardComponent& Billboard, const void* Context) -> FMatrix
+	{
+		const auto& Adapter = *static_cast<const FMultipleViewportsAdapter*>(Context);
+		const FVector Scale = Billboard.GetWorldScale3D();
+		return Adapter.BuildEngineBillboardMatrix(Adapter.GetActiveViewIndex(), Billboard.GetWorldLocation(), Scale.Y, Scale.Z);
+	};
 
-	FStatScope TotalScope(StatIds::PickingTotal());
-	FStatScope BroadScope(StatIds::PickingBroad());
-	FStatScope NarrowScope(StatIds::PickingNarrow());
-
-    // 충돌 검사 시간 측정
+	FHitResult Hit;
+	bool bHit = false;
 	{
 		FStatScope TotalScope(StatIds::PickingTotal());
 		{
@@ -903,6 +898,7 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
 			FStatScope NarrowScope(StatIds::PickingNarrow());
 			bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
 		}
+		LastPickNarrowPhaseMs = FStats::GetRecord(StatIds::PickingNarrow()).CurrentValue;
 	}
 
     if (bHit)

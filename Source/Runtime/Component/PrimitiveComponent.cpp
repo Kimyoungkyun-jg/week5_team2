@@ -48,23 +48,6 @@ void UPrimitiveComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPacket
 {
 }
 
-
-void UPrimitiveComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue)
-{
-	//if (Mesh && Material)
-	//{
-	//	FRenderPacket rp;
-	//	rp.mesh = Mesh;
-	//	rp.material = Material;
-	//	rp.model = GetWorldMatrix();
-
-	//	// Todo: subuv
-	//	//rp.bSubUV = false;
-
-	//	RenderQueue.Enqueue(rp);
-	//}
-}
-
 bool UPrimitiveComponent::LineTraceComponent(const FRay& WorldRay, FHitResult& OutHit)
 {
 	const FStaticMeshData* Mesh = GetMeshData();

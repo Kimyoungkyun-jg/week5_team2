@@ -39,7 +39,7 @@ public:
 
 	void ClearWorld();
 
-	void GatherRenderPackets(TQueue<FRenderPacket>& RenderQueue);
+	void GatherRenderPackets(TArray<FRenderPacket>& OutPackets);
 
 	void CreateMainCamera();
 

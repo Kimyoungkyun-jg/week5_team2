@@ -760,32 +760,6 @@ FMultipleViewportsAdapter::GetVisibleObjectCount(const int32 ViewIndex) const {
   return VisiblePrimitives[ViewIndex].Num();
 }
 
-// 가시 컴포넌트를 직접 순회하여 렌더 큐를 구성한다
-void FMultipleViewportsAdapter::BuildRenderQueue(
-    const int32 ViewIndex, TQueue<FRenderPacket> &OutQueue) {
-  OutQueue.Reset();
-  if (!IsViewActive(ViewIndex))
-    return;
-  const PreparedView& View = PrepareView(ViewIndex);
-  const FViewCamera RenderCamera = GetRenderCamera(ViewIndex);
-  SoftwareOcclusion.Cull(
-      ViewIndex,
-      RenderObjects,
-      View.Frustum,
-      View.EngineViewProjection,
-      RenderCamera.Transform.Location,
-      (std::max)(1, static_cast<int32>(ViewRects[ViewIndex].Width)),
-      (std::max)(1, static_cast<int32>(ViewRects[ViewIndex].Height)),
-      IsViewWireframe(ViewIndex),
-      VisiblePrimitives[ViewIndex],
-      OcclusionStats[ViewIndex]);
-  for (UPrimitiveComponent *Primitive : VisiblePrimitives[ViewIndex]) {
-    if (Primitive) {
-      Primitive->SubmitToRenderQueue(OutQueue);
-    }
-  }
-}
-
 // 가시 컴포넌트를 파이버 잡으로 병렬 순회하여 렌더 패킷과 행렬을 구성한다
 void FMultipleViewportsAdapter::BuildRenderPackets(
     const int32 ViewIndex, TArray<FRenderPacket>& OutPackets)

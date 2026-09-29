@@ -113,83 +113,6 @@ void UParticleSubUVComponent::TickComponent(float DeltaTime)
 	}
 }
 
-// 기본 카메라 기준으로 파티클 상수와 렌더 패킷을 구성한다.
-void UParticleSubUVComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue)
-{
-	assert(QuadMesh != nullptr);
-	assert(Material != nullptr);
-	
-	Constants.Reset();
-	Constants.Reserve(Particles.Num());
-
-	const FVector CameraPos = GetOwner()->GetWorld()->GetMainCamera()->GetCameraComponent()->GetWorldLocation();
-	for (FParticle& Particle : Particles)
-	{
-		if (Particle.bAlive == false)
-		{
-			continue;
-		}
-
-
-		FMatrix WorldMatrix = FMatrix::Identity; 
-		Super::GetWorldTransformedMatrix(&WorldMatrix);
-
-		// Scale, Move
-		WorldMatrix.M[0][0] *= Particle.Scale;
-		WorldMatrix.M[0][1] *= Particle.Scale;
-		WorldMatrix.M[0][2] *= Particle.Scale;
-		WorldMatrix.M[0][3] *= Particle.Scale;
-
-		WorldMatrix.M[1][0] *= Particle.Scale;
-		WorldMatrix.M[1][1] *= Particle.Scale;
-		WorldMatrix.M[1][2] *= Particle.Scale;
-		WorldMatrix.M[1][3] *= Particle.Scale;
-
-		WorldMatrix.M[2][0] *= Particle.Scale;
-		WorldMatrix.M[2][1] *= Particle.Scale;
-		WorldMatrix.M[2][2] *= Particle.Scale;
-		WorldMatrix.M[2][3] *= Particle.Scale;
-
-		WorldMatrix.M[3][0] = Particle.Location.X;
-		WorldMatrix.M[3][1] = Particle.Location.Y;
-		WorldMatrix.M[3][2] = Particle.Location.Z;
-		WorldMatrix.M[3][3] = 1.0f;
-
-		const FVector ParticlePos = Particle.Location;
-		const FVector CameraToParticleVec = ParticlePos - CameraPos;
-
-		const float CameraToParticleDistance = 
-			CameraToParticleVec.X *
-			CameraToParticleVec.X +
-
-			CameraToParticleVec.Y *
-			CameraToParticleVec.Y +
-
-			CameraToParticleVec.Z *
-			CameraToParticleVec.Z;
-
-		FRenderPacket Packet;
-		Packet.model = WorldMatrix;
-		Packet.mesh = QuadMesh;
-		Packet.material = Material;
-
-		FSubUVConstants C;
-		C.CurrentFrame =  Particle.SubUVFrame;
-		C.AtlasColSize = ColSize;
-		C.AtlasRowSize = RowSize;
-		C.Alpha = Particle.Alpha;
-
-		Constants.Add(C);
-
-		Packet.MaterialParamData = &Constants.Last();
-		Packet.MaterialParamDataSize = sizeof(FSubUVConstants);
-
-		Packet.CameraDistanceSquared = CameraToParticleDistance;
-
-		RenderQueue.Enqueue(Packet);
-	}
-}
-
 // 기본 카메라 기준으로 파티클 렌더 패킷을 배열에 직접 수집
 void UParticleSubUVComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets)
 {
@@ -338,33 +261,6 @@ void UParticleSubUVComponent::BeginViewSubmission()
         Constants.Add(Value);
     }
 }
-
-// 파티클의 View 행렬·거리·SubUV 상수를 렌더 패킷에 담는다.
-void UParticleSubUVComponent::SubmitParticleToRenderQueue(
-	TQueue<FRenderPacket>& RenderQueue,
-	const int32 ParticleIndex,
-	const FMatrix& WorldMatrix,
-	const float CameraDistanceSquared)
-{
-	if (ParticleIndex < 0 || ParticleIndex >= Particles.Num() || QuadMesh == nullptr || Material == nullptr)
-		return;
-
-	const FParticle& Particle = Particles[ParticleIndex];
-	if (!Particle.bAlive)
-		return;
-
-	assert(Constants.Num() == Particles.Num());
-
-	FRenderPacket Packet;
-	Packet.model = WorldMatrix;
-	Packet.mesh = QuadMesh;
-	Packet.material = Material;
-	Packet.CameraDistanceSquared = CameraDistanceSquared;
-	Packet.MaterialParamData = &Constants[ParticleIndex];
-	Packet.MaterialParamDataSize = sizeof(FSubUVConstants);
-	RenderQueue.Enqueue(Packet);
-}
-
 
 // 실제 재질의 블렌드 상태로 프레임 공통 정렬과 View별 정렬을 구분한다.
 bool UParticleSubUVComponent::UsesOpaqueMaterial() const

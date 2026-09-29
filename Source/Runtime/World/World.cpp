@@ -126,13 +126,14 @@ void UWorld::ClearWorld()
 	LOG(Info, "{} : ", PersistentLevel->GetActorNum());
 }
 
-void UWorld::GatherRenderPackets(TQueue<FRenderPacket>& RenderQueue)
+void UWorld::GatherRenderPackets(TArray<FRenderPacket>& OutPackets)
 {
+	OutPackets.Reset();
 	//for (UPrimitiveComponent* Primitive : PrimitiveComponents)
 	for (TObjectIterator<UPrimitiveComponent> Itr; Itr; ++Itr)
 	{
 		if (*Itr && Itr->IsVisible())
-			Itr->SubmitToRenderQueue(RenderQueue);
+			Itr->SubmitToRenderPackets(OutPackets);
 	}
 }
 

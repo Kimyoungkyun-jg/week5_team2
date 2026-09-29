@@ -267,14 +267,13 @@ void FEditorApplication::RenderMultipleViewports() {
   const bool bActive = MultipleViewportsAdapter.IsViewActive(0);
   ViewportsPanel->SetView(0, MultipleViewportsAdapter.GetViewRect(0), bActive);
 
-  TArray<FRenderPacket> RenderPackets;
-  MultipleViewportsAdapter.BuildRenderPackets(0, RenderPackets);
+  MultipleViewportsAdapter.BuildRenderPackets(0, SceneRenderPackets);
 
   RenderFrame(0, ViewportsPanel->GetRenderingInfo(0),
               MultipleViewportsAdapter.GetEngineViewProjection(0),
               MultipleViewportsAdapter.GetEngineCameraLocation(0),
               MultipleViewportsAdapter.GetEngineCameraForward(0),
-              RenderPackets);
+              SceneRenderPackets);
 
   EMultipleViewportsCameraPreset CameraPresets[4]{};
   // for (int32 ViewIndex = 0; ViewIndex < 4; ++ViewIndex)
@@ -324,91 +323,6 @@ void FEditorApplication::UpdateGizmoAndPicking() {
     MultipleViewportsAdapter.PickActiveView(LocalMousePosition, *World);
     MultipleViewportsAdapter.ApplyLastPickToOutliner(*OutlinerPanel);
   }
-}
-
-// View 행렬로 Scene·Grid·Gizmo·텍스트·Outline을 렌더한다.
-void FEditorApplication::RenderFrame(const int32 ViewIndex,
-                                     const FRenderingInfo &ViewRenderingInfo,
-                                     const FMatrix &ViewProjection,
-                                     const FVector &ViewCameraLocation,
-                                     const FVector &ViewCameraForward,
-                                     TQueue<FRenderPacket> &RenderQueue) {
-  RenderCommand::BeginRenderPass(ViewRenderingInfo);
-
-	const FEditorSettings& EditorSettings = SettingsPanel->GetSettings();
-	GridRenderer->OnRenderPSGrid(
-		ViewProjection,
-		ViewCameraLocation,
-		EditorSettings,
-		ViewRenderingInfo.ViewportSetting
-	);
-
-	const bool bDrawPrimitives = EditorSettings.bDrawPrimitives;
-
-  // 삼각형 연결은 유지하고 View별 Fill Mode만 선택한다.
-  const ERasterizerState SceneRasterizerState =
-      MultipleViewportsAdapter.IsViewWireframe(ViewIndex)
-          ? ERasterizerState::Wireframe
-          : ERasterizerState::SolidBack;
-
-  // 렌더 루프 — 반드시 RenderAll보다 먼저
-  // SkyboxRenderer->OnRender(ViewProjection, ViewCameraLocation);
-  if (bDrawPrimitives) {
-
-    Renderer->RenderOpaque(RenderQueue, ViewProjection);
-  }
-
-	if (MultipleViewportsAdapter.GetSoftwareOcclusionSettings().bDebugBounds)
-	{
-		LineBatcher->BeginFrame();
-		MultipleViewportsAdapter.AppendSoftwareOcclusionDebugBounds(*LineBatcher);
-		LineBatcher->OnRender(ViewProjection);
-	}
-
-	// 스텐실 기반이라 선택 대상의 가시성이 꺼져 있어도 외곽선만 그린다.
-	if (Outline->GetTarget())
-	{
-		OutlineRenderer->OnRender(*Outline, ViewProjection, ViewRenderingInfo.ViewportSetting);
-	}
-
-  if (Gizmo->GetTarget()) {
-    auto Target = Cast<UPrimitiveComponent>(Gizmo->GetTarget());
-
-    FBox box = Target->CalcBounds();
-
-    RenderCommand::ClearDepthStencil(ViewRenderingInfo.DepthSteincil.Texture);
-
-    GizmoRenderer->OnRender(*Gizmo, ViewProjection, ViewCameraLocation,
-                            MultipleViewportsAdapter.IsOrthographic(ViewIndex));
-  }
-
-  RenderCommand::ClearDepthStencil(ViewRenderingInfo.DepthSteincil.Texture);
-
-  // 피킹된 액터의 UUID 기본 표시
-  if (Gizmo->GetTarget() && SystemFont) {
-    if (UPrimitiveComponent *Primitive =
-            Cast<UPrimitiveComponent>(Gizmo->GetTarget())) {
-      if (AActor *SelectedActor = Primitive->GetOwner()) {
-        FBox Box = Primitive->CalcBounds();
-        FVector UUIDLocation;
-        UUIDLocation.X = (Box.Min.X + Box.Max.X) * 0.5f;
-        UUIDLocation.Y = (Box.Min.Y + Box.Max.Y) * 0.5f;
-        UUIDLocation.Z = Box.Max.Z + 0.5f;
-
-        FString Text = "UUID : " + std::to_string(SelectedActor->GetUUID());
-
-        TextRenderer->BuildTextMesh(Text, 0.5f, *SystemFont);
-
-        const FMatrix BillboardWorld =
-            MultipleViewportsAdapter.BuildEngineBillboardMatrix(
-                ViewIndex, UUIDLocation, 1.0f, 1.0f);
-        TextRenderer->OnRender(Text, BillboardWorld, 0.5f, *SystemFont,
-                               ViewProjection);
-      }
-    }
-  }
-
-  RenderCommand::EndRenderPass(ViewRenderingInfo);
 }
 
 // TArray 기반 고속 렌더 프레임

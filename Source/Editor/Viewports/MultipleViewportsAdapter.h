@@ -4,7 +4,6 @@
 #include "Editor/Viewports/SoftwareOcclusion.h"
 
 #include "Collision/Ray.h"
-#include "Container/Queue.h"
 #include "Math/Matrix.h"
 #include "Rendering/RenderPacket.h"
 
@@ -101,8 +100,6 @@ public:
     }
     void AppendSoftwareOcclusionDebugBounds(FLineBatcher& LineBatcher) const;
 
-    // View별 가시 ID를 엔진 컴포넌트로 역매핑해 렌더 큐를 구성한다.
-    void BuildRenderQueue(int32 ViewIndex, TQueue<FRenderPacket>& OutQueue);
     // 파이버 잡으로 월드 및 MVP 행렬을 병렬 연산하여 TArray에 수집한다.
     void BuildRenderPackets(int32 ViewIndex, TArray<FRenderPacket>& OutPackets);
     // 활성 View Ray를 World·Component 피킹으로 전달하고 마지막 결과를 보관한다.

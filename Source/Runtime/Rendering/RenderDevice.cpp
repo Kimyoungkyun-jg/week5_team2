@@ -2,6 +2,7 @@
 #include "RenderDevice.h"
 
 #include "Buffer.h"
+#include "Shader.h"
 #include "Texture2D.h"
 #include "TextureCube.h"
 #include "PipelineState.h"
@@ -41,8 +42,12 @@ FRenderDevice::FRenderDevice()
 
 	DeviceContext.As(&DeviceContext1);
 	D3D11_FEATURE_DATA_D3D11_OPTIONS Options{};
-	Device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS, &Options, sizeof(Options));
-	bConstantBufferOffsettingSupported = Options.ConstantBufferOffsetting;
+	bConstantBufferOffsettingSupported = DeviceContext1
+		&& SUCCEEDED(Device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS, &Options, sizeof(Options)))
+		&& Options.ConstantBufferOffsetting;
+	D3D11_FEATURE_DATA_THREADING Threading{};
+	bNativeCommandListsSupported = SUCCEEDED(Device->CheckFeatureSupport(D3D11_FEATURE_THREADING, &Threading, sizeof(Threading)))
+		&& Threading.DriverCommandLists;
 
 	ComPtr<IDXGIDevice> DXGIDevice;
 	Device->QueryInterface(IID_PPV_ARGS(DXGIDevice.GetAddressOf()));
@@ -62,7 +67,11 @@ ComPtr<ID3D11DeviceContext> FRenderDevice::CreateDeferredContext()
 {
 	ComPtr<ID3D11DeviceContext> DeferredContext;
 	HRESULT hr = Device->CreateDeferredContext(0, DeferredContext.GetAddressOf());
-	assert(SUCCEEDED(hr));
+	if (FAILED(hr))
+	{
+		LOG(Warning, "Failed to create deferred context: 0x{:08X}", static_cast<uint32>(hr));
+		return nullptr;
+	}
 	return DeferredContext;
 }
 
@@ -161,6 +170,13 @@ TUniquePtr<FPixelShader> FRenderDevice::CreatePixelShader(const FShaderByteCode&
 	TUniquePtr<FPixelShader> PS = MakeUnique<FPixelShader>(Device.Get(), ByteCode);
 
 	return PS;
+}
+
+TUniquePtr<FComputeShader> FRenderDevice::CreateComputeShader(const FShaderByteCode& ByteCode)
+{
+	TUniquePtr<FComputeShader> CS = MakeUnique<FComputeShader>(Device.Get(), ByteCode);
+
+	return CS;
 }
 
 //TUniquePtr<FShaderProgram> FRenderDevice::CreateShader(const wchar_t* FileName, D3D11_INPUT_ELEMENT_DESC* InLayoutDesc, size_t InLayoutSize)
@@ -312,5 +328,11 @@ void FRenderDevice::CreateStates()
 		Desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
 
 		Device->CreateSamplerState(&Desc, SamplerStates[(uint8)ESamplerState::LinearWrap].GetAddressOf());
+
+		Desc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+		Desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+		Desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+		Desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+		Device->CreateSamplerState(&Desc, SamplerStates[(uint8)ESamplerState::PointClamp].GetAddressOf());
 	}
 }

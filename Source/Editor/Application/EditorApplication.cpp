@@ -8,7 +8,6 @@
 #include "Editor/Settings/SettingsPanel.h"
 #include "Editor/Viewports/ViewportsPanel.h"
 
-
 #include "Core/EngineStatics.h"
 #include "Core/EngineTimer.h"
 #include "Core/StatOverlay.h"
@@ -20,7 +19,6 @@
 
 #include "World/Level.h"
 #include "World/World.h"
-
 
 #include "Rendering/Renderer.h"
 
@@ -36,18 +34,16 @@
 #include "ObjectSystem/UObjectIterator.h"
 #include "Rendering/RenderCommand.h"
 
-
 #include "Core/EngineLog.h"
 #include "Serialization/DefaultSceneLoader.h"
 #include "Serialization/JsonArchive.h"
 
-
-#include "Job/FiberJobManager.h"
+#include "Tasks/Tasks.h"
 
 // 렌더 자원·월드·에디터와 MultipleViewports 연결을 초기화한다.
 bool FEditorApplication::Init(HINSTANCE hInstance) {
-  // 사용 가능한 최대 코어를 워커로 사용
-  FFiberJobManager::Get().Initialize(8);
+  // 신규 태스크 스케줄러 초기화
+  Tasks::FTaskScheduler::Get().Initialize(8);
 
   EditorUI = MakeUnique<FEditorUI>();
   EditorUI->Init();
@@ -278,7 +274,7 @@ void FEditorApplication::RenderMultipleViewports() {
   EMultipleViewportsCameraPreset CameraPresets[4]{};
   // for (int32 ViewIndex = 0; ViewIndex < 4; ++ViewIndex)
   //	CameraPresets[ViewIndex] =
-  //MultipleViewportsAdapter.GetCameraPreset(ViewIndex);
+  // MultipleViewportsAdapter.GetCameraPreset(ViewIndex);
 
   ViewportsPanel->SetControlState(MultipleViewportsAdapter.GetLayoutMode(),
                                   MultipleViewportsAdapter.GetSingleViewIndex(),
@@ -286,11 +282,10 @@ void FEditorApplication::RenderMultipleViewports() {
 }
 
 // 화면을 표시하고 UI 변경 후 View 설정을 보관한다.
-void FEditorApplication::EndFrame()
-{
-	PresentFrame();
-	// UI 변경 후 설정을 복사해 종료 시 카메라 수명에 의존하지 않는다.
-	SettingsPanel->CaptureViewportSettings();
+void FEditorApplication::EndFrame() {
+  PresentFrame();
+  // UI 변경 후 설정을 복사해 종료 시 카메라 수명에 의존하지 않는다.
+  SettingsPanel->CaptureViewportSettings();
 }
 
 // 입력 View의 Ray와 피킹으로 Gizmo·공유 선택을 갱신한다.
@@ -325,21 +320,33 @@ void FEditorApplication::UpdateGizmoAndPicking() {
   }
 }
 
-// TArray 기반 고속 렌더 프레임
-void FEditorApplication::RenderFrame(
-    const int32 ViewIndex, const FRenderingInfo &ViewRenderingInfo,
-    const FMatrix &ViewProjection, const FVector &ViewCameraLocation,
-    const FVector &ViewCameraForward,
-    TArray<FRenderPacket> &RenderPackets) {
+// TArray 기반 렌더 프레임
+void FEditorApplication::RenderFrame(const int32 ViewIndex,
+                                     const FRenderingInfo &ViewRenderingInfo,
+                                     const FMatrix &ViewProjection,
+                                     const FVector &ViewCameraLocation,
+                                     const FVector &ViewCameraForward,
+                                     TArray<FRenderPacket> &RenderPackets) {
   RenderCommand::BeginRenderPass(ViewRenderingInfo);
 
-  FEditorSettings DefaultSettings;
-
-  Renderer->RenderOpaque(RenderPackets, ViewProjection);
+  const FEditorSettings& EditorSettings = SettingsPanel ? SettingsPanel->GetSettings() : FEditorSettings{};
   const float FarClip = MultipleViewportsAdapter.GetViewCamera(ViewIndex).Projection.FarClip;
   GridRenderer->OnRenderPSGrid(ViewProjection, ViewCameraLocation,
-                               DefaultSettings,
+                               EditorSettings,
                                ViewRenderingInfo.ViewportSetting, FarClip);
+
+  const bool bDrawPrimitives = EditorSettings.bDrawPrimitives;
+  if (bDrawPrimitives) {
+    Renderer->RenderOpaque(RenderPackets, ViewProjection);
+  }
+
+  MultipleViewportsAdapter.PostRenderOpaque(ViewIndex, ViewRenderingInfo.DepthSteincil.Texture);
+
+  if (MultipleViewportsAdapter.GetSoftwareOcclusionSettings().bDebugBounds) {
+    LineBatcher->BeginFrame();
+    MultipleViewportsAdapter.AppendSoftwareOcclusionDebugBounds(*LineBatcher);
+    LineBatcher->OnRender(ViewProjection);
+  }
 
   if (Outline && Outline->GetTarget() && OutlineRenderer) {
     OutlineRenderer->OnRender(*Outline, ViewProjection,
@@ -392,10 +399,10 @@ void FEditorApplication::PresentFrame() {
 
   ImGuiRenderer->End();
 
-	RenderCommand::EndRenderPass(MainWindowSC->GetRenderingInfo());
+  RenderCommand::EndRenderPass(MainWindowSC->GetRenderingInfo());
 
-	// 버퍼 갱신
-	MainWindowSC->SwapBuffers(0, 0);
+  // 버퍼 갱신
+  MainWindowSC->SwapBuffers(0, 0);
 }
 
 // 엔진 종료에 필요한 자원 정리를 수행한다.
@@ -410,7 +417,8 @@ void FEditorApplication::Shutdown() {
   ImGuiRenderer->Shutdown();
   RenderDevice->Shutdown();
 
-  FFiberJobManager::Get().Shutdown();
+  // 신규 태스크 스케줄러 종료
+  Tasks::FTaskScheduler::Get().Shutdown();
 }
 
 // 메인 창 크기에 맞춰 Swapchain을 갱신한다.
@@ -443,8 +451,8 @@ void FEditorApplication::CreateNewScene() {
   if (!FEditorFileUtils::NewScene(World))
     return;
 
-	ResetSceneSelection();
-	MultipleViewportsAdapter.ResetSoftwareOcclusionScene();
+  ResetSceneSelection();
+  MultipleViewportsAdapter.ResetSoftwareOcclusionScene();
 }
 
 // 씬 불러오기가 성공하면 에디터 선택 상태를 초기화한다.
@@ -452,8 +460,8 @@ void FEditorApplication::OpenScene() {
   if (!FEditorFileUtils::LoadScene(World))
     return;
 
-	ResetSceneSelection();
-	MultipleViewportsAdapter.ResetSoftwareOcclusionScene();
+  ResetSceneSelection();
+  MultipleViewportsAdapter.ResetSoftwareOcclusionScene();
 }
 
 // 공통 파일 유틸리티로 현재 씬을 저장한다.

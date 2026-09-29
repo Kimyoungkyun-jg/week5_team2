@@ -74,6 +74,12 @@ TUniquePtr<FPixelShader> RenderCommand::CreatePixelShader(const FShaderByteCode&
 	return RenderDevice->CreatePixelShader(ByteCode);
 }
 
+TUniquePtr<FComputeShader> RenderCommand::CreateComputeShader(const FShaderByteCode& ByteCode)
+{
+	assert(RenderDevice);
+	return RenderDevice->CreateComputeShader(ByteCode);
+}
+
 ComPtr<ID3D11DeviceContext> RenderCommand::CreateDeferredContext()
 {
 	assert(RenderDevice);
@@ -133,10 +139,25 @@ void RenderCommand::DrawInstance(uint32 IndexCount, uint32 StartIndexLocation, i
 
 void* RenderCommand::MapBufferWriteDiscard(FBuffer* Buffer, ID3D11DeviceContext* Context)
 {
+	if (!Buffer || !Buffer->GetBuffer())
+	{
+		if (!Context || Context->GetType() == D3D11_DEVICE_CONTEXT_IMMEDIATE)
+		{
+			LOG(Warning, "Cannot map an invalid buffer.");
+		}
+		return nullptr;
+	}
 	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
 	D3D11_MAPPED_SUBRESOURCE Mapped{};
 	HRESULT hr = Ctx->Map(Buffer->GetBuffer(), 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
-	assert(SUCCEEDED(hr));
+	if (FAILED(hr))
+	{
+		if (Ctx->GetType() == D3D11_DEVICE_CONTEXT_IMMEDIATE)
+		{
+			LOG(Warning, "Failed to map buffer: 0x{:08X}", static_cast<uint32>(hr));
+		}
+		return nullptr;
+	}
 	return Mapped.pData;
 }
 
@@ -148,13 +169,18 @@ void RenderCommand::UnmapBuffer(FBuffer* Buffer, ID3D11DeviceContext* Context)
 
 void RenderCommand::UpdateBufferData(FBuffer* InBuffer, const void* Data, uint32 DataSize, ID3D11DeviceContext* Context)
 {
-	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
-	ID3D11Buffer* Buffer = InBuffer->GetBuffer();
-
-	D3D11_MAPPED_SUBRESOURCE MappedResource;
-	Ctx->Map(Buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
-	std::memcpy(MappedResource.pData, Data, DataSize);
-	Ctx->Unmap(Buffer, 0);
+	if (!InBuffer || !Data || DataSize > InBuffer->GetBufferSize())
+	{
+		LOG(Warning, "Invalid buffer update or insufficient capacity.");
+		return;
+	}
+	void* MappedData = MapBufferWriteDiscard(InBuffer, Context);
+	if (!MappedData)
+	{
+		return;
+	}
+	std::memcpy(MappedData, Data, DataSize);
+	UnmapBuffer(InBuffer, Context);
 }
 
 void RenderCommand::BindVertexBuffer(FVertexBuffer* VertexBuffer, ID3D11DeviceContext* Context)
@@ -318,5 +344,68 @@ void RenderCommand::BindSamplerState(uint32 Slot, ESamplerState SamplerState, ES
 	{
 		Ctx->PSSetSamplers(Slot, 1, &Sampler);
 	}
+
+	if (HasFlag(FlagBits, EShaderBindFlagBits::Compute))
+	{
+		Ctx->CSSetSamplers(Slot, 1, &Sampler);
+	}
 }
+
+void RenderCommand::CSSetSampler(uint32 Slot, ESamplerState SamplerState, ID3D11DeviceContext* Context)
+{
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	ID3D11SamplerState* Sampler = RenderDevice->GetSamplerState(SamplerState);
+	Ctx->CSSetSamplers(Slot, 1, &Sampler);
+}
+
+void RenderCommand::Dispatch(uint32 X, uint32 Y, uint32 Z, ID3D11DeviceContext* Context)
+{
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->Dispatch(X, Y, Z);
+}
+
+void RenderCommand::CSSetShader(FComputeShader* Shader, ID3D11DeviceContext* Context)
+{
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->CSSetShader(Shader ? Shader->GetShader() : nullptr, nullptr, 0);
+}
+
+void RenderCommand::CSSetShaderResource(uint32 Slot, ID3D11ShaderResourceView* SRV, ID3D11DeviceContext* Context)
+{
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->CSSetShaderResources(Slot, 1, &SRV);
+}
+
+void RenderCommand::CSSetShaderResources(uint32 StartSlot, uint32 NumViews, ID3D11ShaderResourceView* const* ppShaderResourceViews, ID3D11DeviceContext* Context)
+{
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->CSSetShaderResources(StartSlot, NumViews, ppShaderResourceViews);
+}
+
+void RenderCommand::CSSetUnorderedAccessView(uint32 Slot, ID3D11UnorderedAccessView* UAV, ID3D11DeviceContext* Context)
+{
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	uint32 InitialCount = 0xffffffff;
+	Ctx->CSSetUnorderedAccessViews(Slot, 1, &UAV, &InitialCount);
+}
+
+void RenderCommand::CSSetUnorderedAccessViews(uint32 StartSlot, uint32 NumUAVs, ID3D11UnorderedAccessView* const* ppUnorderedAccessViews, const uint32* pUAVInitialCounts, ID3D11DeviceContext* Context)
+{
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->CSSetUnorderedAccessViews(StartSlot, NumUAVs, ppUnorderedAccessViews, pUAVInitialCounts);
+}
+
+void RenderCommand::CSSetConstantBuffer(uint32 Slot, FConstantBuffer* ConstantBuffer, ID3D11DeviceContext* Context)
+{
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	ID3D11Buffer* Buffer = ConstantBuffer ? ConstantBuffer->GetBuffer() : nullptr;
+	Ctx->CSSetConstantBuffers(Slot, 1, &Buffer);
+}
+
+void RenderCommand::CopyResource(ID3D11Resource* Dst, ID3D11Resource* Src, ID3D11DeviceContext* Context)
+{
+	ID3D11DeviceContext* Ctx = Context ? Context : RenderDevice->GetContext();
+	Ctx->CopyResource(Dst, Src);
+}
+
 

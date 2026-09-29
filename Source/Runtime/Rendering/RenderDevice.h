@@ -14,6 +14,7 @@ class FConstantBuffer;
 class FTexture2D;
 class FTextureCube;
 class FPipelineState;
+class FComputeShader;
 
 // Device, DeviceContext
 class FRenderDevice
@@ -26,6 +27,8 @@ public:
 	ID3D11DeviceContext* GetContext() const { return DeviceContext.Get(); }
 	ID3D11DeviceContext1* GetContext1() const {	return DeviceContext1.Get(); }
 	IDXGIFactory* GetFactory() const { return DXGIFactory.Get(); }
+	bool SupportsConstantBufferOffsetting() const { return bConstantBufferOffsettingSupported; }
+	bool SupportsNativeCommandLists() const { return bNativeCommandListsSupported; }
 
 	ComPtr<ID3D11DeviceContext> CreateDeferredContext();
 
@@ -43,6 +46,7 @@ public:
 
 	TUniquePtr<FVertexShader> CreateVertexShader(const FShaderByteCode& ByteCode);
 	TUniquePtr<FPixelShader> CreatePixelShader(const FShaderByteCode& ByteCode);
+	TUniquePtr<FComputeShader> CreateComputeShader(const FShaderByteCode& ByteCode);
 
 	TUniquePtr<FShaderProgram> CreateShader(const wchar_t* FileName, D3D11_INPUT_ELEMENT_DESC* InLayoutDesc, size_t InLayoutSize);
 
@@ -59,6 +63,7 @@ private:
 	ComPtr<ID3D11DeviceContext> DeviceContext;
 	ComPtr<ID3D11DeviceContext1> DeviceContext1;
 	bool bConstantBufferOffsettingSupported = false;
+	bool bNativeCommandListsSupported = false;
 	ComPtr<IDXGIFactory> DXGIFactory;
 
 	D3D_FEATURE_LEVEL FeatureLevel;

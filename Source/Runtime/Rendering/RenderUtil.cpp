@@ -3,7 +3,9 @@
 
 FShaderByteCode RenderUtil::CompileShader(FString Path, const char* EntryPoint, EShaderType ShaderType)
 {
-	const char* Target = (ShaderType == EShaderType::Vertex) ? "vs_5_0" : "ps_5_0";
+	const char* Target = "vs_5_0";
+	if (ShaderType == EShaderType::Pixel) Target = "ps_5_0";
+	else if (ShaderType == EShaderType::Compute) Target = "cs_5_0";
 
 	uint32 Flags = D3DCOMPILE_ENABLE_STRICTNESS;
 #ifdef _DEBUG
@@ -59,7 +61,9 @@ FShaderByteCode RenderUtil::LoadByteCode(const FString& CsoPath)
 FString RenderUtil::GetCsoPath(const FString& ShaderPath, EShaderType ShaderType)
 {
 	const fs::path Rel = fs::relative(ShaderPath, "Resources/Shader");
-	const char* Suffix = (ShaderType == EShaderType::Vertex) ? "_VS.cso" : "_PS.cso";
+	const char* Suffix = "_VS.cso";
+	if (ShaderType == EShaderType::Pixel) Suffix = "_PS.cso";
+	else if (ShaderType == EShaderType::Compute) Suffix = "_CS.cso";
 
 	fs::path Out = fs::path("Intermediate/Shaders") / Rel.parent_path();
 	Out /= Rel.stem().generic_string() + Suffix;

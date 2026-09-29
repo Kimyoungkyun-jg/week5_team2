@@ -215,9 +215,9 @@ void FObjViewerApp::RenderFrame()
 	const float Aspect = static_cast<float>(MainWindow->GetWidth()) / static_cast<float>(MainWindow->GetHeight());
 	const FMatrix View = MakeLookAt(GetCameraEye(), CameraTarget);
 	const FMatrix Projection = MakePerspective(CameraFovDegrees, Aspect, CameraNearZ, CameraFarZ);
+	const FMatrix ViewProjection = View * Projection;
 
-	TQueue<FRenderPacket> RenderQueue;
-	BuildRenderQueue(RenderQueue);
+	BuildRenderPackets(RenderPackets, ViewProjection);
 
 	FRenderingInfo Info = Swapchain->GetRenderingInfo();
 	Info.DepthSteincil.Texture = DepthBuffer.get();
@@ -228,7 +228,7 @@ void FObjViewerApp::RenderFrame()
 	RenderCommand::SetBlendState(EBlendState::Opaque);
 	RenderCommand::SetDepthStencilState(EDepthStencilState::Default);
 	RenderCommand::SetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	Renderer->RenderAll(RenderQueue, View * Projection);
+	Renderer->RenderAll(RenderPackets, ViewProjection);
 
 	RenderCommand::EndRenderPass(Info);
 
@@ -270,8 +270,9 @@ void FObjViewerApp::UpdateWindowTitle()
 	SetWindowTextA(MainWindow->GetHandle(), Title.c_str());
 }
 
-void FObjViewerApp::BuildRenderQueue(TQueue<FRenderPacket>& OutQueue) const
+void FObjViewerApp::BuildRenderPackets(TArray<FRenderPacket>& OutPackets, const FMatrix& ViewProjection) const
 {
+	OutPackets.Reset();
 	if (!Mesh)
 	{
 		return;
@@ -282,10 +283,11 @@ void FObjViewerApp::BuildRenderQueue(TQueue<FRenderPacket>& OutQueue) const
 		FRenderPacket Packet;
 		Packet.mesh = Mesh;
 		Packet.model = FMatrix::Identity;
+		Packet.MVP = Packet.model * ViewProjection;
 		Packet.material = Mesh->GetMaterial(Section.MaterialSlotIndex);
 		Packet.StartIndex = Section.StartIndex;
 		Packet.IndexCount = Section.IndexCount;
-		OutQueue.Enqueue(Packet);
+		OutPackets.Add(Packet);
 	}
 }
 

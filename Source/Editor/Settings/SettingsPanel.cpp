@@ -52,6 +52,9 @@ void FSettingsPanel::OnRender()
 		const char* OcclusionModes[]{"Disabled", "Linear Subcells", "Hierarchical Subcells", "Static BVH + HZB", "Static BVH Frustum Only"};
 		ImGui::SetNextItemWidth(220.0f);
 		ImGui::Combo("Software Occlusion", &Settings.SoftwareOcclusionMode, OcclusionModes, 5);
+		const char* OccluderGeometryModes[]{"Auto by Distance", "AABB", "Mesh Triangles"};
+		ImGui::SetNextItemWidth(220.0f);
+		ImGui::Combo("Occluder Geometry", &Settings.SoftwareOccluderGeometry, OccluderGeometryModes, 3);
 		const int32 TileSizes[]{4, 8, 16};
 		int32 TileSelection = Settings.SoftwareOcclusionTileSize == 4 ? 0 : Settings.SoftwareOcclusionTileSize == 16 ? 2 : 1;
 		ImGui::SetNextItemWidth(220.0f);
@@ -67,7 +70,7 @@ void FSettingsPanel::OnRender()
 		ImGui::SliderFloat("Box Distance Threshold", &Settings.SoftwareOcclusionBoxDistanceThreshold, 0.0f, 100.0f, "%.1f m");
 		const int32 ActiveViewIndex = ViewportAdapter->GetSingleViewIndex();
 		const FSoftwareOcclusionStats& Stats = ViewportAdapter->GetSoftwareOcclusionStats(ActiveViewIndex);
-		ImGui::Text("Nearest Occluder: %.2f m (%s)", Stats.NearestOccluderDistance, Stats.bUsingMeshOccluder ? "Mesh" : "Box");
+		ImGui::Text("Nearest Candidate: %.2f m | Mesh Used: %s", Stats.NearestOccluderDistance, Stats.bUsingMeshOccluder ? "Yes" : "No");
 		ImGui::Checkbox("Debug Occlusion Bounds", &Settings.bSoftwareOcclusionDebugBounds);
 		bool bShowOcclusionStats = FStatOverlay::IsEnabled(EStatFlags::Occlusion);
 		if (ImGui::Checkbox("Show Occlusion Stats", &bShowOcclusionStats))
@@ -75,6 +78,7 @@ void FSettingsPanel::OnRender()
 
 		FSoftwareOcclusionSettings Occlusion = ViewportAdapter->GetSoftwareOcclusionSettings();
 		Occlusion.Mode = static_cast<ESoftwareOcclusionMode>(std::clamp(Settings.SoftwareOcclusionMode, 0, 4));
+		Occlusion.OccluderGeometry = static_cast<ESoftwareOccluderGeometry>(std::clamp(Settings.SoftwareOccluderGeometry, 0, 2));
 		Occlusion.TileSize = Settings.SoftwareOcclusionTileSize;
 		Occlusion.MinimumOccluderTiles = Settings.SoftwareOcclusionMinimumTiles;
 		Occlusion.TriangleBudget = static_cast<uint32>(std::max(0, Settings.SoftwareOcclusionTriangleBudget));
@@ -159,6 +163,7 @@ bool FSettingsPanel::SaveSettings() const
 	File << "DrawBatchLine=" << Settings.bDrawBatchLine << "\n";
 	File << "DrawPSGrid=" << Settings.bDrawPSGrid << "\n";
 	File << "SoftwareOcclusionMode=" << Snapshot.SoftwareOcclusionMode << "\n";
+	File << "SoftwareOccluderGeometry=" << Snapshot.SoftwareOccluderGeometry << "\n";
 	File << "SoftwareOcclusionTileSize=" << Snapshot.SoftwareOcclusionTileSize << "\n";
 	File << "SoftwareOcclusionMinimumTiles=" << Snapshot.SoftwareOcclusionMinimumTiles << "\n";
 	File << "SoftwareOcclusionTriangleBudget=" << Snapshot.SoftwareOcclusionTriangleBudget << "\n";
@@ -214,16 +219,16 @@ bool FSettingsPanel::LoadSettings()
 		Settings.bViewRotationSaved[Index] = false;
 	}
 
-	std::string Line;
+	FString Line;
 	while (std::getline(File, Line))
 	{
 		if (Line.empty() || Line[0] == ';' || Line[0] == '[') continue;
 
 		std::istringstream Iss(Line);
-		std::string Key;
+		FString Key;
 		if (std::getline(Iss, Key, '='))
 		{
-			std::string ValueStr;
+			FString ValueStr;
 			if (std::getline(Iss, ValueStr))
 			{
 				// 새 View 키는 NaN·잘못된 숫자·범위 밖 값을 무시한다.
@@ -286,6 +291,7 @@ bool FSettingsPanel::LoadSettings()
 				else if (Key == "DrawBatchLine") Settings.bDrawBatchLine = std::stoi(ValueStr);
 				else if (Key == "DrawPSGrid") Settings.bDrawPSGrid = std::stoi(ValueStr);
 				else if (Key == "SoftwareOcclusionMode") Settings.SoftwareOcclusionMode = std::clamp(std::stoi(ValueStr), 0, 4);
+				else if (Key == "SoftwareOccluderGeometry") Settings.SoftwareOccluderGeometry = std::clamp(std::stoi(ValueStr), 0, 2);
 				else if (Key == "SoftwareOcclusionTileSize")
 				{
 					const int32 Value = std::stoi(ValueStr);
@@ -346,6 +352,7 @@ void FSettingsPanel::ReadViewportSettings(FEditorSettings& Out) const
     if (!ViewportAdapter) return;
 	const FSoftwareOcclusionSettings& Occlusion = ViewportAdapter->GetSoftwareOcclusionSettings();
 	Out.SoftwareOcclusionMode = static_cast<int32>(Occlusion.Mode);
+	Out.SoftwareOccluderGeometry = static_cast<int32>(Occlusion.OccluderGeometry);
 	Out.SoftwareOcclusionTileSize = Occlusion.TileSize;
 	Out.SoftwareOcclusionMinimumTiles = Occlusion.MinimumOccluderTiles;
 	Out.SoftwareOcclusionTriangleBudget = static_cast<int32>(Occlusion.TriangleBudget);
@@ -379,6 +386,7 @@ void FSettingsPanel::ApplyViewportSettings()
     if (!ViewportAdapter) return;
 	FSoftwareOcclusionSettings Occlusion = ViewportAdapter->GetSoftwareOcclusionSettings();
 	Occlusion.Mode = static_cast<ESoftwareOcclusionMode>(std::clamp(Settings.SoftwareOcclusionMode, 0, 4));
+	Occlusion.OccluderGeometry = static_cast<ESoftwareOccluderGeometry>(std::clamp(Settings.SoftwareOccluderGeometry, 0, 2));
 	Occlusion.TileSize = Settings.SoftwareOcclusionTileSize;
 	Occlusion.MinimumOccluderTiles = Settings.SoftwareOcclusionMinimumTiles;
 	Occlusion.TriangleBudget = static_cast<uint32>(std::max(0, Settings.SoftwareOcclusionTriangleBudget));

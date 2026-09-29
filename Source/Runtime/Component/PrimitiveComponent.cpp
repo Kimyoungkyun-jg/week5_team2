@@ -31,12 +31,10 @@ namespace
 
 UPrimitiveComponent::UPrimitiveComponent()
 {
-	//SetMaterial(UAssetManager::GetAssetByPath<UMaterial>("DefaultMaterial"));
 }
 
 UPrimitiveComponent::~UPrimitiveComponent()
 {
-
 }
 
 void UPrimitiveComponent::BeginPlay()
@@ -48,31 +46,19 @@ void UPrimitiveComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPacket
 {
 }
 
-
-void UPrimitiveComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue)
-{
-	//if (Mesh && Material)
-	//{
-	//	FRenderPacket rp;
-	//	rp.mesh = Mesh;
-	//	rp.material = Material;
-	//	rp.model = GetWorldMatrix();
-
-	//	// Todo: subuv
-	//	//rp.bSubUV = false;
-
-	//	RenderQueue.Enqueue(rp);
-	//}
-}
-
 bool UPrimitiveComponent::LineTraceComponent(const FRay& WorldRay, FHitResult& OutHit)
 {
 	const FStaticMeshData* Mesh = GetMeshData();
+
+	const FBox Bounds = GetWorldBounds();
+	if (!RayIntersectsAABB(WorldRay, Bounds.Min, Bounds.Max, OutHit.Distance)) return false;
+
 	return Mesh && TraceMesh(WorldRay, *Mesh, GetWorldMatrix(), OutHit);
 }
 
 bool UPrimitiveComponent::TraceMesh(const FRay& WorldRay, const FStaticMeshData& Mesh, const FMatrix& WorldMatrix, FHitResult& OutResult)
 {
+
 	FRay LocalRay = ToLocalRay(WorldRay, WorldMatrix);
 	float T;
 

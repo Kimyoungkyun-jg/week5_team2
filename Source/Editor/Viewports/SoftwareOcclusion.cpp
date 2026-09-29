@@ -72,25 +72,6 @@ namespace
                         Bounds.Extent.Z * static_cast<float>(Z));
     }
 
-    enum class EFrustumResult : uint8 { Outside, Intersect, Inside };
-
-    EFrustumResult ClassifyFrustum(const FAABB& Bounds, const FFrustumPlanes& Frustum)
-    {
-        bool bIntersects = false;
-        for (const FPlane& Plane : Frustum.Planes)
-        {
-            const float Radius = std::fabs(Plane.Normal.X) * Bounds.Extent.X +
-                std::fabs(Plane.Normal.Y) * Bounds.Extent.Y +
-                std::fabs(Plane.Normal.Z) * Bounds.Extent.Z;
-            const float Distance = FVector::Dot(Plane.Normal, Bounds.Center) + Plane.Distance;
-            if (Distance + Radius < 0.0f)
-                return EFrustumResult::Outside;
-            if (Distance - Radius < 0.0f)
-                bIntersects = true;
-        }
-        return bIntersects ? EFrustumResult::Intersect : EFrustumResult::Inside;
-    }
-
     float ClipPlaneDistance(const FVector4& Point, const int32 Plane)
     {
         switch (Plane)
@@ -200,6 +181,10 @@ void FSoftwareOcclusionCuller::SetSettings(const FSoftwareOcclusionSettings& InS
     const FSoftwareOcclusionSettings Previous = Settings;
     const int32 PreviousTileSize = Settings.TileSize;
     Settings = InSettings;
+    Settings.OccluderGeometry = static_cast<ESoftwareOccluderGeometry>(std::clamp(
+        static_cast<int32>(Settings.OccluderGeometry),
+        static_cast<int32>(ESoftwareOccluderGeometry::DistanceAdaptive),
+        static_cast<int32>(ESoftwareOccluderGeometry::MeshTriangles)));
     if (Settings.TileSize != 4 && Settings.TileSize != 8 && Settings.TileSize != 16)
         Settings.TileSize = 8;
     Settings.MinimumOccluderTiles = std::max(1, Settings.MinimumOccluderTiles);
@@ -208,9 +193,11 @@ void FSoftwareOcclusionCuller::SetSettings(const FSoftwareOcclusionSettings& InS
     if (PreviousTileSize != Settings.TileSize)
         BufferWidth = 0;
     // 설정 패널이 매 프레임 호출하므로 값이 실제로 바뀐 경우에만 다음 프레임에 바로 다시 측정한다.
-    if (Previous.Mode != Settings.Mode || Previous.TileSize != Settings.TileSize ||
+    if (Previous.Mode != Settings.Mode || Previous.OccluderGeometry != Settings.OccluderGeometry ||
+        Previous.TileSize != Settings.TileSize ||
         Previous.MinimumOccluderTiles != Settings.MinimumOccluderTiles || Previous.TriangleBudget != Settings.TriangleBudget ||
-        Previous.CpuTimeBudgetMs != Settings.CpuTimeBudgetMs || Previous.DepthBias != Settings.DepthBias)
+        Previous.CpuTimeBudgetMs != Settings.CpuTimeBudgetMs || Previous.DepthBias != Settings.DepthBias ||
+        Previous.BoxOccluderDistanceThreshold != Settings.BoxOccluderDistanceThreshold)
         std::fill(std::begin(SuspendedFrames), std::end(SuspendedFrames), 0);
 }
 
@@ -301,6 +288,8 @@ void FSoftwareOcclusionCuller::PrepareBuffers(const int32 ViewWidth, const int32
     TilesY = NewTilesY;
     Tiles.SetNum(TilesX * TilesY, false);
     DirtyTiles.Reserve(TilesX * TilesY);
+    DirtyHZBCells.Reserve(((TilesX + 1) / 2) * ((TilesY + 1) / 2));
+    NextDirtyHZBCells.Reserve(((TilesX + 1) / 2) * ((TilesY + 1) / 2));
 
     HZBLevels.Reset();
     int32 Width = TilesX;
@@ -334,9 +323,12 @@ void FSoftwareOcclusionCuller::ClearBuffers()
         {
             Cell.Depth = 1.0f;
             Cell.bCovered = false;
+            Cell.bDirty = false;
         }
     }
     DirtyTiles.Reset();
+    DirtyHZBCells.Reset();
+    NextDirtyHZBCells.Reset();
 }
 
 void FSoftwareOcclusionCuller::EnsureBVH(const TArray<FRenderableObject>& Objects)
@@ -508,6 +500,21 @@ float FSoftwareOcclusionCuller::DistanceSquaredToBounds(const FAABB& Bounds) con
     return X * X + Y * Y + Z * Z;
 }
 
+bool FSoftwareOcclusionCuller::ShouldUseMeshOccluder(const FRenderableObject& Object) const
+{
+    switch (Settings.OccluderGeometry)
+    {
+    case ESoftwareOccluderGeometry::Bounds:
+        return false;
+    case ESoftwareOccluderGeometry::MeshTriangles:
+        return true;
+    case ESoftwareOccluderGeometry::DistanceAdaptive:
+    default:
+        const float ThresholdSq = Settings.BoxOccluderDistanceThreshold * Settings.BoxOccluderDistanceThreshold;
+        return DistanceSquaredToBounds(Object.WorldBounds) <= ThresholdSq;
+    }
+}
+
 void FSoftwareOcclusionCuller::AddDebugBounds(const FAABB& Bounds, const ESoftwareOcclusionDebugState State)
 {
     if (Settings.bDebugBounds && DebugBounds.Num() < 256)
@@ -527,6 +534,30 @@ void FSoftwareOcclusionCuller::RunDebugSelfTests()
     if (bSelfTestsRan || Tiles.IsEmpty())
         return;
     bSelfTestsRan = true;
+
+    const auto ClassifyScalar = [](const FAABB& Bounds, const FFrustumPlanes& Frustum)
+    {
+        bool bIntersects = false;
+        for (const FPlane& Plane : Frustum.Planes)
+        {
+            const float Radius = std::fabs(Plane.Normal.X) * Bounds.Extent.X +
+                std::fabs(Plane.Normal.Y) * Bounds.Extent.Y +
+                std::fabs(Plane.Normal.Z) * Bounds.Extent.Z;
+            const float Distance = FVector::Dot(Plane.Normal, Bounds.Center) + Plane.Distance;
+            if (Distance + Radius < 0.0f)
+                return EFrustumContainment::Outside;
+            if (Distance - Radius < 0.0f)
+                bIntersects = true;
+        }
+        return bIntersects ? EFrustumContainment::Intersect : EFrustumContainment::Inside;
+    };
+    const FAABB SIMDTestBounds[] = {
+        {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}},
+        {CurrentCameraLocation, {0.5f, 0.5f, 0.5f}},
+        {{100.0f, -200.0f, 300.0f}, {10.0f, 20.0f, 30.0f}},
+        {{-10000.0f, 5000.0f, -2500.0f}, {1.0f, 2.0f, 3.0f}}};
+    for (const FAABB& Bounds : SIMDTestBounds)
+        assert(ClassifyAABBInFrustum(Bounds, CurrentFrustum) == ClassifyScalar(Bounds, CurrentFrustum));
 
     FOcclusionTile& Tile = Tiles[0];
     Tile.CoverageMask = FullCoverageMask;
@@ -558,6 +589,29 @@ void FSoftwareOcclusionCuller::RunDebugSelfTests()
     assert(!IsOccluded(Behind, false));
     assert(!IsOccluded(Behind, true));
     ClearBuffers();
+
+    if (TilesX >= 2 && TilesY >= 2 && HZBLevels.Num() > 1)
+    {
+        constexpr float ExpectedDepth = 0.4f;
+        for (int32 Y = 0; Y < 2; ++Y)
+        {
+            for (int32 X = 0; X < 2; ++X)
+            {
+                const uint32 TileIndex = static_cast<uint32>(Y * TilesX + X);
+                FOcclusionTile& DirtyTile = Tiles[TileIndex];
+                DirtyTile.CoverageMask = FullCoverageMask;
+                for (float& Depth : DirtyTile.SubcellDepth)
+                    Depth = 0.1f * static_cast<float>(X + Y * 2 + 1);
+                DirtyTile.bDirty = true;
+                DirtyTiles.Add(TileIndex);
+            }
+        }
+        UpdateDirtyHZB();
+        const FHZBCell& SharedParent = HZBLevels[1].Cells[0];
+        assert(SharedParent.bCovered);
+        assert(std::fabs(SharedParent.Depth - ExpectedDepth) < 1.0e-6f);
+        ClearBuffers();
+    }
 }
 #endif
 
@@ -634,25 +688,40 @@ bool FSoftwareOcclusionCuller::QueryEdgeSubcells(
     const int32 MaxCellX = std::clamp(static_cast<int32>(std::ceil(Bounds.MaxX / SubcellSize)), 1, TotalSubcellsX);
     const int32 MaxCellY = std::clamp(static_cast<int32>(std::ceil(Bounds.MaxY / SubcellSize)), 1, TotalSubcellsY);
 
-    for (int32 CellY = MinCellY; CellY < MaxCellY; ++CellY)
+    const auto QueryRectangle = [&](const int32 StartX, const int32 StartY, const int32 EndX, const int32 EndY)
     {
-        for (int32 CellX = MinCellX; CellX < MaxCellX; ++CellX)
+        for (int32 CellY = StartY; CellY < EndY; ++CellY)
         {
-            const int32 TileX = CellX / SubcellsPerAxis;
-            const int32 TileY = CellY / SubcellsPerAxis;
-            if (TileX >= FullMinX && TileX < FullMaxX && TileY >= FullMinY && TileY < FullMaxY)
-                continue;
-
-            const int32 LocalX = CellX % SubcellsPerAxis;
-            const int32 LocalY = CellY % SubcellsPerAxis;
-            const int32 BitIndex = LocalY * SubcellsPerAxis + LocalX;
-            const FOcclusionTile& Tile = Tiles[TileY * TilesX + TileX];
-            const uint16 Bit = static_cast<uint16>(1u << BitIndex);
-            if ((Tile.CoverageMask & Bit) == 0 || Bounds.NearestDepth <= Tile.SubcellDepth[BitIndex] + Settings.DepthBias)
-                return false;
+            for (int32 CellX = StartX; CellX < EndX; ++CellX)
+            {
+                const int32 TileX = CellX / SubcellsPerAxis;
+                const int32 TileY = CellY / SubcellsPerAxis;
+                const int32 LocalX = CellX % SubcellsPerAxis;
+                const int32 LocalY = CellY % SubcellsPerAxis;
+                const int32 BitIndex = LocalY * SubcellsPerAxis + LocalX;
+                const FOcclusionTile& Tile = Tiles[TileY * TilesX + TileX];
+                const uint16 Bit = static_cast<uint16>(1u << BitIndex);
+                if ((Tile.CoverageMask & Bit) == 0 || Bounds.NearestDepth <= Tile.SubcellDepth[BitIndex] + Settings.DepthBias)
+                    return false;
+            }
         }
-    }
-    return true;
+        return true;
+    };
+
+    // 완전 포함 타일이 없으면 전체 투영 영역이 가장자리다.
+    if (FullMinX >= FullMaxX || FullMinY >= FullMaxY)
+        return QueryRectangle(MinCellX, MinCellY, MaxCellX, MaxCellY);
+
+    const int32 InteriorMinCellX = std::clamp(FullMinX * SubcellsPerAxis, MinCellX, MaxCellX);
+    const int32 InteriorMinCellY = std::clamp(FullMinY * SubcellsPerAxis, MinCellY, MaxCellY);
+    const int32 InteriorMaxCellX = std::clamp(FullMaxX * SubcellsPerAxis, MinCellX, MaxCellX);
+    const int32 InteriorMaxCellY = std::clamp(FullMaxY * SubcellsPerAxis, MinCellY, MaxCellY);
+
+    // 내부 전체를 훑고 건너뛰지 않고 상·하·좌·우 경계 strip만 직접 검사한다.
+    return QueryRectangle(MinCellX, MinCellY, MaxCellX, InteriorMinCellY) &&
+        QueryRectangle(MinCellX, InteriorMaxCellY, MaxCellX, MaxCellY) &&
+        QueryRectangle(MinCellX, InteriorMinCellY, InteriorMinCellX, InteriorMaxCellY) &&
+        QueryRectangle(InteriorMaxCellX, InteriorMinCellY, MaxCellX, InteriorMaxCellY);
 }
 
 bool FSoftwareOcclusionCuller::QueryHZBCell(
@@ -780,14 +849,14 @@ void FSoftwareOcclusionCuller::UpdateHZBParent(const int32 Level, const int32 X,
 
 void FSoftwareOcclusionCuller::UpdateDirtyHZB()
 {
-    if (HZBLevels.IsEmpty())
+    if (HZBLevels.IsEmpty() || DirtyTiles.IsEmpty())
         return;
 
+    DirtyHZBCells.Reset();
+    NextDirtyHZBCells.Reset();
     for (const uint32 TileIndex : DirtyTiles)
     {
         FOcclusionTile& Tile = Tiles[TileIndex];
-        int32 X = static_cast<int32>(TileIndex) % TilesX;
-        int32 Y = static_cast<int32>(TileIndex) / TilesX;
         FHZBCell& Base = HZBLevels[0].Cells[TileIndex];
         Base.bCovered = Tile.CoverageMask == FullCoverageMask;
         Base.Depth = 1.0f;
@@ -798,15 +867,51 @@ void FSoftwareOcclusionCuller::UpdateDirtyHZB()
                 Base.Depth = std::max(Base.Depth, Depth);
         }
 
-        for (int32 Level = 1; Level < HZBLevels.Num(); ++Level)
+        if (HZBLevels.Num() > 1)
         {
-            X /= 2;
-            Y /= 2;
-            UpdateHZBParent(Level, X, Y);
+            const int32 ParentX = (static_cast<int32>(TileIndex) % TilesX) / 2;
+            const int32 ParentY = (static_cast<int32>(TileIndex) / TilesX) / 2;
+            FHZBLevel& ParentLevel = HZBLevels[1];
+            const uint32 ParentIndex = static_cast<uint32>(ParentY * ParentLevel.Width + ParentX);
+            FHZBCell& Parent = ParentLevel.Cells[ParentIndex];
+            if (!Parent.bDirty)
+            {
+                Parent.bDirty = true;
+                DirtyHZBCells.Add(ParentIndex);
+            }
         }
         Tile.bDirty = false;
     }
     DirtyTiles.Reset();
+
+    // 같은 부모를 공유하는 dirty 타일은 각 HZB 레벨에서 한 번만 상향 전파한다.
+    for (int32 Level = 1; Level < HZBLevels.Num(); ++Level)
+    {
+        NextDirtyHZBCells.Reset();
+        FHZBLevel& CurrentLevel = HZBLevels[Level];
+        for (const uint32 CellIndex : DirtyHZBCells)
+        {
+            const int32 X = static_cast<int32>(CellIndex) % CurrentLevel.Width;
+            const int32 Y = static_cast<int32>(CellIndex) / CurrentLevel.Width;
+            UpdateHZBParent(Level, X, Y);
+            CurrentLevel.Cells[CellIndex].bDirty = false;
+
+            if (Level + 1 < HZBLevels.Num())
+            {
+                FHZBLevel& ParentLevel = HZBLevels[Level + 1];
+                const uint32 ParentIndex = static_cast<uint32>((Y / 2) * ParentLevel.Width + X / 2);
+                FHZBCell& Parent = ParentLevel.Cells[ParentIndex];
+                if (!Parent.bDirty)
+                {
+                    Parent.bDirty = true;
+                    NextDirtyHZBCells.Add(ParentIndex);
+                }
+            }
+        }
+        std::swap(DirtyHZBCells, NextDirtyHZBCells);
+    }
+    DirtyHZBCells.Reset();
+    NextDirtyHZBCells.Reset();
 }
 
 void FSoftwareOcclusionCuller::RasterizeClippedTriangle(const FVector4& A, const FVector4& B, const FVector4& C)
@@ -926,6 +1031,7 @@ void FSoftwareOcclusionCuller::RasterizeOccluder(const FRenderableObject& Object
 
     UsedTriangles += TriangleCount;
     ActiveStats->SourceTriangles += TriangleCount;
+    ActiveStats->bUsingMeshOccluder = ActiveStats->bUsingMeshOccluder || bValidMesh;
     ++ActiveStats->OccludersRasterized;
 
     const FMatrix ModelViewProjection = Object.WorldMatrix * CurrentViewProjection;
@@ -1141,8 +1247,9 @@ void FSoftwareOcclusionCuller::ProcessObject(
         !Projected.bValid || Projected.bUncertain
             ? ESoftwareOcclusionDebugState::Fallback
             : bStatic ? ESoftwareOcclusionDebugState::StaticVisible : ESoftwareOcclusionDebugState::DynamicVisible);
-    if (bStatic && Object.bCanOcclude && Projected.bValid && !Projected.bUncertain)
-        RasterizeOccluder(Object, Projected);
+    // CaptureWorld가 현재 프레임의 행렬과 경계를 제공하므로 이동 객체도 안전하게 차폐막으로 사용할 수 있다.
+    if (Object.bCanOcclude && Projected.bValid && !Projected.bUncertain)
+        RasterizeOccluder(Object, Projected, ShouldUseMeshOccluder(Object));
 }
 
 void FSoftwareOcclusionCuller::TraverseBVH(
@@ -1157,13 +1264,13 @@ void FSoftwareOcclusionCuller::TraverseBVH(
     bool bNodeInside = bFrustumAccepted;
     if (!bFrustumAccepted)
     {
-        const EFrustumResult FrustumResult = ClassifyFrustum(Node.Bounds, CurrentFrustum);
-        if (FrustumResult == EFrustumResult::Outside)
+        const EFrustumContainment FrustumResult = ClassifyAABBInFrustum(Node.Bounds, CurrentFrustum);
+        if (FrustumResult == EFrustumContainment::Outside)
         {
             ActiveStats->FrustumRejected += Node.Count;
             return;
         }
-        bNodeInside = FrustumResult == EFrustumResult::Inside;
+        bNodeInside = FrustumResult == EFrustumContainment::Inside;
     }
 
     if (bUseOcclusion)
@@ -1385,122 +1492,42 @@ void FSoftwareOcclusionCuller::Cull(
 
             const float NearestDistance = CandidateDistances.IsEmpty() ? 0.0f : std::sqrt(CandidateDistances[0].DistSq);
             OutStats.NearestOccluderDistance = NearestDistance;
-            const float BoxThresholdSq = Settings.BoxOccluderDistanceThreshold * Settings.BoxOccluderDistanceThreshold;
-            const bool bUsingMesh = CandidateDistances[0].DistSq <= BoxThresholdSq;
-            OutStats.bUsingMeshOccluder = bUsingMesh;
 
-            if (!bUsingMesh)
+            uint32 RasterizedCount = 0;
+            uint32 MeshRasterizedCount = 0;
+            constexpr uint32 MaxOccluders = 1000;
+            constexpr uint32 MaxMeshOccluders = 64;
+
+            // 현재 프레임의 후보를 가까운 순서로 처리한다. 이동 객체도 CaptureWorld의 최신 행렬을 사용한다.
+            for (const FCandidateDistance& Item : CandidateDistances)
             {
-                // 거리 기준 박스 차폐막
-                uint32 RasterizedCount = 0;
-                const uint32 MaxOccluders = 1000;
+                if (!bAllowRasterization || RasterizedCount >= MaxOccluders)
+                    break;
 
-                for (const FCandidateDistance& Item : CandidateDistances)
+                const FRenderableObject& Object = Objects[Item.Index];
+                if (!Object.bCanOcclude || !Object.StaticMeshData || !Object.Primitive)
+                    continue;
+
+                const FProjectedBounds Projected = ProjectBounds(Object.WorldBounds);
+                if (!Projected.bValid || Projected.bUncertain)
+                    continue;
+                if (RasterizedCount > 0 && IsOccluded(Projected, true))
+                    continue;
+
+                const bool bUseMesh = ShouldUseMeshOccluder(Object);
+                if (bUseMesh && MeshRasterizedCount >= MaxMeshOccluders)
                 {
-                    if (!bAllowRasterization || RasterizedCount >= MaxOccluders)
-                    {
+                    if (Settings.OccluderGeometry == ESoftwareOccluderGeometry::MeshTriangles)
                         break;
-                    }
-
-                    const uint32 Index = Item.Index;
-                    const FRenderableObject& Object = Objects[Index];
-
-                    if (!Object.bCanOcclude || !Object.StaticMeshData || !Object.Primitive)
-                    {
-                        continue;
-                    }
-
-                    const uint32 InternalIndex = Object.Primitive->GetInternalIndex();
-                    bool bStatic = false;
-                    if (InternalIndex < static_cast<uint32>(ObjectStates.Num()))
-                    {
-                        const FObjectState& State = ObjectStates[InternalIndex];
-                        bStatic = (State.SerialNumber == Object.Primitive->GetSerialNumber()) && !State.bDynamic;
-                    }
-
-                    if (!bStatic)
-                    {
-                        continue;
-                    }
-
-                    const FProjectedBounds Projected = ProjectBounds(Object.WorldBounds);
-                    if (!Projected.bValid || Projected.bUncertain)
-                    {
-                        continue;
-                    }
-
-                    if (RasterizedCount > 0 && IsOccluded(Projected, true))
-                    {
-                        continue;
-                    }
-
-                    const uint32 PrevRasterized = ActiveStats->OccludersRasterized;
-                    RasterizeOccluder(Object, Projected, false);
-                    if (ActiveStats->OccludersRasterized > PrevRasterized)
-                    {
-                        ++RasterizedCount;
-                    }
+                    continue;
                 }
-            }
-            else
-            {
-                // 거리 기준 정점 메시 차폐막
-                uint32 RasterizedCount = 0;
-                uint32 MeshRasterizedCount = 0;
-                const uint32 MaxOccluders = 1000;
-                constexpr uint32 MaxMeshOccluders = 64;
 
-                for (const FCandidateDistance& Item : CandidateDistances)
+                const uint32 PreviousRasterized = ActiveStats->OccludersRasterized;
+                RasterizeOccluder(Object, Projected, bUseMesh);
+                if (ActiveStats->OccludersRasterized > PreviousRasterized)
                 {
-                    if (!bAllowRasterization || RasterizedCount >= MaxOccluders)
-                    {
-                        break;
-                    }
-
-                    const uint32 Index = Item.Index;
-                    const FRenderableObject& Object = Objects[Index];
-
-                    if (!Object.bCanOcclude || !Object.StaticMeshData || !Object.Primitive)
-                    {
-                        continue;
-                    }
-
-                    const uint32 InternalIndex = Object.Primitive->GetInternalIndex();
-                    bool bStatic = false;
-                    if (InternalIndex < static_cast<uint32>(ObjectStates.Num()))
-                    {
-                        const FObjectState& State = ObjectStates[InternalIndex];
-                        bStatic = (State.SerialNumber == Object.Primitive->GetSerialNumber()) && !State.bDynamic;
-                    }
-
-                    if (!bStatic)
-                    {
-                        continue;
-                    }
-
-                    const FProjectedBounds Projected = ProjectBounds(Object.WorldBounds);
-                    if (!Projected.bValid || Projected.bUncertain)
-                    {
-                        continue;
-                    }
-
-                    if (RasterizedCount > 0 && IsOccluded(Projected, true))
-                    {
-                        continue;
-                    }
-
-                    if (MeshRasterizedCount >= MaxMeshOccluders)
-                    {
-                        break;
-                    }
-
-                    const uint32 PrevRasterized = ActiveStats->OccludersRasterized;
-                    RasterizeOccluder(Object, Projected, true);
-                    if (ActiveStats->OccludersRasterized > PrevRasterized)
-                    {
-                        ++RasterizedCount;
-                        ++MeshRasterizedCount;
-                    }
+                    ++RasterizedCount;
+                    MeshRasterizedCount += bUseMesh ? 1u : 0u;
                 }
             }
 

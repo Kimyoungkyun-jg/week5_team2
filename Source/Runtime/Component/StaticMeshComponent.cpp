@@ -7,7 +7,7 @@
 // StaticMesh 컴포넌트를 초기화한다.
 UStaticMeshComponent::UStaticMeshComponent()
 {
-    StaticMesh = UAssetManager::GetAssetByPath<UStaticMesh>("Cube");
+	StaticMesh = UAssetManager::GetAssetByKey<UStaticMesh>("Cube");
 }
 
 // StaticMesh 컴포넌트의 소멸을 처리한다.
@@ -52,32 +52,6 @@ FString UStaticMeshComponent::GetMaterialSlotName(int32 SlotIndex) const
 UMaterial* UStaticMeshComponent::GetDefaultMaterial(int32 SlotIndex) const
 {
     return StaticMesh ? StaticMesh->GetMaterial(static_cast<uint32>(SlotIndex)) : nullptr;
-}
-
-// Section별 Material·Texture와 인덱스 범위를 보존해 패킷을 제출한다.
-void UStaticMeshComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue)
-{
-    if (!StaticMesh)
-        return;
-
-    const FStaticMeshData& MeshData = StaticMesh->GetMeshData();
-
-    for (const FStaticMeshSection& Section : MeshData.Sections)
-    {
-        // 슬롯마다 덮어쓰기가 있으면 그것, 없으면 메시(OBJ/MTL)의 기본 머티리얼
-        UMaterial* SectionMaterial = GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
-        if (!SectionMaterial)
-            continue;
-
-        FRenderPacket rp;
-        rp.mesh = StaticMesh;
-        rp.model = GetWorldMatrix();
-        rp.StartIndex = Section.StartIndex;
-        rp.IndexCount = Section.IndexCount;
-        rp.material = SectionMaterial;
-
-        RenderQueue.Enqueue(rp);
-    }
 }
 
 // TArray 기반 고속 패킷 제출

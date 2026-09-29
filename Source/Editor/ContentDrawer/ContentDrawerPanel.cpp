@@ -80,8 +80,8 @@ void FContentDrawerPanel::OnRender()
 
 				ImGui::TableNextColumn();
 
-				std::string PathString = Path.generic_string();
-				std::string FilenameString = Path.filename().string();
+				FString PathString = Path.generic_string();
+				FString FilenameString = Path.filename().string();
 
 				ImGui::PushID(PathString.c_str()); // 각 위젯에 고유 ID 부여
 				UTexture2D* Thumbnail = nullptr;
@@ -94,11 +94,11 @@ void FContentDrawerPanel::OnRender()
 				// 폴더 또는 파일 아이콘 표시
 				if (bIsDirectory)
 				{
-					Thumbnail = UAssetManager::GetAssetByPath<UTexture2D>(FolderIconPath);
+					Thumbnail = UAssetManager::GetAssetByKey<UTexture2D>(FolderIconPath);
 				}
 				else // 파일인 경우
 				{
-					URenderAsset* Asset = UAssetManager::GetAssetByPath<URenderAsset>(PathString);
+					URenderAsset* Asset = UAssetManager::GetAssetByKey<URenderAsset>(PathString);
 					if (Asset && Asset->IsA<UTexture2D>())
 					{
 						TextureAsset = Cast<UTexture2D>(Asset);
@@ -114,7 +114,7 @@ void FContentDrawerPanel::OnRender()
 
 					if (Thumbnail == nullptr)
 					{
-						Thumbnail = UAssetManager::GetAssetByPath<UTexture2D>(FileIconPath);
+						Thumbnail = UAssetManager::GetAssetByKey<UTexture2D>(FileIconPath);
 					}
 				}
 				if (Thumbnail)

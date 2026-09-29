@@ -11,8 +11,8 @@
 // Billboard 컴포넌트의 초기 상태를 구성한다.
 UBillboardComponent::UBillboardComponent()
 {
-	QuadMesh = UAssetManager::GetAssetByPath<UStaticMesh>("ParticleQuad");
-	Material = UAssetManager::GetAssetByPath<UMaterial>("SubUVMaterial");
+	QuadMesh = UAssetManager::GetAssetByKey<UStaticMesh>("ParticleQuad");
+	Material = UAssetManager::GetAssetByKey<UMaterial>("SubUVMaterial");
 }
 
 // Billboard 컴포넌트의 소멸을 처리한다.
@@ -47,33 +47,6 @@ bool UBillboardComponent::LineTraceComponentForView(
 	const FRay& WorldRay, FHitResult& OutHit, const FMatrix& BillboardWorldMatrix)
 {
 	return QuadMesh && TraceMesh(WorldRay, QuadMesh->GetMeshData(), BillboardWorldMatrix, OutHit);
-}
-
-// 기본 카메라용 행렬을 구해 공통 렌더 패킷 제출 경로로 전달한다.
-void UBillboardComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue)
-{
-	// 렌더러가 역참조하므로 둘 중 하나라도 없으면 보내지 않는다
-	if (QuadMesh == nullptr || Material == nullptr)
-	{
-		return;
-	}
-
-	FMatrix BillboardWorldMatrix;
-	GetWorldTransformedMatrix(&BillboardWorldMatrix);
-	SubmitToRenderQueue(RenderQueue, BillboardWorldMatrix);
-}
-
-// View별 Billboard 행렬과 Material을 렌더 패킷에 담는다.
-void UBillboardComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue, const FMatrix& BillboardWorldMatrix)
-{
-	if (QuadMesh == nullptr || Material == nullptr)
-		return;
-
-	FRenderPacket Packet;
-	Packet.mesh = QuadMesh;
-	Packet.material = Material;
-	Packet.model = BillboardWorldMatrix;
-	RenderQueue.Enqueue(Packet);
 }
 
 // 기본 카메라 기준으로 패킷 배열에 추가

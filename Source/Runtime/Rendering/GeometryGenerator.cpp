@@ -483,8 +483,8 @@ void FGeometryGenerator::CreateDefaultMeshDatas()
 	MeshDataMap["Cylinder"] = CreateCylinder(1.0f, 1.0f, 20, FVector4(1.0f, 1.0f, 1.0f, 1.0f));
 	MeshDataMap["Sphere"] = CreateSphere(1.0f, 100, 50, FVector4(1.0f, 1.0f, 1.0f, 1.0f));
 	MeshDataMap["Plane"] = CreatePlane(1.0f, FVector4(1.0f, 1.0f, 1.0f, 1.0f));
-	MeshDataMap["Arrow"] = CreateArrow(0.1f, 1.0f, 0.2f, 0.5f, 20, FVector4(1.0f, 0.0f, 0.0f, 1.0f));
+	MeshDataMap["Arrow"] = CreateArrow(0.04f, 1.0f, 0.10f, 0.3f, 20, FVector4(1.0f, 0.0f, 0.0f, 1.0f));
 	MeshDataMap["Ring"] = CreateRing(1.0f, 0.03f, 32, 16, FVector4(1.0f, 0.0f, 0.0f, 1.0f));
-	MeshDataMap["ScaleBar"] = CreateScaleBar(0.1f, 1.0f, 0.4f, 20, FVector4(1.0f, 0.0f, 0.0f, 1.0f));
-	MeshDataMap["GizmoSphere"] = CreateSphere(0.2f, 100, 50, FVector4(1.0f, 1.0f, 1.0f, 1.0f));
+	MeshDataMap["ScaleBar"] = CreateScaleBar(0.04f, 1.0f, 0.15f, 20, FVector4(1.0f, 0.0f, 0.0f, 1.0f));
+	MeshDataMap["GizmoSphere"] = CreateSphere(0.1f, 100, 50, FVector4(1.0f, 1.0f, 1.0f, 1.0f));
 }

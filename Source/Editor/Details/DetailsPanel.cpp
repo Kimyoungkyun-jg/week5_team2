@@ -40,7 +40,7 @@ namespace
 
 		// 드래그 슬라이더
 		ImGui::SameLine();
-		std::string dragID = "##" + _label;
+		FString dragID = "##" + _label;
 		isValueChanged |= ImGui::DragFloat(dragID.c_str(), &_value, _speed, _minValue, _maxValue, "%.2f");
 
 		return isValueChanged;
@@ -149,7 +149,7 @@ namespace
 				// 머티리얼이 없으면 기본 머티리얼에서 시작한다
 				if (!Material)
 				{
-					Material = UMaterial::CreateInstance(UAssetManager::GetAssetByPath<UMaterial>("DefaultMaterial"));
+					Material = UMaterial::CreateInstance(UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial"));
 					*MaterialPtr = Material;
 				}
 				// 공유 에셋이면 지금 복제한다.
@@ -303,7 +303,7 @@ namespace
 		// 메시의 머티리얼은 같은 메시를 쓰는 모든 액터가 공유하므로 직접 고치면 안 된다.
 		if (Override && Override->bIsInstance)	return Override;
 
-		UMaterial* Source = Effective ? Effective : UAssetManager::GetAssetByPath<UMaterial>("DefaultMaterial");
+		UMaterial* Source = Effective ? Effective : UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial");
 
 		Override = UMaterial::CreateInstance(Source);
 		MeshComponent->SetMaterial(Slot, Override);
@@ -621,9 +621,14 @@ namespace
 			FTransform* Value = static_cast<FTransform*>(ValuePtr);
 
 			ImGui::NewLine();
-			DrawVector3Controller("Location", Value->Location.V, 0.0f, 55.0f);
-			DrawRotatorAsXYZ("Rotation", Value->Rotation);
-			DrawVector3Controller("Scale", Value->Scale.V, 1.0f, 55.0f);
+			bool bChanged = DrawVector3Controller("Location", Value->Location.V, 0.0f, 55.0f);
+			bChanged |= DrawRotatorAsXYZ("Rotation", Value->Rotation);
+			bChanged |= DrawVector3Controller("Scale", Value->Scale.V, 1.0f, 55.0f);
+			if (bChanged)
+			{
+				if (USceneComponent* SceneComponent = Cast<USceneComponent>(Object))
+					SceneComponent->MarkTransformDirty();
+			}
 			break;
 		}
 		case EPropertyType::Object:

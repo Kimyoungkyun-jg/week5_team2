@@ -18,13 +18,13 @@ public:
 
 	// Get & Set
 	const FVector& GetRelativeLocation() const { return Transform.Location; }
-	void SetRelativeLocation(const FVector& InLocation) { Transform.Location = InLocation; MarkBoundsDirtyRecursive(); }
+	void SetRelativeLocation(const FVector& InLocation) { Transform.Location = InLocation; MarkTransformDirtyRecursive(); }
 
 	const FRotator& GetRelativeRotation() const { return Transform.Rotation; }
-	void SetRelativeRotation(const FRotator& InRotation) { Transform.Rotation = InRotation; MarkBoundsDirtyRecursive(); }
+	void SetRelativeRotation(const FRotator& InRotation) { Transform.Rotation = InRotation; MarkTransformDirtyRecursive(); }
 
 	const FVector& GetRelativeScale3D() const { return Transform.Scale; }
-	void SetRelativeScale3D(const FVector& InScale) { Transform.Scale = InScale; MarkBoundsDirtyRecursive(); }
+	void SetRelativeScale3D(const FVector& InScale) { Transform.Scale = InScale; MarkTransformDirtyRecursive(); }
 
 	// 쿼터니언 적용된 회전행렬
 	FQuat GetRelativeRotationQuat() const { return Transform.GetOrientation(); }
@@ -32,8 +32,9 @@ public:
 	const FTransform& GetTransform() const { return Transform; }
 	void SetTransform(const FTransform& InTransform) { 
 		Transform = InTransform;
-		MarkBoundsDirtyRecursive();
+		MarkTransformDirtyRecursive();
 	}
+	virtual void Serialize(json& Handle, bool bIsLoading) override;
 
 	// Attatch-To
 	USceneComponent* GetAttachParent() const { return AttachParent; }
@@ -49,9 +50,11 @@ public:
 	FVector GetWorldScale3D() const;
 	FMatrix GetWorldMatrix() const;
 
-	// Transform 변경을 현재 컴포넌트와 모든 자식의 Bounds에 전파한다.
+	// Bounds 또는 Transform 변경을 현재 컴포넌트와 모든 자식 캐시에 전파한다.
 	void MarkBoundsDirty() { MarkBoundsDirtyRecursive(); }
 	void MarkBoundsDirtyRecursive();
+	void MarkTransformDirty() { MarkTransformDirtyRecursive(); }
+	void MarkTransformDirtyRecursive();
 	uint64 GetBoundsRevision() const { return BoundsRevision; }
 
 	//더티할 때만 새로 계산하고, 아니면 캐시된 박스 즉시 반환!
@@ -73,6 +76,8 @@ protected:
 
 
 	bool bBoundsDirty = true; // 처음 생성 시에는 계산 필요
+	mutable bool bWorldMatrixDirty = true;
 	uint64 BoundsRevision = 1;
 	FBox CachedWorldBounds;
+	mutable FMatrix CachedWorldMatrix;
 };

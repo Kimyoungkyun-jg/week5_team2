@@ -110,8 +110,7 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
 
   Outline = MakeUnique<FOutline>();
 
-  SystemFont =
-      UAssetManager::GetAssetByPath<UFont>("Assets/Fonts/Pretendard.json");
+  SystemFont = UAssetManager::GetAssetByKey<UFont>("Assets/Fonts/Pretendard.json");
 
   TextRenderer = MakeUnique<FTextRenderer>();
   TextRenderer->Init();
@@ -263,14 +262,13 @@ void FEditorApplication::RenderMultipleViewports() {
   const bool bActive = MultipleViewportsAdapter.IsViewActive(0);
   ViewportsPanel->SetView(0, MultipleViewportsAdapter.GetViewRect(0), bActive);
 
-  TArray<FRenderPacket> RenderPackets;
-  MultipleViewportsAdapter.BuildRenderPackets(0, RenderPackets);
+  MultipleViewportsAdapter.BuildRenderPackets(0, SceneRenderPackets);
 
   RenderFrame(0, ViewportsPanel->GetRenderingInfo(0),
               MultipleViewportsAdapter.GetEngineViewProjection(0),
               MultipleViewportsAdapter.GetEngineCameraLocation(0),
               MultipleViewportsAdapter.GetEngineCameraForward(0),
-              RenderPackets);
+              SceneRenderPackets);
 
   EMultipleViewportsCameraPreset CameraPresets[4]{};
   // for (int32 ViewIndex = 0; ViewIndex < 4; ++ViewIndex)
@@ -330,10 +328,15 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
                                      TQueue<FRenderPacket> &RenderQueue) {
   RenderCommand::BeginRenderPass(ViewRenderingInfo);
 
-  const FEditorSettings &EditorSettings = SettingsPanel->GetSettings();
-  GridRenderer->OnRenderPSGrid(ViewProjection, ViewCameraLocation,
-                               EditorSettings,
-                               ViewRenderingInfo.ViewportSetting);
+	const FEditorSettings& EditorSettings = SettingsPanel->GetSettings();
+	const float FarClip = MultipleViewportsAdapter.GetViewCamera(ViewIndex).Projection.FarClip;
+	GridRenderer->OnRenderPSGrid(
+		ViewProjection,
+		ViewCameraLocation,
+		EditorSettings,
+		ViewRenderingInfo.ViewportSetting, 
+		FarClip
+	);
 
   const bool bDrawPrimitives = EditorSettings.bDrawPrimitives;
 
@@ -345,10 +348,6 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
 
   // 렌더 루프 — 반드시 RenderAll보다 먼저
   // SkyboxRenderer->OnRender(ViewProjection, ViewCameraLocation);
-  if (bDrawPrimitives) {
-
-    Renderer->RenderOpaque(RenderQueue, ViewProjection);
-  }
 
   if (MultipleViewportsAdapter.GetSoftwareOcclusionSettings().bDebugBounds) {
     LineBatcher->BeginFrame();
@@ -356,11 +355,16 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
     LineBatcher->OnRender(ViewProjection);
   }
 
-  // 스텐실 기반이라 선택 대상의 가시성이 꺼져 있어도 외곽선만 그린다.
-  if (Outline->GetTarget()) {
-    OutlineRenderer->OnRender(*Outline, ViewProjection,
-                              ViewRenderingInfo.ViewportSetting);
+  if (bDrawPrimitives) {
+
+    Renderer->RenderOpaque(RenderQueue, ViewProjection);
+  
   }
+	// 스텐실 기반이라 선택 대상의 가시성이 꺼져 있어도 외곽선만 그린다.
+	if (Outline->GetTarget())
+	{
+		OutlineRenderer->OnRender(*Outline, ViewProjection, ViewRenderingInfo.ViewportSetting);
+	}
 
   if (Gizmo->GetTarget()) {
     auto Target = Cast<UPrimitiveComponent>(Gizmo->GetTarget());
@@ -412,11 +416,12 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
   RenderCommand::BeginRenderPass(ViewRenderingInfo);
 
   FEditorSettings DefaultSettings;
-  GridRenderer->OnRenderPSGrid(ViewProjection, ViewCameraLocation,
-                               DefaultSettings,
-                               ViewRenderingInfo.ViewportSetting);
 
   Renderer->RenderOpaque(RenderPackets, ViewProjection);
+  const float FarClip = MultipleViewportsAdapter.GetViewCamera(ViewIndex).Projection.FarClip;
+  GridRenderer->OnRenderPSGrid(ViewProjection, ViewCameraLocation,
+                               DefaultSettings,
+                               ViewRenderingInfo.ViewportSetting, FarClip);
 
   if (Outline && Outline->GetTarget() && OutlineRenderer) {
     OutlineRenderer->OnRender(*Outline, ViewProjection,

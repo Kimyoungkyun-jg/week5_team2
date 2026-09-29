@@ -137,11 +137,22 @@ struct FRenderableObject
     bool bCanOcclude = false; //남을 가릴 수 있는가?
 };
 
-// View 절두체를 이루는 여섯 개의 정규화 평면을 담는다.
-struct FFrustumPlanes { FPlane Planes[6]; };
+// View 절두체를 이루는 여섯 개의 정규화 평면과 SIMD 판정용 SoA 캐시를 담는다.
+struct FFrustumPlanes
+{
+    FPlane Planes[6];
+    alignas(16) float NormalX[8]{};
+    alignas(16) float NormalY[8]{};
+    alignas(16) float NormalZ[8]{};
+    alignas(16) float Distance[8]{};
+};
+
+enum class EFrustumContainment : uint8 { Outside, Intersect, Inside };
 
 // ViewProjection 행렬의 행 조합으로 여섯 절두체 평면을 추출한다.
 FFrustumPlanes ExtractFrustumPlanes(const FMatrix& ViewProjection);
+// 네 평면씩 SIMD로 검사해 AABB가 절두체의 밖·경계·안 중 어디에 있는지 분류한다.
+EFrustumContainment ClassifyAABBInFrustum(const FAABB& Bounds, const FFrustumPlanes& Frustum);
 // AABB의 projected radius를 이용해 절두체 포함 여부를 검사한다.
 bool IsAABBInFrustum(const FAABB& Bounds, const FFrustumPlanes& Frustum);
 

@@ -8,6 +8,7 @@
 #include <math.h>
 #include <float.h>
 #include "Math/EngineMath.h"
+#include "Math/VectorRegister.h"
 
 #include "Job/FiberJobManager.h"
 #include <vector>
@@ -375,22 +376,68 @@ FFrustumPlanes ExtractFrustumPlanes(const FMatrix& Matrix)
     Result.Planes[3] = MakePlane(3, 1.0f, 1, -1.0f);
     Result.Planes[4] = NormalizePlane({{Matrix.M[0][2], Matrix.M[1][2], Matrix.M[2][2]}, Matrix.M[3][2]});
     Result.Planes[5] = MakePlane(3, 1.0f, 2, -1.0f);
+    for (int32 PlaneIndex = 0; PlaneIndex < 6; ++PlaneIndex)
+    {
+        const FPlane& Plane = Result.Planes[PlaneIndex];
+        Result.NormalX[PlaneIndex] = Plane.Normal.X;
+        Result.NormalY[PlaneIndex] = Plane.Normal.Y;
+        Result.NormalZ[PlaneIndex] = Plane.Normal.Z;
+        Result.Distance[PlaneIndex] = Plane.Distance;
+    }
     return Result;
+}
+
+static EFrustumContainment ClassifyAABBInFrustumSIMD(
+    const FAABB& Bounds,
+    const FFrustumPlanes& Frustum,
+    const bool bTrackIntersections)
+{
+    const FVectorRegister CenterX = VectorSIMD::SetVal(Bounds.Center.X);
+    const FVectorRegister CenterY = VectorSIMD::SetVal(Bounds.Center.Y);
+    const FVectorRegister CenterZ = VectorSIMD::SetVal(Bounds.Center.Z);
+    const FVectorRegister ExtentX = VectorSIMD::SetVal(Bounds.Extent.X);
+    const FVectorRegister ExtentY = VectorSIMD::SetVal(Bounds.Extent.Y);
+    const FVectorRegister ExtentZ = VectorSIMD::SetVal(Bounds.Extent.Z);
+    const FVectorRegister Zero = VectorSIMD::SetZero();
+    bool bIntersects = false;
+
+    for (int32 PlaneOffset = 0; PlaneOffset < 8; PlaneOffset += 4)
+    {
+        const FVectorRegister NormalX = VectorSIMD::LoadAligned(Frustum.NormalX + PlaneOffset);
+        const FVectorRegister NormalY = VectorSIMD::LoadAligned(Frustum.NormalY + PlaneOffset);
+        const FVectorRegister NormalZ = VectorSIMD::LoadAligned(Frustum.NormalZ + PlaneOffset);
+        FVectorRegister SignedDistance = VectorSIMD::Mul(NormalX, CenterX);
+        SignedDistance = VectorSIMD::Add(SignedDistance, VectorSIMD::Mul(NormalY, CenterY));
+        SignedDistance = VectorSIMD::Add(SignedDistance, VectorSIMD::Mul(NormalZ, CenterZ));
+        SignedDistance = VectorSIMD::Add(SignedDistance, VectorSIMD::LoadAligned(Frustum.Distance + PlaneOffset));
+
+        FVectorRegister Radius = VectorSIMD::Mul(VectorSIMD::Abs(NormalX), ExtentX);
+        Radius = VectorSIMD::Add(Radius, VectorSIMD::Mul(VectorSIMD::Abs(NormalY), ExtentY));
+        Radius = VectorSIMD::Add(Radius, VectorSIMD::Mul(VectorSIMD::Abs(NormalZ), ExtentZ));
+
+        const int32 ValidLaneMask = PlaneOffset == 0 ? 0xf : 0x3;
+        const int32 OutsideMask = _mm_movemask_ps(_mm_cmplt_ps(VectorSIMD::Add(SignedDistance, Radius), Zero)) & ValidLaneMask;
+        if (OutsideMask != 0)
+            return EFrustumContainment::Outside;
+        if (bTrackIntersections)
+        {
+            const int32 IntersectMask = _mm_movemask_ps(_mm_cmplt_ps(VectorSIMD::Sub(SignedDistance, Radius), Zero)) & ValidLaneMask;
+            bIntersects = bIntersects || IntersectMask != 0;
+        }
+    }
+
+    return bIntersects ? EFrustumContainment::Intersect : EFrustumContainment::Inside;
+}
+
+EFrustumContainment ClassifyAABBInFrustum(const FAABB& Bounds, const FFrustumPlanes& Frustum)
+{
+    return ClassifyAABBInFrustumSIMD(Bounds, Frustum, true);
 }
 
 // 각 평면에 대한 AABB projected radius로 완전한 바깥 여부를 검사한다.
 bool IsAABBInFrustum(const FAABB& Bounds, const FFrustumPlanes& Frustum)
 {
-    //assert(Bounds.Extent.X >= 0.0f && Bounds.Extent.Y >= 0.0f && Bounds.Extent.Z >= 0.0f);
-    for (const FPlane& Plane : Frustum.Planes)
-    {
-        const float Radius = fabsf(Plane.Normal.X) * Bounds.Extent.X + fabsf(Plane.Normal.Y) * Bounds.Extent.Y + fabsf(Plane.Normal.Z) * Bounds.Extent.Z;
-        if (Dot(Plane.Normal, Bounds.Center) + Plane.Distance + Radius < 0.0f)
-        {
-            return false;
-        }
-    }
-    return true;
+    return ClassifyAABBInFrustumSIMD(Bounds, Frustum, false) != EFrustumContainment::Outside;
 }
 
 

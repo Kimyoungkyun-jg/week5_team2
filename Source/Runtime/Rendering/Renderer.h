@@ -52,7 +52,7 @@ private:
 	FLOAT ClearColor[4] = { 0.3f, 0.3f, 0.3f, 1.0f };
 
 	static constexpr uint32 PerObjectSlotSize = 256;
-	static constexpr uint32 MaxObjects = 50000;
+	static constexpr uint32 InitialPacketCapacity = 50000;
 
 	// 워커 전용 지연 컨텍스트와 상수 버퍼
 	struct FDeferredWorker
@@ -62,8 +62,10 @@ private:
 		TUniquePtr<FConstantBuffer> PerObjectCB;
 	};
 	TArray<FDeferredWorker> DeferredWorkers;
+	bool bDeferredWorkersInitialized = false;
 
 	void EnsureDeferredWorkers();
+	bool EnsureConstantBufferCapacity(TUniquePtr<FConstantBuffer>& Buffer, uint32 PacketCount);
 	void DrawPackets(uint32 Begin, uint32 End, const FMatrix& ViewProjection);
 	void BindMaterial(UMaterial* material, ID3D11DeviceContext* Context = nullptr, bool bBindPipelineState = true);
 	void UpdateMaterialParams(UMaterial* material);

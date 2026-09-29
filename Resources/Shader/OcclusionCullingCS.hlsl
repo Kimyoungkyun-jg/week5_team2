@@ -16,6 +16,8 @@ cbuffer CullConstants : register(b0)
 {
     float4 FrustumPlanes[6];
     row_major float4x4 ViewProjection;
+    float3 CameraPosition;
+    float Pad0;
     float2 HZBSize;
     uint NumInstances;
     uint NumWords;
@@ -25,12 +27,12 @@ cbuffer CullConstants : register(b0)
     float Pad;
 };
 
-groupshared uint s_Bits[2];
+groupshared uint s_Bits[4];
 
 [numthreads(64, 1, 1)]
 void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, uint3 DispatchThreadID : SV_DispatchThreadID)
 {
-    if (GroupThreadID.x < 2)
+    if (GroupThreadID.x < 4)
     {
         s_Bits[GroupThreadID.x] = 0;
     }
@@ -38,6 +40,7 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
 
     uint Index = DispatchThreadID.x;
     bool bVisible = false;
+    uint LodCode = 0;
 
     if (Index < NumInstances)
     {
@@ -117,19 +120,40 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
                 }
             }
         }
+
+        // 거리 비율 기반 단계 판정
+        if (bVisible)
+        {
+            float Dist = length(Center - CameraPosition);
+            float ScreenDiameter = (Bound.Radius * 2.0f) / max(Dist, 0.001f);
+            
+            if (ScreenDiameter < 0.05f)
+            {
+                LodCode = 3u;
+            }
+            else if (ScreenDiameter < 0.15f)
+            {
+                LodCode = 2u;
+            }
+            else
+            {
+                LodCode = 1u;
+            }
+        }
     }
 
-    if (bVisible)
+    // 두 비트씩 묶어 공유 메모리에 저장
+    if (LodCode > 0u)
     {
-        uint LocalWord = GroupThreadID.x / 32;
-        uint LocalBit = GroupThreadID.x % 32;
-        InterlockedOr(s_Bits[LocalWord], 1u << LocalBit);
+        uint LocalWord = GroupThreadID.x / 16;
+        uint LocalShift = (GroupThreadID.x % 16) * 2;
+        InterlockedOr(s_Bits[LocalWord], LodCode << LocalShift);
     }
     GroupMemoryBarrierWithGroupSync();
 
-    if (GroupThreadID.x < 2)
+    if (GroupThreadID.x < 4)
     {
-        uint OutIndex = GroupID.x * 2 + GroupThreadID.x;
+        uint OutIndex = GroupID.x * 4 + GroupThreadID.x;
         if (OutIndex < NumWords)
         {
             VisibilityBits[OutIndex] = s_Bits[GroupThreadID.x];

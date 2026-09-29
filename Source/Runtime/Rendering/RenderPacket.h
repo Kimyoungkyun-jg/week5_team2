@@ -19,4 +19,5 @@ struct FRenderPacket {
 
   uint32 StartIndex = 0;
   uint32 IndexCount = 0; // 0이면 전체 IndexBuffer 사용
+  uint8 LODIndex = 0;
 };

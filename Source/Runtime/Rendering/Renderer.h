@@ -33,7 +33,7 @@ public:
 
 	// 배열을 정렬해 불투명 패킷만 그린다. 반투명은 RenderTranslucent 호출 전까지 보관한다.
 	// 연속 배열 기반 불투명 패킷 고속 렌더링
-	void RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection);
+	void RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection, bool bWireframe = false);
 
 	// RenderOpaque가 보관한 반투명 패킷을 먼 것부터 그린다.
 	void RenderTranslucent(const FMatrix& ViewProjection);
@@ -65,7 +65,7 @@ private:
 
 	void EnsureDeferredWorkers();
 	void DrawPackets(uint32 Begin, uint32 End, const FMatrix& ViewProjection);
-	void BindMaterial(UMaterial* material, ID3D11DeviceContext* Context = nullptr, bool bBindPipelineState = true);
+	void BindMaterial(UMaterial* material, ID3D11DeviceContext* Context = nullptr, bool bBindPipelineState = true, bool bWireframe = false);
 	void UpdateMaterialParams(UMaterial* material);
 	void UpdatePerObjectConstants(const FRenderPacket& RenderPacket, const FMatrixRegister& ViewProjection);
 };

@@ -98,7 +98,7 @@ void FGPUOcclusionCuller::EnsureCapacity(uint32 Count)
     }
 
     uint32 NewCapacity = (std::max)(65536u, Count);
-    uint32 NewWordCapacity = (NewCapacity + 31) / 32;
+    uint32 NewWordCapacity = (NewCapacity + 15) / 16;
 
     // 인스턴스 구조화 버퍼 생성
     D3D11_BUFFER_DESC InstDesc{};
@@ -371,10 +371,13 @@ void FGPUOcclusionCuller::Cull(
     const TArray<FRenderableObject>& Objects,
     const FFrustumPlanes& Frustum,
     const FMatrix& ViewProjection,
+    const FVector& CameraLocation,
     TArray<UPrimitiveComponent*>& OutVisible,
+    TArray<uint8>& OutLODs,
     FSoftwareOcclusionStats& OutStats)
 {
     OutVisible.Reset();
+    OutLODs.Reset();
     const uint32 TotalObjects = static_cast<uint32>(Objects.Num());
     if (TotalObjects == 0)
     {
@@ -423,7 +426,7 @@ void FGPUOcclusionCuller::Cull(
     }
 
     const int32 ClampedView = std::clamp(ViewIndex, 0, MaxSupportedViews - 1);
-    const uint32 NumWords = (TotalObjects + 31) / 32;
+    const uint32 NumWords = (TotalObjects + 15) / 16;
 
     // 상수 버퍼 갱신
     FGPUCullConstants Constants{};
@@ -432,6 +435,8 @@ void FGPUOcclusionCuller::Cull(
         Constants.FrustumPlanes[i] = FVector4(Frustum.Planes[i].Normal, Frustum.Planes[i].Distance);
     }
     Constants.ViewProjection = ViewProjection;
+    Constants.CameraPosition = CameraLocation;
+    Constants.Pad0 = 0.0f;
     Constants.HZBSize = FVector2(static_cast<float>(HZBWidth), static_cast<float>(HZBHeight));
     Constants.NumInstances = TotalObjects;
     Constants.NumWords = NumWords;
@@ -498,8 +503,9 @@ void FGPUOcclusionCuller::Cull(
         std::memcpy(ReadbackBits.GetData(), ReadMapped.pData, NumWords * sizeof(uint32));
         Context->Unmap(ReadStaging, 0);
 
-        // 비트마스크 기반 필터링
+        // 비트마스크 기반 필터링 및 단계 추출
         OutVisible.Reserve(TotalObjects);
+        OutLODs.Reserve(TotalObjects);
         for (uint32 WordIdx = 0; WordIdx < NumWords; ++WordIdx)
         {
             uint32 Mask = ReadbackBits[WordIdx];
@@ -509,8 +515,8 @@ void FGPUOcclusionCuller::Cull(
                 continue;
             }
 
-            uint32 BaseIdx = WordIdx * 32;
-            for (uint32 Bit = 0; Bit < 32; ++Bit)
+            uint32 BaseIdx = WordIdx * 16;
+            for (uint32 Bit = 0; Bit < 16; ++Bit)
             {
                 uint32 ObjIdx = BaseIdx + Bit;
                 if (ObjIdx >= TotalObjects)
@@ -518,11 +524,13 @@ void FGPUOcclusionCuller::Cull(
                     break;
                 }
 
-                if (Mask & (1u << Bit))
+                uint32 Code = (Mask >> (Bit * 2)) & 0x03;
+                if (Code > 0)
                 {
                     if (Objects[ObjIdx].Primitive)
                     {
                         OutVisible.Add(Objects[ObjIdx].Primitive);
+                        OutLODs.Add(static_cast<uint8>(Code - 1));
                     }
                 }
             }

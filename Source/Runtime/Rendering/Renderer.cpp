@@ -101,7 +101,7 @@ void FRenderer::RenderAll(TArray<FRenderPacket>& InPackets, const FMatrix& ViewP
 }
 
 // TArray 기반 불투명 메시 지연 컨텍스트 병렬 렌더링
-void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection)
+void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& ViewProjection, bool bWireframe)
 {
 	const int32 TotalPackets = InPackets.Num();
 	if (TotalPackets == 0)
@@ -134,6 +134,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 	if (TotalPackets <= 500 || NumWorkers <= 1)
 	{
 		const UStaticMesh* LastMesh = nullptr;
+		uint8 LastLOD = 0xFF;
 		const UMaterial* LastMaterial = nullptr;
 		EPSOType LastPSO = EPSOType::Count;
 
@@ -163,16 +164,17 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 				continue;
 			}
 
-			if (LastMesh != RenderPacket.mesh)
+			if (LastMesh != RenderPacket.mesh || LastLOD != RenderPacket.LODIndex)
 			{
-				RenderCommand::BindMesh(RenderPacket.mesh);
+				RenderCommand::BindMesh(RenderPacket.mesh, RenderPacket.LODIndex);
 				LastMesh = RenderPacket.mesh;
+				LastLOD = RenderPacket.LODIndex;
 			}
 
 			if (LastMaterial != RenderPacket.material)
 			{
 				const bool bPSOChanged = LastPSO != RenderPacket.material->PSOType;
-				BindMaterial(RenderPacket.material, nullptr, bPSOChanged);
+				BindMaterial(RenderPacket.material, nullptr, bPSOChanged, bWireframe);
 				LastMaterial = RenderPacket.material;
 				LastPSO = RenderPacket.material->PSOType;
 			}
@@ -181,7 +183,8 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 			const uint32 NumConstants = PerObjectSlotSize / 16;
 
 			RenderCommand::BindConstantBufferRange(0, Temp.get(), EShaderBindFlagBits::Vertex, FirstConstant, NumConstants);
-			RenderCommand::DrawIndexed(RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(), RenderPacket.StartIndex);
+			const uint32 IndexCount = RenderPacket.mesh ? RenderPacket.mesh->GetIndexCount(RenderPacket.LODIndex) : RenderPacket.IndexCount;
+			RenderCommand::DrawIndexed(IndexCount, RenderPacket.StartIndex);
 		}
 		return;
 	}
@@ -225,6 +228,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 		Context->RSSetViewports(NumViewports, &Viewport);
 
 		const UStaticMesh* LastMesh  = nullptr;
+		uint8 LastLOD = 0xFF;
 		const UMaterial* LastMaterial = nullptr;
 		EPSOType LastPSO = EPSOType::Count;
 
@@ -256,16 +260,17 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 			const FRenderPacket& RenderPacket = InPackets[i];
 			if (RenderPacket.mesh != nullptr && RenderPacket.material != nullptr)
 			{
-				if (LastMesh != RenderPacket.mesh)
+				if (LastMesh != RenderPacket.mesh || LastLOD != RenderPacket.LODIndex)
 				{
-					RenderCommand::BindMesh(RenderPacket.mesh, Context);
+					RenderCommand::BindMesh(RenderPacket.mesh, RenderPacket.LODIndex, Context);
 					LastMesh = RenderPacket.mesh;
+					LastLOD = RenderPacket.LODIndex;
 				}
 
 				if (LastMaterial != RenderPacket.material)
 				{
 					const bool bPSOChanged = LastPSO != RenderPacket.material->PSOType;
-					BindMaterial(RenderPacket.material, Context, bPSOChanged);
+					BindMaterial(RenderPacket.material, Context, bPSOChanged, bWireframe);
 					LastMaterial = RenderPacket.material;
 					LastPSO = RenderPacket.material->PSOType;
 				}
@@ -276,8 +281,9 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 				RenderCommand::BindConstantBufferRange(0, WorkerCB, EShaderBindFlagBits::Vertex, FirstConstant, NumConstants, Context1);
 
+				const uint32 IndexCount = RenderPacket.mesh ? RenderPacket.mesh->GetIndexCount(RenderPacket.LODIndex) : RenderPacket.IndexCount;
 				RenderCommand::DrawIndexed(
-					RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(),
+					IndexCount,
 					RenderPacket.StartIndex,
 					0,
 					Context
@@ -326,10 +332,15 @@ void FRenderer::DrawPackets(uint32 Begin, uint32 End, const FMatrix& ViewProject
 }
 
 // 머티리얼 바인딩
-void FRenderer::BindMaterial(UMaterial* material, ID3D11DeviceContext* Context, const bool bBindPipelineState)
+void FRenderer::BindMaterial(UMaterial* material, ID3D11DeviceContext* Context, const bool bBindPipelineState, const bool bWireframe)
 {
 	if (bBindPipelineState)
-		RenderCommand::BindPipelineState(FRenderResourceManager::GetPSO(material->PSOType), Context);
+	{
+		const EPSOType EffectivePSO = (bWireframe && (material->PSOType == EPSOType::StaticMesh_Opaque || material->PSOType == EPSOType::StaticMesh_Wireframe))
+			? EPSOType::StaticMesh_Wireframe
+			: material->PSOType;
+		RenderCommand::BindPipelineState(FRenderResourceManager::GetPSO(EffectivePSO), Context);
+	}
 	for (int i = 0; i < material->Textures.size(); i++)
 	{
 		RenderCommand::BindShaderResource(i, material->Textures[i], EShaderBindFlagBits::Pixel, Context);

@@ -803,6 +803,8 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
         WorkerPacketBuffers[i].Reset();
     }
 
+    const TArray<uint8>& VisibleLODs = SoftwareOcclusion.GetVisibleLODs(ViewIndex);
+
     Tasks::ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
     {
         const int32 JobIndex = Start / ChunkSize;
@@ -814,7 +816,47 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
             UPrimitiveComponent* Primitive = VisiblePrimitives[ViewIndex][i];
             if (Primitive)
             {
+                uint8 TargetLOD = (i < VisibleLODs.Num()) ? VisibleLODs[i] : 0;
+                if (UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(Primitive))
+                {
+                    if (SMC->GetForcedLOD() >= 0)
+                    {
+                        TargetLOD = static_cast<uint8>(SMC->GetForcedLOD());
+                    }
+                    else if (TargetLOD == 0 && VisibleLODs.IsEmpty())
+                    {
+                        const float Dist = (std::max)(1.0f, FVector::Distance(RenderCamera.Transform.Location, SMC->GetWorldLocation()));
+                        const FBox Bounds = SMC->GetWorldBounds();
+                        const float Radius = (Bounds.Max - Bounds.Min).Length() * 0.5f;
+                        const float DiameterRatio = (Radius * 2.0f) / Dist;
+                        if (DiameterRatio < 0.05f)
+                        {
+                            TargetLOD = 2;
+                        }
+                        else if (DiameterRatio < 0.15f)
+                        {
+                            TargetLOD = 1;
+                        }
+                    }
+                }
+
+                const int32 PrevCount = LocalList.Num();
                 Primitive->SubmitToRenderPackets(LocalList);
+                for (int32 p = PrevCount; p < LocalList.Num(); ++p)
+                {
+                    FRenderPacket& Packet = LocalList[p];
+                    if (Packet.mesh && !Packet.mesh->LODs.IsEmpty())
+                    {
+                        const uint8 MaxLOD = static_cast<uint8>(Packet.mesh->LODs.Num() - 1);
+                        Packet.LODIndex = (std::min)(TargetLOD, MaxLOD);
+                        Packet.IndexCount = Packet.mesh->GetIndexCount(Packet.LODIndex);
+                        Packet.StartIndex = 0;
+                    }
+                    else
+                    {
+                        Packet.LODIndex = 0;
+                    }
+                }
             }
         }
 

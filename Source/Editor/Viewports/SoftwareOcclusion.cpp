@@ -1404,12 +1404,15 @@ void FSoftwareOcclusionCuller::Cull(const int32 ViewIndex,
 	CurrentCameraLocation = CameraLocation;
 	CurrentFrustum = Frustum;
 
-	if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute && !bWireframe && ViewWidth > 0 && ViewHeight > 0)
+	const int32 SafeView = std::clamp(ViewIndex, 0, MaxViews - 1);
+	VisibleLODs[SafeView].Reset();
+
+	if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute && ViewWidth > 0 && ViewHeight > 0)
 	{
 		if (FGPUOcclusionCuller* Culler = GetGPUCuller())
 		{
 			Culler->SynchronizeObjects(Objects);
-			Culler->Cull(ViewIndex, Objects, Frustum, ViewProjection, OutVisible, OutStats);
+			Culler->Cull(ViewIndex, Objects, Frustum, ViewProjection, CameraLocation, OutVisible, VisibleLODs[SafeView], OutStats);
 			OutStats.CullMs = static_cast<float>((NowSeconds() - CullStartSeconds) * 1000.0);
 			ActiveStats = nullptr;
 			return;
@@ -1737,6 +1740,8 @@ void FSoftwareOcclusionCuller::Cull(const int32 ViewIndex,
 		}
 	}
 	OutStats.FinalVisible = static_cast<uint32>(OutVisible.Num());
+	VisibleLODs[SafeView].SetNum(OutVisible.Num());
+	std::fill(VisibleLODs[SafeView].begin(), VisibleLODs[SafeView].end(), static_cast<uint8>(0));
 	OutStats.CullMs = static_cast<float>((NowSeconds() - CullStartSeconds) * 1000.0);
 	ActiveStats = nullptr;
 

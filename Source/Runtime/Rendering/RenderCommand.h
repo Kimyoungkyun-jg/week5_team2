@@ -63,7 +63,7 @@ public:
 
 	static void BindPipelineState(const FPipelineState* PipelineState, ID3D11DeviceContext* Context = nullptr);
 
-	static void BindMesh(UStaticMesh* Mesh, ID3D11DeviceContext* Context = nullptr);
+	static void BindMesh(UStaticMesh* Mesh, uint8 LODIndex = 0, ID3D11DeviceContext* Context = nullptr);
 
 	static void BindShaderProgram(FShaderProgram* Shader, ID3D11DeviceContext* Context = nullptr);
 

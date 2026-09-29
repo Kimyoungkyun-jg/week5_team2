@@ -337,7 +337,8 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
 
   const bool bDrawPrimitives = EditorSettings.bDrawPrimitives;
   if (bDrawPrimitives) {
-    Renderer->RenderOpaque(RenderPackets, ViewProjection);
+    const bool bWireframe = MultipleViewportsAdapter.IsViewWireframe(ViewIndex);
+    Renderer->RenderOpaque(RenderPackets, ViewProjection, bWireframe);
   }
 
   MultipleViewportsAdapter.PostRenderOpaque(ViewIndex, ViewRenderingInfo.DepthSteincil.Texture);

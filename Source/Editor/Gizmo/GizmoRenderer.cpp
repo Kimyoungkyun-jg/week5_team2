@@ -149,5 +149,5 @@ void FGizmoRenderer::DrawMesh(UStaticMesh* Mesh, const FGizmoData& Data)
 	RenderCommand::BindMesh(Mesh);
 	RenderCommand::UpdateBufferData(CB.get(), &Data, sizeof(FGizmoData));
 	RenderCommand::BindConstantBuffer(0, CB.get(), EShaderBindFlagBits::Vertex);
-	RenderCommand::DrawIndexed(Mesh->IndexBuffer->GetIndexCount());
+	RenderCommand::DrawIndexed(Mesh ? Mesh->GetIndexCount() : 0);
 }

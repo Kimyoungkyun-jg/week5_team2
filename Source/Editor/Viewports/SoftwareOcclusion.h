@@ -94,6 +94,15 @@ public:
     const FSoftwareOcclusionSettings& GetSettings() const { return Settings; }
     const TArray<FSoftwareOcclusionDebugBounds>& GetDebugBounds() const { return DebugBounds; }
     FGPUOcclusionCuller* GetGPUCuller();
+    const TArray<uint8>& GetVisibleLODs(int32 ViewIndex) const
+    {
+        if (ViewIndex >= 0 && ViewIndex < MaxViews)
+        {
+            return VisibleLODs[ViewIndex];
+        }
+        static const TArray<uint8> Empty;
+        return Empty;
+    }
     bool DidLastRayQueryRebuildBVH() const { return bLastRayQueryRebuiltBVH; }
     float GetLastRayQueryBVHBuildMs() const { return LastRayQueryBVHBuildMs; }
 
@@ -267,4 +276,5 @@ private:
 #endif
 
     TUniquePtr<FGPUOcclusionCuller> GPUCuller;
+    TArray<uint8> VisibleLODs[MaxViews];
 };

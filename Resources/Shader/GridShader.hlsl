@@ -48,7 +48,7 @@ static const float4 SubCellColor = float4(1.0, 1.0, 1.0, 0.35);
 
 static const float HeightToFadeRatio = 25.0f;
 static const float MinFadeDistance = 5.0f;
-static const float MaxFadeDistance = 50.0f;
+static const float MaxFadeDistance = 100.0f;
 
 // 흰 Grid에 거리 페이드를 적용하며 월드 축은 별도 공통 픽셀 두께 경로에서 그린다.
 float4 mainPS(PS_INPUT input) : SV_TARGET

@@ -296,6 +296,18 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 		Lines.Add({ "Picking", TitleColor });
 		Lines.Add({std::format("  Last Pick {:.3f} ms",
 			FStatOverlay::GetLastPickingTimeMs()), ValueColor});
+		if (ViewportAdapter)
+		{
+			Lines.Add({std::format("  Broad {:.3f} ms   Narrow {:.3f} ms",
+				ViewportAdapter->GetLastPickBroadPhaseMs(),
+				ViewportAdapter->GetLastPickNarrowPhaseMs()), ValueColor});
+			Lines.Add({std::format("  Candidates {} / {}",
+				ViewportAdapter->GetLastPickCandidateCount(),
+				ViewportAdapter->GetLastPickObjectCount()), ValueColor});
+			Lines.Add({std::format("  BVH Rebuild {}   {:.3f} ms",
+				ViewportAdapter->DidLastPickRebuildBVH() ? "Yes" : "No",
+				ViewportAdapter->GetLastPickBVHBuildMs()), ValueColor});
+		}
 		Lines.Add({std::format("  Num Attempts {}",
 			FStatOverlay::GetTotalPickCount()), ValueColor});
 		Lines.Add({std::format("  Accumulated Time {:.0f} ms",

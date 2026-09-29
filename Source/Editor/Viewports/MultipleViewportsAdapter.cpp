@@ -867,6 +867,7 @@ void FMultipleViewportsAdapter::AppendSoftwareOcclusionDebugBounds(FLineBatcher&
 FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosition, UWorld& World)
 {
     LastPick = {};
+    LastPickObjectCount = RenderObjects.Num();
     FRay Ray{};
     if (!TryGetActiveViewRay(LocalMousePosition, Ray)) return LastPick;
 
@@ -879,27 +880,17 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
             Billboard.GetWorldLocation(), Scale.Y, Scale.Z);
     };
     FHitResult Hit;
-    bool bHit = false;
-
+    const uint64 BroadStartCycles = FPlatformTime::Cycles64();
     SoftwareOcclusion.GatherRayCandidates(Ray, RenderObjects, PickCandidates);
+    LastPickBroadPhaseMs = FPlatformTime::ToMilliseconds(FPlatformTime::Cycles64() - BroadStartCycles);
+    LastPickCandidateCount = PickCandidates.Num();
 
-    // 충돌 검사 시간 측정
+    const uint64 NarrowStartCycles = FPlatformTime::Cycles64();
+    const bool bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
+    LastPickNarrowPhaseMs = FPlatformTime::ToMilliseconds(FPlatformTime::Cycles64() - NarrowStartCycles);
+
     if (FStatOverlay::IsEnabled(EStatFlags::Picking))
-    {  
-        
-        FScopeCycleCounter PickCounter;
-        
-        bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
-
-        const uint64 PickCycles = PickCounter.Finish();
-        const double PickTimeMs = FPlatformTime::ToMilliseconds(PickCycles);
-
-        FStatOverlay::RecordPickingTime(PickTimeMs);
-    }
-    else
-    {
-        bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
-    }
+        FStatOverlay::RecordPickingTime(LastPickBroadPhaseMs + LastPickNarrowPhaseMs);
 
     if (bHit)
     {

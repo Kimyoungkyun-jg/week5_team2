@@ -35,6 +35,9 @@
 #include "Rendering/RenderCommand.h"
 
 #include "Core/EngineLog.h"
+#include "Core/Stats.h"
+#include "Core/StatDefinitions.h"
+
 #include "Serialization/DefaultSceneLoader.h"
 #include "Serialization/JsonArchive.h"
 
@@ -47,6 +50,11 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
 
   EditorUI = MakeUnique<FEditorUI>();
   EditorUI->Init();
+
+  // 항상 수집할 기본 Stat
+  FStats::SetEnabled(StatIds::PickingTotal(), true);
+  FStats::SetEnabled(StatIds::PickingBroad(), true);
+  FStats::SetEnabled(StatIds::PickingNarrow(), true);
 
   EditorUI->SetNewSceneCallback([this]() { CreateNewScene(); });
   EditorUI->SetOpenSceneCallback([this]() { OpenScene(); });

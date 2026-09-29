@@ -871,9 +871,6 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
 {
     LastPick = {};
     LastPickObjectCount = RenderObjects.Num();
-    FStats::SetEnabled(StatIds::PickingTotal(), true);
-    FStats::SetEnabled(StatIds::PickingBroad(), true);
-    FStats::SetEnabled(StatIds::PickingNarrow(), true);
 
     FRay Ray{};
     if (!TryGetActiveViewRay(LocalMousePosition, Ray)) return LastPick;
@@ -889,16 +886,19 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
 	FHitResult Hit;
 	bool bHit = false;
 	{
-		FStatScope TotalScope(StatIds::PickingTotal());
 		{
-			FStatScope BroadScope(StatIds::PickingBroad());
-			SoftwareOcclusion.GatherRayCandidates(Ray, RenderObjects, PickCandidates);
+			FStatScope TotalScope(StatIds::PickingTotal());
+			{
+				FStatScope BroadScope(StatIds::PickingBroad());
+				SoftwareOcclusion.GatherRayCandidates(Ray, RenderObjects, PickCandidates);
+			}
+
+			LastPickCandidateCount = PickCandidates.Num();
+			{
+				FStatScope NarrowScope(StatIds::PickingNarrow());
+				bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
+			}
 		}
-		{
-			FStatScope NarrowScope(StatIds::PickingNarrow());
-			bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
-		}
-		LastPickNarrowPhaseMs = FStats::GetRecord(StatIds::PickingNarrow()).CurrentValue;
 	}
 
     if (bHit)

@@ -19,6 +19,7 @@ struct FEditorSettings
 	bool bDrawBatchLine = true;
 	bool bDrawPSGrid = false;
 	int32 SoftwareOcclusionMode = 0;
+	int32 SoftwareOccluderGeometry = 0;
 	int32 SoftwareOcclusionTileSize = 8;
 	int32 SoftwareOcclusionMinimumTiles = 16;
 	int32 SoftwareOcclusionTriangleBudget = 500000;

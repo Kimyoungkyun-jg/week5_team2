@@ -38,12 +38,12 @@
 #include "Serialization/DefaultSceneLoader.h"
 #include "Serialization/JsonArchive.h"
 
-#include "Job/FiberJobManager.h"
+#include "Tasks/Tasks.h"
 
 // 렌더 자원·월드·에디터와 MultipleViewports 연결을 초기화한다.
 bool FEditorApplication::Init(HINSTANCE hInstance) {
-  // 사용 가능한 최대 코어를 워커로 사용
-  FFiberJobManager::Get().Initialize(8);
+  // 신규 태스크 스케줄러 초기화
+  Tasks::FTaskScheduler::Get().Initialize(8);
 
   EditorUI = MakeUnique<FEditorUI>();
   EditorUI->Init();
@@ -487,7 +487,8 @@ void FEditorApplication::Shutdown() {
   ImGuiRenderer->Shutdown();
   RenderDevice->Shutdown();
 
-  FFiberJobManager::Get().Shutdown();
+  // 신규 태스크 스케줄러 종료
+  Tasks::FTaskScheduler::Get().Shutdown();
 }
 
 // 메인 창 크기에 맞춰 Swapchain을 갱신한다.

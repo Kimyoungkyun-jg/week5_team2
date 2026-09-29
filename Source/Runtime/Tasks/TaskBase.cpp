@@ -11,9 +11,6 @@ namespace Tasks
         LowLevelTask.Function = &FTaskBase::LowLevelTaskCallback;
         LowLevelTask.UserData = this;
         LowLevelTask.Priority = InPriority;
-
-        // 스케줄러 실행 참조를 위해 기본 참조 증가
-        AddRef();
     }
 
     void FTaskBase::AddRef()
@@ -70,6 +67,7 @@ namespace Tasks
         // 모든 선행 작업 완료 시 스케줄러에 일감 등록
         if (PrerequisitesCount.fetch_sub(1, std::memory_order_acq_rel) == 1)
         {
+            AddRef();
             FTaskScheduler::Get().Schedule(LowLevelTask);
         }
     }

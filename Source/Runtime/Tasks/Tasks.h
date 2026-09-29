@@ -23,7 +23,6 @@ namespace Tasks
 
         // 선행 조건이 없으므로 바로 등록
         TaskImpl->OnPrerequisiteCompleted();
-        TaskImpl->Release();
 
         return TaskHandle;
     }
@@ -44,7 +43,6 @@ namespace Tasks
         }
 
         TaskImpl->OnPrerequisiteCompleted();
-        TaskImpl->Release();
 
         return TaskHandle;
     }
@@ -67,7 +65,6 @@ namespace Tasks
         TTask<ReturnType> TaskHandle(TaskImpl, ResultStorage);
 
         TaskImpl->OnPrerequisiteCompleted();
-        TaskImpl->Release();
 
         return TaskHandle;
     }
@@ -94,18 +91,22 @@ namespace Tasks
         }
 
         std::vector<FTask> TaskHandles;
-        TaskHandles.reserve(NumJobs);
+        TaskHandles.reserve(NumJobs - 1);
 
-        for (int32_t Index = 0; Index < NumJobs; ++Index)
+        for (int32_t Index = 0; Index < NumJobs - 1; ++Index)
         {
             const int32_t Start = Index * ChunkSize;
-            const int32_t End = (std::min)(Start + ChunkSize, TotalCount);
+            const int32_t End = Start + ChunkSize;
 
             TaskHandles.push_back(Launch("ParallelForTask", [Start, End, &Functor]()
             {
                 Functor(Start, End);
             }, Priority));
         }
+
+        // 마지막 구간은 현재 스레드에서 직접 처리
+        const int32_t LastStart = (NumJobs - 1) * ChunkSize;
+        Functor(LastStart, TotalCount);
 
         // 모든 분할 태스크 완료 대기
         for (const FTask& Handle : TaskHandles)

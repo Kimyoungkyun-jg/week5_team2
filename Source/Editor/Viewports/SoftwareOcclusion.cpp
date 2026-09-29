@@ -2,8 +2,7 @@
 #include "Editor/Viewports/SoftwareOcclusion.h"
 
 #include "Component/PrimitiveComponent.h"
-#include "Rendering/StaticMeshData.h"
-#include "Job/FiberJobManager.h"
+#include "Tasks/Tasks.h"
 
 #include <algorithm>
 #include <array>
@@ -1234,7 +1233,7 @@ void FSoftwareOcclusionCuller::Cull(
         const int32 TotalObjects = Objects.Num();
         if (TotalObjects > 0)
         {
-            const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+            const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
             const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
             const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
 
@@ -1253,7 +1252,7 @@ void FSoftwareOcclusionCuller::Cull(
             }
 
             // 절두체 검사 병렬 수행
-            FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
+            Tasks::ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
             {
                 const int32 JobIndex = Start / ChunkSize;
                 TArray<UPrimitiveComponent*>& LocalVisible = WorkerVisibleBuffers[JobIndex];
@@ -1320,7 +1319,7 @@ void FSoftwareOcclusionCuller::Cull(
     else
     {
         const int32 TotalObjects = Objects.Num();
-        const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+        const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
         const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
         const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
 
@@ -1339,7 +1338,7 @@ void FSoftwareOcclusionCuller::Cull(
         }
 
         // 절두체 검사 병렬 수행
-        FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
+        Tasks::ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
         {
             const int32 JobIndex = Start / ChunkSize;
             TArray<uint32>& LocalCandidates = WorkerCandidateBuffers[JobIndex];
@@ -1372,7 +1371,7 @@ void FSoftwareOcclusionCuller::Cull(
         {
             const int32 DistChunkSize = (TotalCandidates + NumWorkers - 1) / NumWorkers;
             // 거리 계산 병렬 수행
-            FFiberJobManager::Get().ParallelFor(TotalCandidates, DistChunkSize, [&](int32 Start, int32 End)
+            Tasks::ParallelFor(TotalCandidates, DistChunkSize, [&](int32 Start, int32 End)
             {
                 for (int32 i = Start; i < End; ++i)
                 {
@@ -1508,13 +1507,14 @@ void FSoftwareOcclusionCuller::Cull(
             UpdateDirtyHZB();
 
             // 가시성 병렬 판정
-            const int32 QueryChunkSize = (TotalCandidates + NumWorkers - 1) / NumWorkers;
+            const uint32 TaskWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
+            const int32 QueryChunkSize = (TotalCandidates + TaskWorkers - 1) / TaskWorkers;
             const bool bUseHierarchy = Settings.Mode != ESoftwareOcclusionMode::LinearSubcells;
 
             std::atomic<uint32> TotalOcclusionTested{ 0 };
             std::atomic<uint32> TotalOcclusionRejected{ 0 };
 
-            FFiberJobManager::Get().ParallelFor(TotalCandidates, QueryChunkSize, [&](int32 Start, int32 End)
+            Tasks::ParallelFor(TotalCandidates, QueryChunkSize, [&](int32 Start, int32 End)
             {
                 uint32 LocalTested = 0;
                 uint32 LocalRejected = 0;
@@ -1589,7 +1589,7 @@ void FSoftwareOcclusionCuller::Cull(
     const int32 TotalObjects = Objects.Num();
     if (TotalObjects > 0)
     {
-        const uint32 NumWorkers = (std::max)(1u, FFiberJobManager::Get().GetNumWorkers());
+        const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
         const int32 ChunkSize = (TotalObjects + NumWorkers - 1) / NumWorkers;
         const int32 NumJobs = (TotalObjects + ChunkSize - 1) / ChunkSize;
 
@@ -1603,7 +1603,7 @@ void FSoftwareOcclusionCuller::Cull(
         }
 
         // 가시성 결과 병렬 수집
-        FFiberJobManager::Get().ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
+        Tasks::ParallelFor(TotalObjects, ChunkSize, [&](int32 Start, int32 End)
         {
             const int32 JobIndex = Start / ChunkSize;
             TArray<UPrimitiveComponent*>& Local = WorkerVisibleBuffers[JobIndex];

@@ -49,7 +49,7 @@ namespace Tasks
 
     private:
         std::atomic<uint32_t> RefCount{ 0 };
-        std::atomic<uint32_t> PrerequisitesCount{ 0 };
+        std::atomic<uint32_t> PrerequisitesCount{ 1 };
         std::atomic<bool> bIsCompleted{ false };
 
         ETaskPriority Priority = ETaskPriority::Normal;

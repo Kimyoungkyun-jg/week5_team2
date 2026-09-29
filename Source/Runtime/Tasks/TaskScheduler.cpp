@@ -109,8 +109,8 @@ bool FTaskScheduler::ExecuteOneTask() {
 
   // 글로벌 큐 인출
   {
-    std::unique_lock<std::mutex> Lock(GlobalQueueMutex, std::try_to_lock);
-    if (Lock.owns_lock() && !GlobalQueue.empty()) {
+    std::unique_lock<std::mutex> Lock(GlobalQueueMutex);
+    if (!GlobalQueue.empty()) {
       TaskToExecute = GlobalQueue.front();
       GlobalQueue.pop_front();
       Lock.unlock();

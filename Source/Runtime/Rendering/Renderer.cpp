@@ -13,12 +13,23 @@
 #include <functional>
 
 
-bool cmp(const FRenderPacket& A, const FRenderPacket& B)
+static bool CompareRenderPackets(const FRenderPacket& A, const FRenderPacket& B)
 {
+	const EPSOType APSO = A.material ? A.material->PSOType : EPSOType::Count;
+	const EPSOType BPSO = B.material ? B.material->PSOType : EPSOType::Count;
+	if (APSO != BPSO)
+		return static_cast<uint8>(APSO) < static_cast<uint8>(BPSO);
+
 	if (A.material != B.material)
 		return std::less<>{}(A.material, B.material);
 
-	return std::less<>{}(A.mesh, B.mesh);
+	if (A.mesh != B.mesh)
+		return std::less<>{}(A.mesh, B.mesh);
+
+	const bool bOpaque = APSO == EPSOType::StaticMesh_Opaque || APSO == EPSOType::StaticMesh_Wireframe;
+	return bOpaque
+		? A.CameraDistanceSquared < B.CameraDistanceSquared
+		: A.CameraDistanceSquared > B.CameraDistanceSquared;
 }
 
 bool FRenderer::Init()
@@ -112,7 +123,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 	EnsureDeferredWorkers();
 
-	sort(InPackets.begin(), InPackets.end(), cmp);
+	sort(InPackets.begin(), InPackets.end(), CompareRenderPackets);
 
 	// 머티리얼 파라미터 사전 일괄 갱신
 	TArray<UMaterial*> UniqueMaterials;

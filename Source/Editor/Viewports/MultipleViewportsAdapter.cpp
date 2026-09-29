@@ -847,6 +847,10 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
         for (int32 k = 0; k < LocalList.Num(); ++k)
         {
             FRenderPacket& Packet = LocalList[k];
+            const float DX = Packet.model.M[3][0] - RenderCamera.Transform.Location.X;
+            const float DY = Packet.model.M[3][1] - RenderCamera.Transform.Location.Y;
+            const float DZ = Packet.model.M[3][2] - RenderCamera.Transform.Location.Z;
+            Packet.CameraDistanceSquared = DX * DX + DY * DY + DZ * DZ;
             const FMatrixRegister Model = FMatrixRegister::Load(Packet.model);
             (Model * VPReg).Store(Packet.MVP);
         }

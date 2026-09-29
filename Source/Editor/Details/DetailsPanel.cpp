@@ -621,9 +621,14 @@ namespace
 			FTransform* Value = static_cast<FTransform*>(ValuePtr);
 
 			ImGui::NewLine();
-			DrawVector3Controller("Location", Value->Location.V, 0.0f, 55.0f);
-			DrawRotatorAsXYZ("Rotation", Value->Rotation);
-			DrawVector3Controller("Scale", Value->Scale.V, 1.0f, 55.0f);
+			bool bChanged = DrawVector3Controller("Location", Value->Location.V, 0.0f, 55.0f);
+			bChanged |= DrawRotatorAsXYZ("Rotation", Value->Rotation);
+			bChanged |= DrawVector3Controller("Scale", Value->Scale.V, 1.0f, 55.0f);
+			if (bChanged)
+			{
+				if (USceneComponent* SceneComponent = Cast<USceneComponent>(Object))
+					SceneComponent->MarkTransformDirty();
+			}
 			break;
 		}
 		case EPropertyType::Object:

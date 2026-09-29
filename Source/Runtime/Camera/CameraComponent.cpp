@@ -20,12 +20,15 @@ void UCameraComponent::TickComponent(float DeltaTime)
 // 키 입력을 카메라의 전방·우측·상방 이동으로 변환한다.
 void UCameraComponent::UpdateMovement(float DeltaTime)
 {
-    if (FInputSystem::IsKeyDown(EKeyCode::W)) Transform.Location += Transform.GetForward() * MoveSpeed * DeltaTime;
-    if (FInputSystem::IsKeyDown(EKeyCode::S)) Transform.Location -= Transform.GetForward() * MoveSpeed * DeltaTime;
-    if (FInputSystem::IsKeyDown(EKeyCode::A)) Transform.Location -= Transform.GetRight() * MoveSpeed * DeltaTime;
-    if (FInputSystem::IsKeyDown(EKeyCode::D)) Transform.Location += Transform.GetRight() * MoveSpeed * DeltaTime;
-    if (FInputSystem::IsKeyDown(EKeyCode::Q)) Transform.Location -= Transform.GetUp() * MoveSpeed * DeltaTime;
-    if (FInputSystem::IsKeyDown(EKeyCode::E)) Transform.Location += Transform.GetUp() * MoveSpeed * DeltaTime;
+    FVector NewLocation = Transform.Location;
+    if (FInputSystem::IsKeyDown(EKeyCode::W)) NewLocation += Transform.GetForward() * MoveSpeed * DeltaTime;
+    if (FInputSystem::IsKeyDown(EKeyCode::S)) NewLocation -= Transform.GetForward() * MoveSpeed * DeltaTime;
+    if (FInputSystem::IsKeyDown(EKeyCode::A)) NewLocation -= Transform.GetRight() * MoveSpeed * DeltaTime;
+    if (FInputSystem::IsKeyDown(EKeyCode::D)) NewLocation += Transform.GetRight() * MoveSpeed * DeltaTime;
+    if (FInputSystem::IsKeyDown(EKeyCode::Q)) NewLocation -= Transform.GetUp() * MoveSpeed * DeltaTime;
+    if (FInputSystem::IsKeyDown(EKeyCode::E)) NewLocation += Transform.GetUp() * MoveSpeed * DeltaTime;
+    if (NewLocation != Transform.Location)
+        SetRelativeLocation(NewLocation);
 }
 
 // 우클릭 중 마우스 변화량을 Euler Pitch·Yaw에 적용한다.
@@ -33,8 +36,14 @@ void UCameraComponent::UpdateRotation(float DeltaTime)
 {
     if (!FInputSystem::IsMouseDown(EMouseButton::Right)) return;
 
-    Transform.Rotation.Pitch += FInputSystem::GetMouseDeltaY() * MouseSensitivity;
-    Transform.Rotation.Yaw += FInputSystem::GetMouseDeltaX() * MouseSensitivity;
+    const float PitchDelta = FInputSystem::GetMouseDeltaY() * MouseSensitivity;
+    const float YawDelta = FInputSystem::GetMouseDeltaX() * MouseSensitivity;
+    if (PitchDelta == 0.0f && YawDelta == 0.0f) return;
+
+    FRotator NewRotation = Transform.Rotation;
+    NewRotation.Pitch += PitchDelta;
+    NewRotation.Yaw += YawDelta;
+    SetRelativeRotation(NewRotation);
 }
 
 // 휠 입력으로 원근 이동 또는 직교 폭을 조절한다.
@@ -43,7 +52,7 @@ void UCameraComponent::UpdateZoom(float DeltaTime)
     int32 WheelDelta = FInputSystem::GetWheelDelta();
     if (WheelDelta == 0) return;
 
-    Transform.Location += Transform.GetForward() * WheelSpeed * WheelDelta * DeltaTime;
+    SetRelativeLocation(Transform.Location + Transform.GetForward() * WheelSpeed * static_cast<float>(WheelDelta) * DeltaTime);
 }
 
 

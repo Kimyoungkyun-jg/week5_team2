@@ -12,23 +12,36 @@
 #include <algorithm>
 #include <functional>
 
-static bool CompareRenderPackets(const FRenderPacket& A, const FRenderPacket& B)
+namespace
 {
-	const EPSOType APSO = A.material ? A.material->PSOType : EPSOType::Count;
-	const EPSOType BPSO = B.material ? B.material->PSOType : EPSOType::Count;
-	if (APSO != BPSO)
-		return static_cast<uint8>(APSO) < static_cast<uint8>(BPSO);
+	EPSOType GetPacketPSO(const FRenderPacket& Packet)
+	{
+		return Packet.material ? Packet.material->PSOType : EPSOType::Count;
+	}
 
-	if (A.material != B.material)
-		return std::less<>{}(A.material, B.material);
+	bool IsOpaquePSO(const EPSOType PSO)
+	{
+		return PSO == EPSOType::StaticMesh_Opaque || PSO == EPSOType::StaticMesh_Wireframe;
+	}
 
-	if (A.mesh != B.mesh)
-		return std::less<>{}(A.mesh, B.mesh);
+	bool CompareStateThenDepth(const FRenderPacket& A, const FRenderPacket& B)
+	{
+		const EPSOType APSO = GetPacketPSO(A);
+		const EPSOType BPSO = GetPacketPSO(B);
+		if (APSO != BPSO)
+			return static_cast<uint8>(APSO) < static_cast<uint8>(BPSO);
 
-	const bool bOpaque = APSO == EPSOType::StaticMesh_Opaque || APSO == EPSOType::StaticMesh_Wireframe;
-	return bOpaque
-		? A.CameraDistanceSquared < B.CameraDistanceSquared
-		: A.CameraDistanceSquared > B.CameraDistanceSquared;
+		if (A.material != B.material)
+			return std::less<>{}(A.material, B.material);
+
+		if (A.mesh != B.mesh)
+			return std::less<>{}(A.mesh, B.mesh);
+
+		return IsOpaquePSO(APSO)
+			? A.CameraDistanceSquared < B.CameraDistanceSquared
+			: A.CameraDistanceSquared > B.CameraDistanceSquared;
+	}
+
 }
 
 bool FRenderer::Init()
@@ -98,7 +111,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 	EnsureDeferredWorkers();
 
-	sort(InPackets.begin(), InPackets.end(), CompareRenderPackets);
+	std::sort(InPackets.begin(), InPackets.end(), CompareStateThenDepth);
 
 	// 머티리얼 파라미터 사전 일괄 갱신
 	TArray<UMaterial*> UniqueMaterials;
@@ -122,6 +135,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 	{
 		const UStaticMesh* LastMesh = nullptr;
 		const UMaterial* LastMaterial = nullptr;
+		EPSOType LastPSO = EPSOType::Count;
 
 		void* MappedData = RenderCommand::MapBufferWriteDiscard(Temp.get());
 		assert(MappedData);
@@ -157,8 +171,10 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 			if (LastMaterial != RenderPacket.material)
 			{
-				BindMaterial(RenderPacket.material);
+				const bool bPSOChanged = LastPSO != RenderPacket.material->PSOType;
+				BindMaterial(RenderPacket.material, nullptr, bPSOChanged);
 				LastMaterial = RenderPacket.material;
+				LastPSO = RenderPacket.material->PSOType;
 			}
 
 			const uint32 FirstConstant = i * (PerObjectSlotSize / 16);
@@ -210,6 +226,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 		const UStaticMesh* LastMesh  = nullptr;
 		const UMaterial* LastMaterial = nullptr;
+		EPSOType LastPSO = EPSOType::Count;
 
 		assert(static_cast<uint32>(End - Start) * PerObjectSlotSize <= WorkerCB->GetBufferSize());
 
@@ -247,8 +264,10 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 				if (LastMaterial != RenderPacket.material)
 				{
-					BindMaterial(RenderPacket.material, Context);
+					const bool bPSOChanged = LastPSO != RenderPacket.material->PSOType;
+					BindMaterial(RenderPacket.material, Context, bPSOChanged);
 					LastMaterial = RenderPacket.material;
+					LastPSO = RenderPacket.material->PSOType;
 				}
 
 				const uint32 LocalIndex = i - Start;
@@ -307,9 +326,10 @@ void FRenderer::DrawPackets(uint32 Begin, uint32 End, const FMatrix& ViewProject
 }
 
 // 머티리얼 바인딩
-void FRenderer::BindMaterial(UMaterial* material, ID3D11DeviceContext* Context)
+void FRenderer::BindMaterial(UMaterial* material, ID3D11DeviceContext* Context, const bool bBindPipelineState)
 {
-	RenderCommand::BindPipelineState(FRenderResourceManager::GetPSO(material->PSOType), Context);
+	if (bBindPipelineState)
+		RenderCommand::BindPipelineState(FRenderResourceManager::GetPSO(material->PSOType), Context);
 	for (int i = 0; i < material->Textures.size(); i++)
 	{
 		RenderCommand::BindShaderResource(i, material->Textures[i], EShaderBindFlagBits::Pixel, Context);

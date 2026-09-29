@@ -19,6 +19,8 @@ public:
 	virtual bool LineTraceComponent(const FRay& WorldRay, FHitResult& OutHit) override;
 	// 클릭한 View의 실제 렌더 행렬로 Quad Mesh 교차를 판정한다.
 	bool LineTraceComponentForView(const FRay& WorldRay, FHitResult& OutHit, const FMatrix& BillboardWorldMatrix);
+	// 피킹 루프가 종류를 구분하지 않도록, View별 행렬 선택을 Billboard가 스스로 처리한다.
+	virtual bool LineTraceWithContext(const FTraceContext& Context, FHitResult& OutHit) override;
 
 	virtual int32 GetNumMaterials() const override { return 1; }
 	virtual UMaterial* GetMaterial(int32 SlotIndex) const override { return SlotIndex == 0 ? Material : nullptr; }

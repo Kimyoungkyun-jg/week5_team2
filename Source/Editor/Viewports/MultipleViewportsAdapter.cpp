@@ -881,13 +881,15 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
     FHitResult Hit;
     bool bHit = false;
 
+    SoftwareOcclusion.GatherRayCandidates(Ray, RenderObjects, PickCandidates);
+
     // 충돌 검사 시간 측정
     if (FStatOverlay::IsEnabled(EStatFlags::Picking))
     {  
         
         FScopeCycleCounter PickCounter;
         
-        bHit = World.LineTraceSingle(Ray, Hit, VisiblePrimitives[0],ResolveBillboardTransform, this);
+        bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
 
         const uint64 PickCycles = PickCounter.Finish();
         const double PickTimeMs = FPlatformTime::ToMilliseconds(PickCycles);
@@ -896,7 +898,7 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
     }
     else
     {
-        bHit = World.LineTraceSingle(Ray, Hit, VisiblePrimitives[0],ResolveBillboardTransform, this);
+        bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
     }
 
     if (bHit)

@@ -152,6 +152,7 @@ private:
     TArray<FParticleSortInput> SortInputs;
     TArray<ObjectId> SortedParticleIds;
     TArray<UPrimitiveComponent*> VisiblePrimitives[4];
+    TArray<FLineTraceCandidate> PickCandidates;
     FSoftwareOcclusionCuller SoftwareOcclusion;
     FSoftwareOcclusionStats OcclusionStats[4]{};
     bool bCapturedBillboard = false;

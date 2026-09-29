@@ -779,6 +779,7 @@ void FMultipleViewportsAdapter::BuildRenderQueue(
       IsViewWireframe(ViewIndex),
       VisiblePrimitives[ViewIndex],
       OcclusionStats[ViewIndex]);
+
   for (UPrimitiveComponent *Primitive : VisiblePrimitives[ViewIndex]) {
     if (Primitive) {
       Primitive->SubmitToRenderQueue(OutQueue);
@@ -794,6 +795,7 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
     if (!IsViewActive(ViewIndex)) return;
     const PreparedView& View = PrepareView(ViewIndex);
     const FViewCamera RenderCamera = GetRenderCamera(ViewIndex);
+   
     SoftwareOcclusion.Cull(
         ViewIndex,
         RenderObjects,

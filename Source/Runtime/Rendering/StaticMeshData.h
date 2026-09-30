@@ -88,6 +88,14 @@ struct FMeshPickingBVHNode
 	bool bLeaf = false;
 };
 
+// 피킹 전용 삼각형. 세 꼭짓점 위치만 BVH 리프 순서로 연속 저장해 정밀 검사 때 인덱스·정점 간접 참조를 없앤다.
+struct FPickingTriangle
+{
+	FVector V0;
+	FVector V1;
+	FVector V2;
+};
+
 struct FStaticMeshData
 {
 	TArray<FVertexPNCT> Vertices;
@@ -99,12 +107,15 @@ struct FStaticMeshData
 	// 동일 Mesh를 사용하는 모든 Component가 공유한다. 첫 정밀 피킹 때 한 번만 구축한다.
 	mutable TArray<uint32> PickingTriangleIndices;
 	mutable TArray<FMeshPickingBVHNode> PickingBVHNodes;
+	// PickingTriangleIndices와 같은 순서(BVH 리프 순서)의 삼각형 위치. BVH 리프 검사는 이 배열만 읽는다.
+	mutable TArray<FPickingTriangle> PickingTriangles;
 	mutable bool bPickingBVHBuilt = false;
 
 	void InvalidatePickingBVH()
 	{
 		PickingTriangleIndices.Reset();
 		PickingBVHNodes.Reset();
+		PickingTriangles.Reset();
 		bPickingBVHBuilt = false;
 	}
 

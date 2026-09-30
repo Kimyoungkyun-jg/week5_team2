@@ -241,6 +241,15 @@ void EnsurePickingBVH(const FStaticMeshData& Mesh)
 			BuildData.Centroids.push_back(GetTriangleCentroid(Mesh, TriangleIndex));
 		}
 		BuildPickingBVHNode(Mesh, BuildData, 0, TriangleCount);
+
+		// 리프 순서가 된 삼각형 목록을 따라 위치만 연속 저장한다 (렌더링용 Vertices/Indices는 그대로)
+		Mesh.PickingTriangles.Reset();
+		Mesh.PickingTriangles.Reserve(TriangleCount);
+		for (const uint32 TriangleIndex : Mesh.PickingTriangleIndices)
+		{
+			const uint32 FirstIndex = TriangleIndex * 3;
+			Mesh.PickingTriangles.Add({Mesh.Vertices[Mesh.Indices[FirstIndex]].Position, Mesh.Vertices[Mesh.Indices[FirstIndex + 1]].Position, Mesh.Vertices[Mesh.Indices[FirstIndex + 2]].Position});
+		}
 	}
 	Mesh.bPickingBVHBuilt = true;
 }
@@ -259,6 +268,17 @@ void TraceTriangle(const FRay& Ray, const FStaticMeshData& Mesh, const uint32 Tr
 	}
 }
 
+// 피킹 사본의 삼각형을 검사한다. 기존 TraceTriangle과 같은 판정이며 인덱스·정점 배열을 거치지 않는다.
+void TraceTriangle(const FRay& Ray, const FPickingTriangle& Triangle, float& InOutNearestT, bool& bInOutHit)
+{
+	float T = FLT_MAX;
+	if (RayIntersectsTriangle(Ray, Triangle.V0, Triangle.V1, Triangle.V2, T) && T < InOutNearestT)
+	{
+		InOutNearestT = T;
+		bInOutHit = true;
+	}
+}
+
 // NodeDistance는 부모(또는 루트 검사)가 이미 구한 이 노드의 박스 진입 거리다. 박스를 다시 검사하지 않는다.
 void TracePickingBVHNode(const FTraceContext& Context, const FStaticMeshData& Mesh, const uint32 NodeIndex, const float NodeDistance, float& InOutNearestT, bool& bInOutHit)
 {
@@ -269,7 +289,7 @@ void TracePickingBVHNode(const FTraceContext& Context, const FStaticMeshData& Me
 	if (Node.bLeaf)
 	{
 		for (uint32 Offset = 0; Offset < Node.Count; ++Offset)
-			TraceTriangle(Context.Ray, Mesh, Mesh.PickingTriangleIndices[Node.First + Offset], InOutNearestT, bInOutHit);
+			TraceTriangle(Context.Ray, Mesh.PickingTriangles[Node.First + Offset], InOutNearestT, bInOutHit);
 		return;
 	}
 

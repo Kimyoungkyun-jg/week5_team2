@@ -19,7 +19,13 @@ UMaterial* UStaticMesh::GetMaterial(uint32 SlotIndex) const
 	if (SlotIndex < Materials.size() && Materials[SlotIndex]) {
 		return Materials[SlotIndex];
 	}
-	return UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial");
+	// 기본 재질 캐시
+	static UMaterial* CachedDefaultMaterial = nullptr;
+	if (!CachedDefaultMaterial)
+	{
+		CachedDefaultMaterial = UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial");
+	}
+	return CachedDefaultMaterial;
 }
 
 FIndexBuffer* UStaticMesh::GetIndexBuffer(uint8 LODIndex) const

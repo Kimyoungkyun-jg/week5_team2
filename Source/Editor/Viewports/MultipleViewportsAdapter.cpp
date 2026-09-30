@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstring>
 
 namespace {
 constexpr float Pi = 3.14159265358979323846f;
@@ -492,18 +493,71 @@ void FMultipleViewportsAdapter::UpdateInput(const float DeltaTime,
 void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
 	FStatScope CaptureScope(StatIds::CaptureWorld());
     const auto& Primitives = World.GetWorldPrimitiveComponents();
-    RenderObjects.Reset();
     bCapturedBillboard = false;
     bCapturedParticle = false;
 
     const int32 TotalPrimitives = Primitives.Num();
     if (TotalPrimitives <= 0)
     {
+        RenderObjects.Reset();
         SoftwareOcclusion.SynchronizeObjects(RenderObjects);
         return;
     }
 
     const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
+
+    // 씬 구성 일치 검사
+    bool bTopologyMatch = (!RenderObjects.IsEmpty());
+    if (bTopologyMatch)
+    {
+        int32 RenderObjIdx = 0;
+        for (int32 i = 0; i < TotalPrimitives; ++i)
+        {
+            UPrimitiveComponent* Prim = Primitives[i].Get();
+            if (!Prim || !Prim->IsVisible())
+            {
+                continue;
+            }
+            if (RenderObjIdx >= RenderObjects.Num() || RenderObjects[RenderObjIdx].Primitive != Prim)
+            {
+                bTopologyMatch = false;
+                break;
+            }
+            ++RenderObjIdx;
+        }
+        if (RenderObjIdx != RenderObjects.Num())
+        {
+            bTopologyMatch = false;
+        }
+    }
+
+    // 변경 없는 정적 객체 재사용
+    if (bTopologyMatch)
+    {
+        const int32 ObjectCount = RenderObjects.Num();
+        const int32 FastChunkSize = (ObjectCount + NumWorkers - 1) / NumWorkers;
+
+        Tasks::ParallelFor(ObjectCount, FastChunkSize, [&](int32 Start, int32 End)
+        {
+            for (int32 Index = Start; Index < End; ++Index)
+            {
+                FRenderableObject& Object = RenderObjects[Index];
+                const uint64 CurrentRevision = Object.Primitive->GetBoundsRevision();
+                if (Object.BoundsRevision != CurrentRevision)
+                {
+                    // 변형된 객체만 갱신
+                    Object.WorldMatrix = Object.Primitive->GetWorldMatrix();
+                    Object.WorldBounds = MakeWorldBounds(Object.Primitive->GetWorldBounds());
+                    Object.BoundsRevision = CurrentRevision;
+                }
+            }
+        });
+
+        SoftwareOcclusion.SynchronizeObjects(RenderObjects);
+        return;
+    }
+
+    RenderObjects.Reset();
     const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
     const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
 
@@ -515,6 +569,8 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
     {
         WorkerRenderObjectBuffers[i].Reset();
     }
+
+    const UClass* StaticMeshClass = UStaticMeshComponent::StaticClass();
 
     // 컴포넌트 정보 병렬 수집
     Tasks::ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
@@ -536,8 +592,9 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
             RenderObject.WorldBounds = MakeWorldBounds(Primitive->GetWorldBounds());
             RenderObject.BoundsRevision = Primitive->GetBoundsRevision();
 
-            if (UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(Primitive))
+            if (Primitive->GetClass() == StaticMeshClass)
             {
+                auto* StaticMeshComponent = static_cast<UStaticMeshComponent*>(Primitive);
                 RenderObject.StaticMeshData = StaticMeshComponent->GetMeshData();
                 RenderObject.bCanBeOccluded = RenderObject.StaticMeshData != nullptr &&
                     !RenderObject.StaticMeshData->Vertices.IsEmpty() && !RenderObject.StaticMeshData->Indices.IsEmpty();
@@ -834,12 +891,14 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
     }
 
     const TArray<uint8>& VisibleLODs = SoftwareOcclusion.GetVisibleLODs(ViewIndex);
+    const bool bVisibleLODsEmpty = VisibleLODs.IsEmpty();
+    const UClass* StaticMeshClass = UStaticMeshComponent::StaticClass();
 
     Tasks::ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
     {
         const int32 JobIndex = Start / ChunkSize;
         TArray<FRenderPacket>& LocalList = WorkerPacketBuffers[JobIndex];
-        LocalList.Reserve(End - Start);
+        LocalList.Reserve((End - Start) * 2);
 
         for (int32 i = Start; i < End; ++i)
         {
@@ -847,13 +906,14 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
             if (Primitive)
             {
                 uint8 TargetLOD = (i < VisibleLODs.Num()) ? VisibleLODs[i] : 0;
-                if (UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(Primitive))
+                if (Primitive->GetClass() == StaticMeshClass)
                 {
+                    auto* SMC = static_cast<UStaticMeshComponent*>(Primitive);
                     if (SMC->GetForcedLOD() >= 0)
                     {
                         TargetLOD = static_cast<uint8>(SMC->GetForcedLOD());
                     }
-                    else if (TargetLOD == 0 && VisibleLODs.IsEmpty())
+                    else if (TargetLOD == 0 && bVisibleLODsEmpty)
                     {
                         const float Dist = (std::max)(1.0f, FVector::Distance(RenderCamera.Transform.Location, SMC->GetWorldLocation()));
                         const FBox Bounds = SMC->GetWorldBounds();
@@ -910,10 +970,16 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
         TotalPacketCount += WorkerPacketBuffers[j].Num();
     }
 
-    OutPackets.Reserve(TotalPacketCount);
+    OutPackets.SetNum(TotalPacketCount, false);
+    int32 DstOffset = 0;
     for (int32 j = 0; j < NumJobs; ++j)
     {
-        OutPackets.Append(WorkerPacketBuffers[j]);
+        const int32 Count = WorkerPacketBuffers[j].Num();
+        if (Count > 0)
+        {
+            std::memcpy(OutPackets.GetData() + DstOffset, WorkerPacketBuffers[j].GetData(), sizeof(FRenderPacket) * Count);
+            DstOffset += Count;
+        }
     }
 
     OcclusionStats[ViewIndex].RenderPackets = OutPackets.Num();

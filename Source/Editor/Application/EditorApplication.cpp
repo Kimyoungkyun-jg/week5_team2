@@ -198,6 +198,7 @@ bool FEditorApplication::BeginFrame(float &OutDeltaTime) {
   EngineTimer::Tick();
   OutDeltaTime = EngineTimer::GetDeltaTime();
   FStats::BeginFrame();
+  Tasks::FTaskScheduler::Get().BeginFrame();
   FStatOverlay::Tick(OutDeltaTime);
   EditorControlsPanel->FEditorControlsPanel::DeltaTime = OutDeltaTime;
   FInputSystem::UpdateInputStates();

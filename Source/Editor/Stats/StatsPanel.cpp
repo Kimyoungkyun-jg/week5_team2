@@ -5,6 +5,7 @@
 #include <format>
 #include "Core/StatDefinitions.h"
 #include "Rendering/GPUProfiler.h"
+#include "Tasks/TaskScheduler.h"
 
 namespace
 {
@@ -149,6 +150,44 @@ void FStatsPanel::OnRender()
 		{StatIds::GpuGrid(), "Next: grid on/off comparison"},
 		{StatIds::GpuEditor(), "Next: bounds / outline / gizmo on/off"}
 	});
+
+	// 스레드별 작업 통계 출력
+	std::vector<Tasks::FThreadExecutionStats> ThreadStats;
+	Tasks::FTaskScheduler::Get().GetThreadStats(ThreadStats);
+	if (!ThreadStats.empty())
+	{
+		ImGui::Dummy(ImVec2(0.0f, 10.0f));
+		ImGui::SeparatorText("Worker Thread Activity");
+		ImGui::Dummy(ImVec2(0.0f, 4.0f));
+		if (ImGui::BeginTable("##ThreadActivity", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableSetupColumn("Thread", ImGuiTableColumnFlags_WidthStretch, 2.0f);
+			ImGui::TableSetupColumn("Tasks Executed");
+			ImGui::TableSetupColumn("Busy Time");
+			ImGui::TableHeadersRow();
+
+			for (const auto& Stat : ThreadStats)
+			{
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				if (Stat.WorkerIndex < 0)
+				{
+					ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Main Thread");
+				}
+				else
+				{
+					ImGui::Text("Worker #%d", Stat.WorkerIndex);
+				}
+
+				ImGui::TableSetColumnIndex(1);
+				ImGui::Text("%u", Stat.TasksExecuted);
+
+				ImGui::TableSetColumnIndex(2);
+				ImGui::Text("%.3f ms", Stat.BusyMs);
+			}
+			ImGui::EndTable();
+		}
+	}
 
 	const TArray<FStatRecord>& Records = FStats::GetRecords();
 

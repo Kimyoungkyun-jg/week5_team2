@@ -158,6 +158,24 @@ FQuat MakeCameraRotation(const float YawDegrees, const float PitchDegrees) {
           CosPitch * CosYaw};
 }
 
+// 피킹 BVH 순회 중 후보마다 World 정밀 검사를 호출하고 Narrow 시간·횟수를 누적한다.
+struct FPickTraceState {
+  UWorld *World = nullptr;
+  FHitResult *Hit = nullptr;
+  bool bTimeNarrow = false;
+  uint64 NarrowCycles = 0;
+  int32 NarrowTests = 0;
+};
+
+void TracePickCandidate(FTraceContext &Context, UPrimitiveComponent *Primitive, void *UserContext) {
+  FPickTraceState &State = *static_cast<FPickTraceState *>(UserContext);
+  const uint64 StartCycles = State.bTimeNarrow ? FPlatformTime::Cycles64() : 0;
+  State.World->LineTraceCandidate(Context, Primitive, *State.Hit);
+  if (State.bTimeNarrow)
+    State.NarrowCycles += FPlatformTime::Cycles64() - StartCycles;
+  ++State.NarrowTests;
+}
+
 } // namespace
 
 // 메인 카메라 투영값을 공유하고 네 View의 기본 프리셋 상태를 만든다.
@@ -1010,11 +1028,11 @@ void FMultipleViewportsAdapter::AppendSoftwareOcclusionDebugBounds(FLineBatcher&
 FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosition, UWorld& World)
 {
     LastPick = {};
-    LastPickObjectCount = RenderObjects.Num();
+    LastPickObjectCount = World.GetWorldPrimitiveComponents().Num();
 
     FRay Ray{};
-    if (!TryGetActiveViewRay(LocalMousePosition, Ray)) return LastPick;
 
+    if (!TryGetActiveViewRay(LocalMousePosition, Ray)) return LastPick;
     // 렌더와 같은 함수로 각 Billboard의 위치·크기에 맞는 View 행렬을 만든다.
 	const auto ResolveBillboardTransform = [](const UBillboardComponent& Billboard, const void* Context) -> FMatrix
 	{
@@ -1028,17 +1046,19 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
 	{
 		{
 			FStatScope TotalScope(StatIds::PickingTotal());
-			{
-				FStatScope BroadScope(StatIds::PickingBroad());
-				SoftwareOcclusion.GatherRayCandidates(Ray, RenderObjects, PickCandidates);
-			}
+			// 클릭당 한 번: 레이 역수, 최근접 거리, Billboard 행렬 공급자를 한 곳에 모은다
+			FTraceContext Context = MakeTraceContext(Ray, ResolveBillboardTransform, this);
+			FPickTraceState TraceState{&World, &Hit, FStats::IsEnabled(StatIds::PickingNarrow()) || FStats::IsEnabled(StatIds::PickingBroad())};
+			const uint64 TraceStartCycles = FPlatformTime::Cycles64();
+			// Broad(World BVH 순회)와 Narrow(정밀 검사)가 번갈아 실행되므로 Narrow 누적 시간을 빼서 Broad를 기록한다
+			World.TraceLineClosest(Context, TracePickCandidate, &TraceState);
+			const uint64 TraceCycles = FPlatformTime::Cycles64() - TraceStartCycles;
+			bHit = Hit.HitComponent != nullptr;
 
-			LastPickCandidateCount = PickCandidates.Num();
+			LastPickCandidateCount = TraceState.NarrowTests;
 			FStats::RecordEvent(StatIds::PickCandidates(), LastPickCandidateCount);
-			{
-				FStatScope NarrowScope(StatIds::PickingNarrow());
-				bHit = World.LineTraceSingle(Ray, Hit, PickCandidates, ResolveBillboardTransform, this);
-			}
+			FStats::RecordEvent(StatIds::PickingBroad(), FPlatformTime::ToMilliseconds(TraceCycles - TraceState.NarrowCycles));
+			FStats::RecordEvent(StatIds::PickingNarrow(), FPlatformTime::ToMilliseconds(TraceState.NarrowCycles));
 		}
 	}
 

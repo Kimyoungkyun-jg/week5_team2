@@ -19,9 +19,19 @@ namespace
 {
 	// OBJ (오른손, Y-Up) → 엔진 (왼손, X-Forward, Y-Right, Z-Up)
 	// 삼각형 winding도 함께 뒤집어야 한다
-	FVector ToEngine(const FVector& V)
+	FVector ToEngine(const FVector& V, EObjAxisPreset Preset)
 	{
-		return FVector(-V.Z, V.X, V.Y);
+		switch (Preset)
+		{
+		case EObjAxisPreset::Default:
+			return FVector(-V.Z, V.X, V.Y);
+
+		case EObjAxisPreset::ZUp:
+			return FVector(V.Y, V.X, V.Z);
+
+		default:
+			return FVector(-V.Z, V.X, V.Y);
+		}
 	}
 
 	bool ParseInt(FStringView Str, int32& Out)
@@ -378,7 +388,7 @@ bool FObjImporter::ParseObj(const FString& Path, FObjInfo& Out)
 	return true;
 }
 
-bool FObjImporter::Cook(const FObjInfo& Raw, FStaticMeshData& Out)
+bool FObjImporter::Cook(const FObjInfo& Raw, FStaticMeshData& Out, EObjAxisPreset Preset)
 {
 	FStaticMeshData Cooked;
 
@@ -423,16 +433,16 @@ bool FObjImporter::Cook(const FObjInfo& Raw, FStaticMeshData& Out)
 				Corners.Add(static_cast<uint32>(NewIndex));
 
 				FVertexPNCT Vertex;
-				Vertex.Position = ToEngine(Raw.Positions[RawIndex.PositionIndex]);
+				Vertex.Position = ToEngine(Raw.Positions[RawIndex.PositionIndex], Preset);
 				if (RawIndex.NormalIndex >= 0)
 				{
-					Vertex.Normal = ToEngine(Raw.Normals[RawIndex.NormalIndex]);
+					Vertex.Normal = ToEngine(Raw.Normals[RawIndex.NormalIndex], Preset);
 				}
 				else // face normal
 				{
 					if (!bHasFaceNormal)
 					{
-						FaceNormal = ToEngine(GetFaceNormal(Face, Raw.Positions));
+						FaceNormal = ToEngine(GetFaceNormal(Face, Raw.Positions), Preset);
 						bHasFaceNormal = true;
 					}
 					Vertex.Normal = FaceNormal;
@@ -487,12 +497,12 @@ bool FObjImporter::Cook(const FObjInfo& Raw, FStaticMeshData& Out)
 	return true;
 }
 
-TUniquePtr<FStaticMeshData> FObjImporter::LoadStaticMeshData(const FString& Path)
+TUniquePtr<FStaticMeshData> FObjImporter::LoadStaticMeshData(const FString& Path, EObjAxisPreset& Preset)
 {
 	const FString BinPath = Path + ".bin";
 
 	// .bin 파일 읽기
-	if (TUniquePtr<FStaticMeshData> Baked = FStaticMeshBake::ReadBaked(BinPath))
+	if (TUniquePtr<FStaticMeshData> Baked = FStaticMeshBake::ReadBaked(BinPath, Preset))
 	{
 		return Baked;
 	}
@@ -500,12 +510,12 @@ TUniquePtr<FStaticMeshData> FObjImporter::LoadStaticMeshData(const FString& Path
 	FObjInfo Info;
 	TUniquePtr<FStaticMeshData> Data = MakeUnique<FStaticMeshData>();
 
-	if (!ParseObj(Path, Info) || !Cook(Info, *Data))
+	if (!ParseObj(Path, Info) || !Cook(Info, *Data, Preset))
 	{
 		return nullptr;
 	}
 
-	FStaticMeshBake::WriteBaked(BinPath, *Data);
+	FStaticMeshBake::WriteBaked(BinPath, *Data, Preset);
 	return Data;
 }
 

@@ -71,6 +71,7 @@ public:
 	UTexture2D* LoadTexture(const FString& InPath);
 	UFont* LoadFontAtlas(const FString& JsonPath, const FString& AtlasTexturePath);
 	static UStaticMesh* LoadObjStaticMesh(const FString& Path);
+	static bool ReimportStaticMesh(UStaticMesh* Mesh);
 
 private:
 	// Assets 폴더 기준 상대 경로(Key) → 실제 파일 경로

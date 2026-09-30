@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <vector>
 #include <format>
+#include <cmath>
 #include "Core/StatDefinitions.h"
 #include "Rendering/GPUProfiler.h"
 #include "Tasks/TaskScheduler.h"
@@ -16,74 +17,134 @@ namespace
 		ImGui::PopStyleColor();
 	}
 
-	struct FCostRow
+	bool IsSimilarCost(double A, double B)
 	{
-		FStatId Id;
-		const char* Hint;
-	};
+		return std::abs(A - B) <= (std::max)(0.05, 0.1 * (std::max)(A, B));
+	}
+}
 
-	void DrawCostBreakdown(const char* Title, std::vector<FCostRow> Rows)
+void FStatsPanel::DrawCostBreakdown(size_t GroupIndex, const char* Title, const std::vector<FCostRow>& Rows)
+{
+	FCostGroup& Group = CostGroups[GroupIndex];
+	const double Now = ImGui::GetTime();
+	const bool bStartFresh = Group.Costs.size() != Rows.size()
+		|| (Group.LastObserved >= 0.0 && Now - Group.LastObserved > 1.0);
+	if (bStartFresh)
 	{
-		ImGui::Dummy(ImVec2(0.0f, 10.0f));
-		ImGui::SeparatorText(Title);
-		ImGui::Dummy(ImVec2(0.0f, 6.0f));
-		const auto HasRecentSample = [](FStatId Id)
+		Group = {};
+		Group.Costs.resize(Rows.size());
+		for (size_t Index = 0; Index < Rows.size(); ++Index)
 		{
-			const FStatRecord& R = FStats::GetRecord(Id);
-			return R.bEnabled && R.SampleCount > 0 && FStats::GetFrameNumber() - R.LastSampleFrame <= 2;
-		};
-		std::sort(Rows.begin(), Rows.end(), [&](const FCostRow& A, const FCostRow& B)
-		{
-			const double Left = HasRecentSample(A.Id) ? FStats::GetRecord(A.Id).CurrentValue : -1.0;
-			const double Right = HasRecentSample(B.Id) ? FStats::GetRecord(B.Id).CurrentValue : -1.0;
-			return Left > Right;
-		});
-		const double Largest = HasRecentSample(Rows.front().Id) ? FStats::GetRecord(Rows.front().Id).CurrentValue : 0.0;
-		const auto RecentCount = std::count_if(Rows.begin(), Rows.end(), [&](const FCostRow& Row)
-		{
-			return HasRecentSample(Row.Id);
-		});
-		if (Largest > 0.0)
-		{
-			ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered), "BOTTLENECK CANDIDATE (Last)");
-			ImGui::TextWrapped("%s  |  %.3f ms", FStats::GetRecord(Rows.front().Id).Desc.Name.c_str(), Largest);
-			DrawNote(Rows.front().Hint);
+			Group.Order.push_back(Index);
+			const FStatRecord& Record = FStats::GetRecord(Rows[Index].Id);
+			Group.Costs[Index].LastCount = Record.SampleCount;
+			Group.Costs[Index].LastTotal = Record.TotalValue;
 		}
-		else
-			DrawNote(RecentCount > 0 ? "Measured cost: 0 ms" : "No recent samples");
-		if (static_cast<size_t>(RecentCount) < Rows.size())
-			ImGui::TextDisabled("Measured stages: %d / %d", static_cast<int>(RecentCount), static_cast<int>(Rows.size()));
-		ImGui::Dummy(ImVec2(0.0f, 4.0f));
-		ImGui::PushID(Title);
-		if (!ImGui::TreeNode("Stage details"))
+	}
+	Group.LastObserved = Now;
+	for (size_t Index = 0; Index < Rows.size(); ++Index)
+	{
+		FRecentCost& Cost = Group.Costs[Index];
+		const FStatRecord& Record = FStats::GetRecord(Rows[Index].Id);
+		if (!FStats::IsEnabled(Rows[Index].Id) || Record.SampleCount < Cost.LastCount)
 		{
-			ImGui::PopID();
-			return;
+			Cost = {};
+			Cost.LastCount = Record.SampleCount;
+			Cost.LastTotal = Record.TotalValue;
 		}
+		// Include all new calls, including multiple views and delayed GPU results.
+		if (Record.SampleCount > Cost.LastCount)
+		{
+			const double Total = Record.TotalValue - Cost.LastTotal;
+			const uint64 Count = Record.SampleCount - Cost.LastCount;
+			Cost.Samples.push_back({Now, Total, Count});
+			Cost.Total += Total;
+			Cost.Count += Count;
+			Cost.LastCount = Record.SampleCount;
+			Cost.LastTotal = Record.TotalValue;
+		}
+		while (!Cost.Samples.empty() && Now - Cost.Samples.front().Time >= 1.0)
+		{
+			Cost.Total -= Cost.Samples.front().Total;
+			Cost.Count -= Cost.Samples.front().Count;
+			Cost.Samples.pop_front();
+		}
+	}
+	if (Group.LastRefresh < 0.0 || Now - Group.LastRefresh >= 0.5)
+	{
+		Group.LastRefresh = Now;
+		for (FRecentCost& Cost : Group.Costs)
+			Cost.DisplayAverage = Cost.Count > 0 ? (std::max)(0.0, Cost.Total / Cost.Count) : -1.0;
+
+		// Hysteresis is not a strict ordering. Move adjacent rows instead of using std::sort.
+		for (size_t Index = 1; Index < Group.Order.size(); ++Index)
+		{
+			for (size_t Position = Index; Position > 0; --Position)
+			{
+				const double Left = Group.Costs[Group.Order[Position - 1]].DisplayAverage;
+				const double Right = Group.Costs[Group.Order[Position]].DisplayAverage;
+				if (Right < 0.0 || (Left >= 0.0 && (Right <= Left || IsSimilarCost(Left, Right))))
+					break;
+				std::swap(Group.Order[Position - 1], Group.Order[Position]);
+			}
+		}
+	}
+
+	double Largest = -1.0;
+	int RecentCount = 0;
+	for (const FRecentCost& Cost : Group.Costs)
+	{
+		Largest = (std::max)(Largest, Cost.DisplayAverage);
+		RecentCount += Cost.DisplayAverage >= 0.0 ? 1 : 0;
+	}
+	ImGui::Dummy(ImVec2(0.0f, 10.0f));
+	ImGui::SeparatorText(Title);
+	ImGui::Dummy(ImVec2(0.0f, 6.0f));
+	if (Largest > 0.0)
+	{
+		ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered), "TOP CANDIDATES (1s avg)");
+		for (const size_t Index : Group.Order)
+		{
+			const double Average = Group.Costs[Index].DisplayAverage;
+			if (Average < 0.0 || !IsSimilarCost(Largest, Average))
+				continue;
+			ImGui::TextWrapped("%s  |  %.3f ms", FStats::GetRecord(Rows[Index].Id).Desc.Name.c_str(), Average);
+			DrawNote(Rows[Index].Hint);
+		}
+	}
+	else
+		DrawNote(RecentCount > 0 ? "Measured cost: 0 ms" : "Waiting for recent samples");
+	if (static_cast<size_t>(RecentCount) < Rows.size())
+		ImGui::TextDisabled("Measured stages: %d / %d", RecentCount, static_cast<int>(Rows.size()));
+	ImGui::Dummy(ImVec2(0.0f, 4.0f));
+	ImGui::PushID(Title);
+	if (ImGui::TreeNode("Stage details"))
+	{
 		ImGui::Dummy(ImVec2(0.0f, 8.0f));
-		for (const FCostRow& Row : Rows)
+		for (const size_t Index : Group.Order)
 		{
-			const FStatRecord& R = FStats::GetRecord(Row.Id);
-			ImGui::TextUnformatted(R.Desc.Name.c_str());
+			const FCostRow& Row = Rows[Index];
+			const double Average = Group.Costs[Index].DisplayAverage;
+			const FStatRecord& Record = FStats::GetRecord(Row.Id);
+			ImGui::TextUnformatted(Record.Desc.Name.c_str());
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip("%s", Row.Hint);
-			if (!HasRecentSample(Row.Id))
+			if (Average < 0.0)
+				ImGui::TextDisabled(Record.bEnabled ? "No recent sample" : "Off");
+			else
 			{
-				ImGui::TextDisabled(R.bEnabled ? "No recent sample" : "Off");
-				ImGui::Dummy(ImVec2(0.0f, 5.0f));
-				continue;
+				const FString Label = std::format("{:.3f} ms (1s avg)", Average);
+				ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImGui::GetStyleColorVec4(
+					IsSimilarCost(Largest, Average) ? ImGuiCol_ButtonHovered : ImGuiCol_Button));
+				ImGui::ProgressBar(Largest > 0.0 ? static_cast<float>(Average / Largest) : 0.0f,
+					ImVec2(-1.0f, 0.0f), Label.c_str());
+				ImGui::PopStyleColor();
 			}
-			const FString Label = std::format("{:.3f} ms", R.CurrentValue);
-			ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImGui::GetStyleColorVec4(
-				Row.Id == Rows.front().Id ? ImGuiCol_ButtonHovered : ImGuiCol_Button));
-			ImGui::ProgressBar(Largest > 0.0 ? static_cast<float>(R.CurrentValue / Largest) : 0.0f,
-				ImVec2(-1.0f, 0.0f), Label.c_str());
-			ImGui::PopStyleColor();
 			ImGui::Dummy(ImVec2(0.0f, 7.0f));
 		}
 		ImGui::TreePop();
-		ImGui::PopID();
 	}
+	ImGui::PopID();
 }
 
 bool FStatsPanel::Init()
@@ -96,6 +157,8 @@ void FStatsPanel::SetOpen(bool bOpen)
 {
 	IEditorPanel::SetOpen(bOpen);
 	FStats::SetDetailedCollectionEnabled(bOpen);
+	if (!bOpen)
+		CostGroups = {};
 }
 
 void FStatsPanel::Tick(float DeltaTime)
@@ -128,14 +191,15 @@ void FStatsPanel::OnRender()
 		// UI runs after EndFrame: discard outstanding GPU samples from the old capture.
 		FGPUProfiler::Get().Shutdown();
 		FStats::ResetSamples();
+		CostGroups = {};
 	}
-	DrawCostBreakdown("CPU scene", {
+	DrawCostBreakdown(0, "CPU scene", {
 		{StatIds::CaptureWorld(), "Next: object count / repeated scene collection"},
 		{StatIds::OcclusionCullTime(), "Next: culling mode / Result Map Wait"},
 		{StatIds::PacketBuild(), "Next: visible packets / matrix construction"},
 		{StatIds::RenderSubmit(), "Next: Opaque CPU breakdown below"}
 	});
-	DrawCostBreakdown("Opaque CPU", {
+	DrawCostBreakdown(1, "Opaque CPU", {
 		{StatIds::RenderSort(), "Next: packet count / repeated sorting"},
 		{StatIds::RenderMaterials(), "Next: material count / repeated updates"},
 		{StatIds::RenderUpload(), "Next: CB written bytes / Map calls"},
@@ -143,7 +207,7 @@ void FStatsPanel::OnRender()
 		{StatIds::RenderWorkers(), "Next: worker load balance / recording cost"},
 		{StatIds::RenderExecute(), "Next: command list count / submission cost"}
 	});
-	DrawCostBreakdown("GPU passes", {
+	DrawCostBreakdown(2, "GPU passes", {
 		{StatIds::GpuOpaque(), "Next: resolution / LOD comparison"},
 		{StatIds::GpuHZB(), "Next: GPU culling on/off comparison"},
 		{StatIds::GpuCull(), "Next: tested objects / GPU culling on/off"},

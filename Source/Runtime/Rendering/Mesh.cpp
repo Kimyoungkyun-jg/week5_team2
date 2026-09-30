@@ -4,6 +4,7 @@
 #include "Renderer.h"
 #include "RenderCommand.h"
 #include "Asset/AssetManager.h"
+#include "Collision/Ray.h"
 #include <meshoptimizer.h>
 #include <algorithm>
 
@@ -146,7 +147,7 @@ bool UStaticMesh::GenerateLODs()
 		LOD2Indices.SetNum(TotalIndices);
 
 		float ResultError = 0.0f;
-		size_t ReducedCount = meshopt_simplify(
+		size_t ReducedCount =  meshopt_simplify(
 			LOD2Indices.GetData(),
 			MeshData.Indices.GetData(),
 			TotalIndices,
@@ -204,5 +205,26 @@ bool UStaticMesh::GenerateLODs()
 		}
 	}
 
+	return true;
+}
+
+bool UStaticMesh::RebuildFromMeshData(FStaticMeshData&& InData)
+{
+	MeshData = std::move(InData);
+
+	VertexBuffer = RenderCommand::CreateStaticVertexBuffer(MeshData.Vertices.GetData(), sizeof(FVertexPNCT) * static_cast<uint32>(MeshData.Vertices.Num()), sizeof(FVertexPNCT));
+	IndexBuffer = RenderCommand::CreateStaticIndexBuffer(MeshData.Indices.GetData(), static_cast<uint32>(MeshData.Indices.Num()));
+	if (!VertexBuffer || !IndexBuffer)
+	{
+		return false;
+	}
+
+	PrepareMeshPickingBVH(MeshData);
+
+	GenerateLODs();
+	if (!GenerateLODs())
+	{
+		return false;
+	}
 	return true;
 }

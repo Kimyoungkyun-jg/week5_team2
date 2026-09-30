@@ -158,7 +158,6 @@ private:
     TArray<FParticleSortInput> SortInputs;
     TArray<ObjectId> SortedParticleIds;
     TArray<UPrimitiveComponent*> VisiblePrimitives[4];
-    TArray<FLineTraceCandidate> PickCandidates;
     int32 LastPickObjectCount = 0;
     int32 LastPickCandidateCount = 0;
     FSoftwareOcclusionCuller SoftwareOcclusion;

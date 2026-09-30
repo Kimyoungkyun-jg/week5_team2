@@ -4,6 +4,8 @@
 #include "Math/EngineMath.h"
 
 #include <algorithm>
+#include <array>
+#include <vector>
 
 namespace
 {
@@ -43,20 +45,41 @@ float AxisValue(const FVector& Value, const int32 Axis)
 	return Value.Z;
 }
 
-uint32 BuildPickingBVHNode(const FStaticMeshData& Mesh, const uint32 First, const uint32 Count)
+constexpr int32 PickingSAHBinCount = 16;
+constexpr float PickingSplitEpsilon = 1.0e-6f;
+
+// 빌드 중 삼각형마다 Indices/Vertices를 다시 따라가지 않도록 경계와 중심을 한 번만 계산해 둔다.
+struct FPickingBuildData
+{
+	std::vector<FBox> TriangleBounds;
+	std::vector<FVector> Centroids;
+};
+
+float SurfaceArea(const FBox& Bounds)
+{
+	const FVector Size = Bounds.Max - Bounds.Min;
+	return 2.0f * (Size.X * Size.Y + Size.Y * Size.Z + Size.Z * Size.X);
+}
+
+int32 SAHBinIndex(const float Centroid, const float Minimum, const float Scale)
+{
+	return std::clamp(static_cast<int32>((Centroid - Minimum) * Scale), 0, PickingSAHBinCount - 1);
+}
+
+uint32 BuildPickingBVHNode(const FStaticMeshData& Mesh, const FPickingBuildData& Data, const uint32 First, const uint32 Count)
 {
 	const uint32 NodeIndex = Mesh.PickingBVHNodes.Add(FMeshPickingBVHNode{});
-	FBox Bounds = GetTriangleBounds(Mesh, Mesh.PickingTriangleIndices[First]);
-	FVector CentroidMin = GetTriangleCentroid(Mesh, Mesh.PickingTriangleIndices[First]);
+	FBox Bounds = Data.TriangleBounds[Mesh.PickingTriangleIndices[First]];
+	FVector CentroidMin = Data.Centroids[Mesh.PickingTriangleIndices[First]];
 	FVector CentroidMax = CentroidMin;
 
 	for (uint32 Offset = 1; Offset < Count; ++Offset)
 	{
 		const uint32 TriangleIndex = Mesh.PickingTriangleIndices[First + Offset];
-		const FBox TriangleBounds = GetTriangleBounds(Mesh, TriangleIndex);
+		const FBox& TriangleBounds = Data.TriangleBounds[TriangleIndex];
 		Bounds.Min = MinVector(Bounds.Min, TriangleBounds.Min);
 		Bounds.Max = MaxVector(Bounds.Max, TriangleBounds.Max);
-		const FVector Centroid = GetTriangleCentroid(Mesh, TriangleIndex);
+		const FVector& Centroid = Data.Centroids[TriangleIndex];
 		CentroidMin = MinVector(CentroidMin, Centroid);
 		CentroidMax = MaxVector(CentroidMax, Centroid);
 	}
@@ -71,27 +94,122 @@ uint32 BuildPickingBVHNode(const FStaticMeshData& Mesh, const uint32 First, cons
 		return NodeIndex;
 	}
 
-	const FVector CentroidExtent = CentroidMax - CentroidMin;
-	int32 SplitAxis = 0;
-	if (CentroidExtent.Y > CentroidExtent.X)
-		SplitAxis = 1;
-	if (AxisValue(CentroidExtent, 2) > AxisValue(CentroidExtent, SplitAxis))
-		SplitAxis = 2;
+	// Binned SAH: 세 축을 각각 빈으로 나눠 SA(왼쪽)*N(왼쪽) + SA(오른쪽)*N(오른쪽)이 가장 작은 분할을 고른다.
+	struct FBin
+	{
+		FBox Bounds{};
+		uint32 Count = 0;
+	};
 
-	const uint32 LeftCount = Count / 2;
 	auto Begin = Mesh.PickingTriangleIndices.begin() + First;
-	auto Middle = Begin + LeftCount;
 	auto End = Begin + Count;
-	std::nth_element(Begin,
-		Middle,
-		End,
-		[&](const uint32 A, const uint32 B)
-		{
-			return AxisValue(GetTriangleCentroid(Mesh, A), SplitAxis) < AxisValue(GetTriangleCentroid(Mesh, B), SplitAxis);
-		});
 
-	const uint32 Left = BuildPickingBVHNode(Mesh, First, LeftCount);
-	const uint32 Right = BuildPickingBVHNode(Mesh, First + LeftCount, Count - LeftCount);
+	float BestCost = FLT_MAX;
+	int32 BestAxis = -1;
+	int32 BestSplit = -1;
+	float BestMinimum = 0.0f;
+	float BestScale = 0.0f;
+	for (int32 Axis = 0; Axis < 3; ++Axis)
+	{
+		const float Minimum = AxisValue(CentroidMin, Axis);
+		const float Extent = AxisValue(CentroidMax, Axis) - Minimum;
+		if (Extent <= PickingSplitEpsilon)
+			continue;
+
+		const float Scale = static_cast<float>(PickingSAHBinCount) / Extent;
+		std::array<FBin, PickingSAHBinCount> Bins{};
+		for (auto It = Begin; It != End; ++It)
+		{
+			const FBox& TriangleBounds = Data.TriangleBounds[*It];
+			FBin& Bin = Bins[SAHBinIndex(AxisValue(Data.Centroids[*It], Axis), Minimum, Scale)];
+			if (Bin.Count == 0)
+			{
+				Bin.Bounds = TriangleBounds;
+			}
+			else
+			{
+				Bin.Bounds.Min = MinVector(Bin.Bounds.Min, TriangleBounds.Min);
+				Bin.Bounds.Max = MaxVector(Bin.Bounds.Max, TriangleBounds.Max);
+			}
+			++Bin.Count;
+		}
+
+		// 오른쪽 누적(빈 i 이상)을 먼저 구하고, 왼쪽 누적을 늘려 가며 분할 비용을 계산한다.
+		std::array<FBox, PickingSAHBinCount> RightBounds{};
+		std::array<uint32, PickingSAHBinCount> RightCounts{};
+		FBox RightAccum{};
+		uint32 RightAccumCount = 0;
+		for (int32 BinIndex = PickingSAHBinCount - 1; BinIndex >= 1; --BinIndex)
+		{
+			const FBin& Bin = Bins[BinIndex];
+			if (Bin.Count > 0)
+			{
+				if (RightAccumCount == 0)
+				{
+					RightAccum = Bin.Bounds;
+				}
+				else
+				{
+					RightAccum.Min = MinVector(RightAccum.Min, Bin.Bounds.Min);
+					RightAccum.Max = MaxVector(RightAccum.Max, Bin.Bounds.Max);
+				}
+				RightAccumCount += Bin.Count;
+			}
+			RightBounds[BinIndex] = RightAccum;
+			RightCounts[BinIndex] = RightAccumCount;
+		}
+
+		FBox LeftAccum{};
+		uint32 LeftAccumCount = 0;
+		for (int32 Split = 0; Split < PickingSAHBinCount - 1; ++Split)
+		{
+			const FBin& Bin = Bins[Split];
+			if (Bin.Count > 0)
+			{
+				if (LeftAccumCount == 0)
+				{
+					LeftAccum = Bin.Bounds;
+				}
+				else
+				{
+					LeftAccum.Min = MinVector(LeftAccum.Min, Bin.Bounds.Min);
+					LeftAccum.Max = MaxVector(LeftAccum.Max, Bin.Bounds.Max);
+				}
+				LeftAccumCount += Bin.Count;
+			}
+			if (LeftAccumCount == 0 || RightCounts[Split + 1] == 0)
+				continue;
+
+			const float Cost = SurfaceArea(LeftAccum) * static_cast<float>(LeftAccumCount) +
+				SurfaceArea(RightBounds[Split + 1]) * static_cast<float>(RightCounts[Split + 1]);
+			if (Cost < BestCost)
+			{
+				BestCost = Cost;
+				BestAxis = Axis;
+				BestSplit = Split;
+				BestMinimum = Minimum;
+				BestScale = Scale;
+			}
+		}
+	}
+
+	uint32 LeftCount = 0;
+	if (BestAxis >= 0)
+	{
+		const auto Middle = std::partition(Begin,
+			End,
+			[&](const uint32 TriangleIndex)
+			{
+				return SAHBinIndex(AxisValue(Data.Centroids[TriangleIndex], BestAxis), BestMinimum, BestScale) <= BestSplit;
+			});
+		LeftCount = static_cast<uint32>(Middle - Begin);
+	}
+	// 모든 중심이 같아 SAH 분할이 불가능하면 개수 기준으로 반씩 나눠 재귀가 끝나도록 한다.
+	if (LeftCount == 0 || LeftCount == Count)
+		LeftCount = Count / 2;
+
+	const uint32 Left = BuildPickingBVHNode(Mesh, Data, First, LeftCount);
+	const uint32 Right = BuildPickingBVHNode(Mesh, Data, First + LeftCount, Count - LeftCount);
 	FMeshPickingBVHNode& Node = Mesh.PickingBVHNodes[NodeIndex];
 	Node.Bounds = Bounds;
 	Node.Left = Left;
@@ -113,7 +231,16 @@ void EnsurePickingBVH(const FStaticMeshData& Mesh)
 		for (uint32 TriangleIndex = 0; TriangleIndex < TriangleCount; ++TriangleIndex)
 			Mesh.PickingTriangleIndices.Add(TriangleIndex);
 		Mesh.PickingBVHNodes.Reserve(TriangleCount * 2);
-		BuildPickingBVHNode(Mesh, 0, TriangleCount);
+
+		FPickingBuildData BuildData;
+		BuildData.TriangleBounds.reserve(TriangleCount);
+		BuildData.Centroids.reserve(TriangleCount);
+		for (uint32 TriangleIndex = 0; TriangleIndex < TriangleCount; ++TriangleIndex)
+		{
+			BuildData.TriangleBounds.push_back(GetTriangleBounds(Mesh, TriangleIndex));
+			BuildData.Centroids.push_back(GetTriangleCentroid(Mesh, TriangleIndex));
+		}
+		BuildPickingBVHNode(Mesh, BuildData, 0, TriangleCount);
 	}
 	Mesh.bPickingBVHBuilt = true;
 }
@@ -132,17 +259,17 @@ void TraceTriangle(const FRay& Ray, const FStaticMeshData& Mesh, const uint32 Tr
 	}
 }
 
-void TracePickingBVHNode(const FRay& Ray, const FStaticMeshData& Mesh, const uint32 NodeIndex, float& InOutNearestT, bool& bInOutHit)
+// NodeDistance는 부모(또는 루트 검사)가 이미 구한 이 노드의 박스 진입 거리다. 박스를 다시 검사하지 않는다.
+void TracePickingBVHNode(const FTraceContext& Context, const FStaticMeshData& Mesh, const uint32 NodeIndex, const float NodeDistance, float& InOutNearestT, bool& bInOutHit)
 {
-	const FMeshPickingBVHNode& Node = Mesh.PickingBVHNodes[NodeIndex];
-	float NodeDistance = 0.0f;
-	if (!RayIntersectsAABB(Ray, Node.Bounds.Min, Node.Bounds.Max, NodeDistance) || NodeDistance >= InOutNearestT)
+	if (NodeDistance >= InOutNearestT)
 		return;
 
+	const FMeshPickingBVHNode& Node = Mesh.PickingBVHNodes[NodeIndex];
 	if (Node.bLeaf)
 	{
 		for (uint32 Offset = 0; Offset < Node.Count; ++Offset)
-			TraceTriangle(Ray, Mesh, Mesh.PickingTriangleIndices[Node.First + Offset], InOutNearestT, bInOutHit);
+			TraceTriangle(Context.Ray, Mesh, Mesh.PickingTriangleIndices[Node.First + Offset], InOutNearestT, bInOutHit);
 		return;
 	}
 
@@ -150,25 +277,25 @@ void TracePickingBVHNode(const FRay& Ray, const FStaticMeshData& Mesh, const uin
 	const FMeshPickingBVHNode& RightNode = Mesh.PickingBVHNodes[Node.Right];
 	float LeftDistance = 0.0f;
 	float RightDistance = 0.0f;
-	const bool bHitLeft = RayIntersectsAABB(Ray, LeftNode.Bounds.Min, LeftNode.Bounds.Max, LeftDistance);
-	const bool bHitRight = RayIntersectsAABB(Ray, RightNode.Bounds.Min, RightNode.Bounds.Max, RightDistance);
+	const bool bHitLeft = RayIntersectsAABB(Context, LeftNode.Bounds.Min, LeftNode.Bounds.Max, LeftDistance);
+	const bool bHitRight = RayIntersectsAABB(Context, RightNode.Bounds.Min, RightNode.Bounds.Max, RightDistance);
 
 	if (bHitLeft && bHitRight)
 	{
 		const uint32 NearNode = LeftDistance <= RightDistance ? Node.Left : Node.Right;
 		const uint32 FarNode = LeftDistance <= RightDistance ? Node.Right : Node.Left;
+		const float NearDistance = LeftDistance <= RightDistance ? LeftDistance : RightDistance;
 		const float FarDistance = LeftDistance <= RightDistance ? RightDistance : LeftDistance;
-		TracePickingBVHNode(Ray, Mesh, NearNode, InOutNearestT, bInOutHit);
-		if (FarDistance < InOutNearestT)
-			TracePickingBVHNode(Ray, Mesh, FarNode, InOutNearestT, bInOutHit);
+		TracePickingBVHNode(Context, Mesh, NearNode, NearDistance, InOutNearestT, bInOutHit);
+		TracePickingBVHNode(Context, Mesh, FarNode, FarDistance, InOutNearestT, bInOutHit);
 	}
 	else if (bHitLeft)
 	{
-		TracePickingBVHNode(Ray, Mesh, Node.Left, InOutNearestT, bInOutHit);
+		TracePickingBVHNode(Context, Mesh, Node.Left, LeftDistance, InOutNearestT, bInOutHit);
 	}
 	else if (bHitRight)
 	{
-		TracePickingBVHNode(Ray, Mesh, Node.Right, InOutNearestT, bInOutHit);
+		TracePickingBVHNode(Context, Mesh, Node.Right, RightDistance, InOutNearestT, bInOutHit);
 	}
 }
 } // namespace
@@ -187,6 +314,26 @@ FRay ToLocalRay(const FRay& WorldRay, const FMatrix& WorldMatrix)
 	LocalRay.Direction = invWorld.TransformVector(WorldRay.Direction);
 
 	return LocalRay;
+}
+
+bool ToLocalRayAffine(const FRay& WorldRay, const FMatrix& WorldMatrix, FRay& OutLocalRay)
+{
+	// 행벡터 규약(v * M): 0~2행은 축, 3행은 이동. 역행렬의 열 = 두 축의 외적 / det
+	const FVector R0(WorldMatrix.M[0][0], WorldMatrix.M[0][1], WorldMatrix.M[0][2]);
+	const FVector R1(WorldMatrix.M[1][0], WorldMatrix.M[1][1], WorldMatrix.M[1][2]);
+	const FVector R2(WorldMatrix.M[2][0], WorldMatrix.M[2][1], WorldMatrix.M[2][2]);
+	const FVector C0 = FVector::Cross(R1, R2);
+	const FVector C1 = FVector::Cross(R2, R0);
+	const FVector C2 = FVector::Cross(R0, R1);
+	const float Det = FVector::Dot(R0, C0);
+	if (fabsf(Det) < 1e-12f)
+		return false;
+
+	const float InvDet = 1.0f / Det;
+	const FVector P(WorldRay.Origin.X - WorldMatrix.M[3][0], WorldRay.Origin.Y - WorldMatrix.M[3][1], WorldRay.Origin.Z - WorldMatrix.M[3][2]);
+	OutLocalRay.Origin = FVector(FVector::Dot(P, C0), FVector::Dot(P, C1), FVector::Dot(P, C2)) * InvDet;
+	OutLocalRay.Direction = FVector(FVector::Dot(WorldRay.Direction, C0), FVector::Dot(WorldRay.Direction, C1), FVector::Dot(WorldRay.Direction, C2)) * InvDet;
+	return true;
 }
 
 bool RayIntersectsAABB(const FRay& Ray, const FVector& BoxMin, const FVector& BoxMax, float& OutT)
@@ -227,6 +374,51 @@ bool RayIntersectsAABB(const FRay& Ray, const FVector& BoxMin, const FVector& Bo
 	return true;
 }
 
+bool RayIntersectsBoundingSphere(const FRay& Ray, const FVector& SphereCenter, const float SphereRadius, float& OutT)
+{
+    if (SphereRadius < 0.0f) return false;
+
+    // 임시 FVector 생성/정규화 없이 성분으로 계산한다.
+    const float OX = Ray.Origin.X - SphereCenter.X;
+    const float OY = Ray.Origin.Y - SphereCenter.Y;
+    const float OZ = Ray.Origin.Z - SphereCenter.Z;
+    const float RadiusSquared = SphereRadius * SphereRadius;
+    const float C = OX * OX + OY * OY + OZ * OZ - RadiusSquared;
+    if (C <= 0.0f)
+    {
+        OutT = 0.0f;
+        return true;
+    }
+
+    const float DX = Ray.Direction.X;
+    const float DY = Ray.Direction.Y;
+    const float DZ = Ray.Direction.Z;
+    const float B = OX * DX + OY * DY + OZ * DZ;
+    // 구 밖에서 멀어지는 Ray(방향 0 포함)는 제곱근/나눗셈 전에 탈락한다.
+    if (B >= 0.0f) return false;
+
+    const float A = DX * DX + DY * DY + DZ * DZ;
+    if (A <= 0.0f) return false;
+
+    // B*B - A*C와 동치. 먼 작은 구에서 큰 두 수를 빼는 정밀도 손실을 줄인다.
+    const float CrossX = OY * DZ - OZ * DY;
+    const float CrossY = OZ * DX - OX * DZ;
+    const float CrossZ = OX * DY - OY * DX;
+    const float Discriminant = A * RadiusSquared -
+        (CrossX * CrossX + CrossY * CrossY + CrossZ * CrossZ);
+    if (Discriminant < 0.0f) return false;
+
+    // (-B - sqrt(D)) / A를 유리화: 표면 가까이에서 뺄셈 오차를 줄인다.
+    // 외부의 실제 교차에서만 sqrt 1회, 나눗셈 1회를 수행한다. 로컬 Ray의 t도 보존된다.
+    OutT = C / (-B + sqrtf(Discriminant));
+    return true;
+}
+
+bool RayIntersectsBoundingSphere(const FTraceContext& Context, const FVector& SphereCenter, const float SphereRadius, float& OutTEnter)
+{
+    return RayIntersectsBoundingSphere(Context.Ray, SphereCenter, SphereRadius, OutTEnter);
+}
+
 namespace
 {
 // 방향 성분이 0이면 부호를 유지한 아주 작은 값으로 바꾼 뒤 역수를 구한다.
@@ -265,15 +457,16 @@ bool RayIntersectsAABB(const FTraceContext& Context, const FVector& BoxMin, cons
 	const float tZ1 = (BoxMin.Z - O.Z) * I.Z;
 	const float tZ2 = (BoxMax.Z - O.Z) * I.Z;
 
-	const float tEnter = fmaxf(fmaxf(fminf(tX1, tX2), fminf(tY1, tY2)), fminf(tZ1, tZ2)); // 진입점
-	const float tExit = fminf(fminf(fmaxf(tX1, tX2), fmaxf(tY1, tY2)), fmaxf(tZ1, tZ2));  // 이탈점
+	// 역수는 SafeReciprocal로 항상 유한해 NaN이 생기지 않는다. fminf/fmaxf는 NaN 규칙 때문에 함수 호출로 컴파일되므로 std::min/max(CPU 명령 1개)를 쓴다
+	const float tEnter = std::max(std::max(std::min(tX1, tX2), std::min(tY1, tY2)), std::min(tZ1, tZ2)); // 진입점
+	const float tExit = std::min(std::min(std::max(tX1, tX2), std::max(tY1, tY2)), std::max(tZ1, tZ2));  // 이탈점
 
 	if (tEnter > tExit || tExit < 0.0f)
 	{ // 빗나감, 또는 박스가 레이 뒤에 있음
 		return false;
 	}
 
-	OutTEnter = fmaxf(tEnter, 0.0f); // 레이 시작점이 박스 안이면 0
+	OutTEnter = std::max(tEnter, 0.0f); // 레이 시작점이 박스 안이면 0
 	return true;
 }
 
@@ -293,30 +486,33 @@ bool RayIntersectsTriangle(const FRay& Ray, const FVector& v1, const FVector& v2
 		return false;
 	}
 
-	float invDet = 1.0f / det;
+	// det > 0이므로 u, v, t의 비교를 det 곱으로 옮겨 나눗셈을 통과한 삼각형에서만 한다.
 	// 수식: Ray.Origin - v1 = u * edge1 + v * edge2 - t * Ray.Direction
-	// 1. u 구하기
-	FVector s = Ray.Origin - v1;
-	float u = invDet * FVector::Dot(s, rayCrossVec);
+	const float epsDet = epsilon * det;
+	const float upperDet = det * (1.0f + epsilon);
 
-	if (-epsilon > u || epsilon < u - 1)
+	// 1. u 구하기 (u = uNum / det)
+	FVector s = Ray.Origin - v1;
+	const float uNum = FVector::Dot(s, rayCrossVec);
+
+	if (uNum < -epsDet || uNum > upperDet)
 	{
 		return false;
 	}
 
 	FVector sCrossE1 = FVector::Cross(s, edge1);
-	float v = invDet * FVector::Dot(RayVector, sCrossE1);
+	const float vNum = FVector::Dot(RayVector, sCrossE1);
 
-	if (-epsilon > v || epsilon < u + v - 1)
+	if (vNum < -epsDet || uNum + vNum > upperDet)
 	{
 		return false;
 	}
 
-	float t = invDet * FVector::Dot(edge2, sCrossE1);
+	const float tNum = FVector::Dot(edge2, sCrossE1);
 
-	if (t > epsilon)
+	if (tNum > epsDet)
 	{
-		OutT = t;
+		OutT = tNum / det;
 		return true;
 	}
 
@@ -324,15 +520,20 @@ bool RayIntersectsTriangle(const FRay& Ray, const FVector& v1, const FVector& v2
 }
 
 // Mesh AABB를 통과한 Ray에 삼각형 교차를 적용해 가장 가까운 거리만 반환한다.
-bool RayIntersectsMesh(const FRay& LocalRay, const FStaticMeshData& Mesh, float& OutT)
+bool RayIntersectsMesh(const FRay& LocalRay, const FStaticMeshData& Mesh, float& OutT, const float MaxT)
 {
 	PrepareMeshPickingBVH(Mesh);
 	bool bHit = false;
-	float NearestT = FLT_MAX;
+	float NearestT = MaxT;
 
 	if (!Mesh.PickingBVHNodes.IsEmpty())
 	{
-		TracePickingBVHNode(LocalRay, Mesh, 0, NearestT, bHit);
+		// 로컬 레이의 역수는 메시당 한 번만 구해 모든 노드가 공유한다.
+		const FTraceContext Context = MakeTraceContext(LocalRay, nullptr, nullptr);
+		const FMeshPickingBVHNode& Root = Mesh.PickingBVHNodes[0];
+		float RootDistance = 0.0f;
+		if (RayIntersectsAABB(Context, Root.Bounds.Min, Root.Bounds.Max, RootDistance))
+			TracePickingBVHNode(Context, Mesh, 0, RootDistance, NearestT, bHit);
 	}
 	else
 	{

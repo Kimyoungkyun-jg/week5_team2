@@ -30,6 +30,40 @@
 #include <cstring>
 
 namespace {
+// AABB의 투영 크기 상한(화면 폭/높이 비율). 직교 투영도 같은 VP로 처리한다.
+float ComputeLODScreenSize(const FBox& Bounds, const FMatrix& VP)
+{
+	const FVector Center = (Bounds.Min + Bounds.Max) * 0.5f;
+	const FVector Extent = (Bounds.Max - Bounds.Min) * 0.5f;
+	float ClipCenter[4];
+	float ClipExtent[4];
+	for (int Axis = 0; Axis < 4; ++Axis)
+	{
+		ClipCenter[Axis] = Center.X * VP.M[0][Axis] + Center.Y * VP.M[1][Axis]
+			+ Center.Z * VP.M[2][Axis] + VP.M[3][Axis];
+		ClipExtent[Axis] = Extent.X * std::abs(VP.M[0][Axis])
+			+ Extent.Y * std::abs(VP.M[1][Axis]) + Extent.Z * std::abs(VP.M[2][Axis]);
+		if (!std::isfinite(ClipCenter[Axis]) || !std::isfinite(ClipExtent[Axis]))
+		{
+			return 1.0f;
+		}
+	}
+
+	// D3D near plane(z=0) 또는 시점에 걸친 Bounds는 LOD0를 유지한다.
+	const float MinW = ClipCenter[3] - ClipExtent[3];
+	if (MinW <= 1e-6f || ClipCenter[2] - ClipExtent[2] <= 0.0f)
+	{
+		return 1.0f;
+	}
+
+	// 원근 나눗셈의 분모 변화도 포함한다. 화면 가장자리에서 크기를 과소평가하지 않는다.
+	const float ScreenWidth = (ClipExtent[0]
+		+ std::abs(ClipCenter[0] / ClipCenter[3]) * ClipExtent[3]) / MinW;
+	const float ScreenHeight = (ClipExtent[1]
+		+ std::abs(ClipCenter[1] / ClipCenter[3]) * ClipExtent[3]) / MinW;
+	return (std::max)(ScreenWidth, ScreenHeight);
+}
+
 constexpr float Pi = 3.14159265358979323846f;
 constexpr float MaximumCameraPitchDegrees = 89.0f;
 constexpr float MaximumRotationDegreesPerFrame = 45.0f;
@@ -920,7 +954,6 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
         WorkerPacketBuffers[i].Reset();
     }
 
-    const TArray<uint8>& VisibleLODs = SoftwareOcclusion.GetVisibleLODs(ViewIndex);
     const UClass* StaticMeshClass = UStaticMeshComponent::StaticClass();
 
     Tasks::ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
@@ -934,7 +967,7 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
             UPrimitiveComponent* Primitive = VisiblePrimitives[ViewIndex][i];
             if (Primitive)
             {
-                uint8 TargetLOD = (i < VisibleLODs.Num()) ? VisibleLODs[i] : 0;
+                uint8 TargetLOD = 0;
                 if (Primitive->GetClass() == StaticMeshClass)
                 {
                     auto* SMC = static_cast<UStaticMeshComponent*>(Primitive);
@@ -943,6 +976,20 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
                         // 강제 단계 지정 적용
                         TargetLOD = static_cast<uint8>(SMC->GetForcedLOD());
                     }
+					else
+					{
+						const UStaticMesh* Mesh = SMC->GetStaticMesh();
+						if (Mesh && Mesh->GetMeshData().Sections.Num() == 1 && Mesh->LODs.Num() > 1)
+						{
+							const float ScreenSize = ComputeLODScreenSize(SMC->GetWorldBounds(), VP);
+							// 각 단계의 threshold보다 작으면 다음 단계로 내려간다. Draw는 생략하지 않는다.
+							while (TargetLOD < 255 && TargetLOD + 1 < Mesh->LODs.Num()
+								&& ScreenSize < Mesh->LODs[TargetLOD].ScreenSizeThreshold)
+							{
+								++TargetLOD;
+							}
+						}
+					}
                 }
 
                 const int32 PrevCount = LocalList.Num();

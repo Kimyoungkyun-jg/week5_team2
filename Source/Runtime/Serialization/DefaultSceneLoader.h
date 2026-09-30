@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/EngineString.h"
+#include <functional>
 
 class UWorld;
 
@@ -8,5 +9,5 @@ class UWorld;
 class FDefaultSceneLoader
 {
 public:
-	static bool LoadScene(UWorld* World, const FString& Path);
+	static bool LoadScene(UWorld* World, const FString& Path, std::function<void(float)> OnProgress = nullptr);
 };

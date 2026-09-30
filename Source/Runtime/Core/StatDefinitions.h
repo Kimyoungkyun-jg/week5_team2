@@ -6,19 +6,19 @@ namespace StatIds
 {
 inline FStatId PickingTotal()
 {
-	static const FStatId Id = FStats::Register({"Picking", "Total", EStatUnit::Milliseconds, EStatMode::Event, true});
+	static const FStatId Id = FStats::Register({"Picking", "Total", EStatUnit::Milliseconds, EStatMode::Event, true, true});
 	return Id;
 }
 
 inline FStatId PickingBroad()
 {
-	static const FStatId Id = FStats::Register({"Picking", "Broad", EStatUnit::Milliseconds, EStatMode::Event, true});
+	static const FStatId Id = FStats::Register({"Picking", "Broad", EStatUnit::Milliseconds, EStatMode::Event, true, true});
 	return Id;
 }
 
 inline FStatId PickingNarrow()
 {
-	static const FStatId Id = FStats::Register({"Picking", "Narrow", EStatUnit::Milliseconds, EStatMode::Event, true});
+	static const FStatId Id = FStats::Register({"Picking", "Narrow", EStatUnit::Milliseconds, EStatMode::Event, true, true});
 	return Id;
 }
 
@@ -102,13 +102,13 @@ inline FStatId OcclusionBVHBuildTime()
 }
 inline FStatId FrameFPS()
 {
-	static const FStatId Id = FStats::Register({"Frame", "FPS", EStatUnit::Count, EStatMode::Gauge, true});
+	static const FStatId Id = FStats::Register({"Frame", "FPS", EStatUnit::Count, EStatMode::Gauge, true, true});
 	return Id;
 }
 
 inline FStatId FrameTime()
 {
-	static const FStatId Id = FStats::Register({"Frame", "Frame Time", EStatUnit::Milliseconds, EStatMode::Gauge, true});
+	static const FStatId Id = FStats::Register({"Frame", "Frame Time", EStatUnit::Milliseconds, EStatMode::Gauge, true, true});
 	return Id;
 }
 
@@ -192,7 +192,7 @@ inline FStatId CBUpload()
 
 inline FStatId PickCandidates()
 {
-	static const FStatId Id = FStats::Register({"Picking", "Candidates / Pick", EStatUnit::Count, EStatMode::Event, true});
+	static const FStatId Id = FStats::Register({"Picking", "Candidates / Pick", EStatUnit::Count, EStatMode::Event, true, true});
 	return Id;
 }
 

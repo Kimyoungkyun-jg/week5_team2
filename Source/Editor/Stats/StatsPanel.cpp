@@ -87,7 +87,14 @@ namespace
 
 bool FStatsPanel::Init()
 {
+	SetOpen(IsOpen());
 	return true;
+}
+
+void FStatsPanel::SetOpen(bool bOpen)
+{
+	IEditorPanel::SetOpen(bOpen);
+	FStats::SetDetailedCollectionEnabled(bOpen);
 }
 
 void FStatsPanel::Tick(float DeltaTime)
@@ -97,7 +104,15 @@ void FStatsPanel::Tick(float DeltaTime)
 void FStatsPanel::OnRender()
 {
 	ImGui::SetNextWindowSize(ImVec2(700, 650), ImGuiCond_FirstUseEver);
-	ImGui::Begin("Stats");
+	bool bOpen = IsOpen();
+	const bool bVisible = ImGui::Begin("Stats", &bOpen);
+	if (!bOpen)
+		SetOpen(false);
+	if (!bVisible || !bOpen)
+	{
+		ImGui::End();
+		return;
+	}
 	ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered), "PERFORMANCE OVERVIEW");
 	ImGui::Dummy(ImVec2(0.0f, 8.0f));
 	if (ImGui::Button("Enable GPU breakdown"))

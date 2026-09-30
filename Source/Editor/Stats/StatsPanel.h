@@ -9,6 +9,7 @@ class FStatsPanel : public IEditorPanel
 	bool Init() override;
 	void Tick(float DeltaTime) override;
 	void OnRender() override;
+	void SetOpen(bool bOpen) override;
 
 	const char* GetPanelName() const override
 	{

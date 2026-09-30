@@ -81,7 +81,7 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 	const FString& Arg = Tokens[1];
 	if (EqualsIgnoreCase(Arg, "memory"))
 	{
-		const bool bEnable = !FStats::IsEnabled(StatIds::MemoryProcess());
+		const bool bEnable = !FStats::GetRecord(StatIds::MemoryProcess()).bEnabled;
 		FStats::SetEnabled(StatIds::MemoryObjects(), bEnable);
 		FStats::SetEnabled(StatIds::MemoryAllocations(), bEnable);
 		FStats::SetEnabled(StatIds::MemoryProcess(), bEnable);

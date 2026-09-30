@@ -86,12 +86,16 @@ void FSwapchain::Resize(int32 InWidth, int32 InHeight)
 	if (!Swapchain || InWidth <= 0 || InHeight <= 0)
 		return;
 
+	// ResizeBuffers 전에 backbuffer를 참조하는 모든 출력 바인딩과 View를 해제한다.
+	RenderDevice->GetContext()->OMSetRenderTargets(0, nullptr, nullptr);
 	BackbufferTexture = nullptr;
-	const HRESULT Hr = Swapchain->ResizeBuffers(0, InWidth, InHeight, DXGI_FORMAT_UNKNOWN, 0);
+	// 생성 시 지정한 플래그(ALLOW_TEARING 등)를 그대로 넘겨야 한다. 0을 넘기면 플래그 불일치로 실패한다.
+	const HRESULT Hr = Swapchain->ResizeBuffers(0, InWidth, InHeight, DXGI_FORMAT_UNKNOWN, Desc.Flags);
 
 	if (FAILED(Hr))
 	{
-		LOG(Error, "Failed To Resize Swapchain!");
+		LOG(Error, "Failed To Resize Swapchain! (hr=0x{:08X}, {}x{})",
+			static_cast<uint32>(Hr), InWidth, InHeight);
 
 		// 기존 Swapchain의 backbuffer라도 다시 얻어본다.
 		CreateBackbuffer();

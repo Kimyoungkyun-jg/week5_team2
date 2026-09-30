@@ -31,6 +31,8 @@ namespace
 
 AStaticMeshActor::AStaticMeshActor()
 {
+	// 정적 메시는 빈 Tick을 시작하지 않지만, 자체 이동 로직이 생기면 런타임에 다시 켤 수 있다.
+	SetActorTickEnabled(false);
 	StaticMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>("UPrimitiveComponent");
 	SetRootComponent(StaticMeshComponent);
 

@@ -80,8 +80,16 @@ public:
 	const TArray<TWeakObjectPtr<UPrimitiveComponent>>& GetWorldPrimitiveComponents() const {
 		return WorldPrimitiveComponents;
 	}
+	uint64 GetPrimitiveTopologyRevision() const { return PrimitiveTopologyRevision; }
+	const TArray<TWeakObjectPtr<UPrimitiveComponent>>& GetDirtyRenderPrimitiveComponents() const {
+		return DirtyRenderPrimitiveComponents;
+	}
+	void ClearDirtyRenderPrimitiveComponents() { DirtyRenderPrimitiveComponents.Reset(); }
 
 private:
+	friend class AActor;
+	void RefreshActorTickRegistration(AActor* Actor);
+
 	TQueue<AActor*> BeginPlayList;
 	
 	//메인 카메라 
@@ -92,9 +100,11 @@ private:
 	ULevel* PersistentLevel = nullptr;
 	ULevel* CurrentLevel = nullptr;
 	TArray<ULevel*> Levels;
+	TArray<AActor*> TickActors;
 
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> WorldPrimitiveComponents;
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> DirtyPrimitiveComponents;
+	TArray<TWeakObjectPtr<UPrimitiveComponent>> DirtyRenderPrimitiveComponents;
 	uint64 PrimitiveTopologyRevision = 1;
 	FPrimitiveBVH PrimitiveBVH;
 

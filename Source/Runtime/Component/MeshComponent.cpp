@@ -54,7 +54,12 @@ void UMeshComponent::SetMaterial(int32 SlotIndex, UMaterial* InMaterial)
 	{
 		OverrideMaterials.Add(nullptr);
 	}
+	if (OverrideMaterials[SlotIndex] == InMaterial)
+	{
+		return;
+	}
 	OverrideMaterials[SlotIndex] = InMaterial;
+	MarkBoundsDirtyRecursive();
 }
 
 void UMeshComponent::Serialize(json& Handle, bool bIsLoading)

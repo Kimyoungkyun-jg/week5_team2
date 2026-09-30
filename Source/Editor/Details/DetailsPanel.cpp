@@ -11,6 +11,7 @@
 #include "Asset/AssetManager.h"
 #include "Rendering/Material.h"
 #include "Rendering/Texture2D.h"
+#include "Rendering/Mesh.h"
 #include "Text/Font.h"
 #include "ObjectSystem/UObjectIterator.h"
 #include "GameFramework/Actor.h"
@@ -294,6 +295,28 @@ namespace
 					ImGui::SetItemDefaultFocus();
 			}
 			ImGui::EndCombo();
+		}
+
+		if (Current)
+		{
+			ImGui::Spacing();
+			ImGui::Text("Import Settings");
+
+			const char* AxisItems[] = {"Default", "Z-Up"};
+
+			int AxisIndex = static_cast<int>(Current->ImportAxisPreset);
+
+			ImGui::SetNextItemWidth(-1.0f);
+
+			if (ImGui::Combo("##ImportAxis", &AxisIndex, AxisItems, IM_ARRAYSIZE(AxisItems)))
+			{
+				Current->ImportAxisPreset = static_cast<EObjAxisPreset>(AxisIndex);
+			}
+
+			if (ImGui::Button("Reimport"))
+			{
+				//UAssetManager::ReimportStaticMesh(Current);
+			}
 		}
 
 		if (UStaticMeshComponent* MeshComponent = Cast<UStaticMeshComponent>(Owner))

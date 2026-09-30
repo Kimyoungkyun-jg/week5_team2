@@ -905,8 +905,6 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
         return;
     }
 
-    const FMatrix& VP = View.EngineViewProjection;
-    const FMatrixRegister VPReg = FMatrixRegister::Load(VP);
     const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
     const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
     const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
@@ -949,13 +947,6 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
                 Primitive->SubmitToRenderPackets(LocalList);
 				if (LocalList.Num() > PrevCount)
 				{
-					// 패킷 생성 직후 변환 계산
-					const FRenderPacket& FirstPacket = LocalList[PrevCount];
-
-					const FMatrixRegister ModelReg = FMatrixRegister::Load(FirstPacket.model);
-					FMatrix MVPMatrix;
-					(ModelReg * VPReg).Store(MVPMatrix);
-
 					for (int32 p = PrevCount; p < LocalList.Num(); ++p)
 					{
 						FRenderPacket& Packet = LocalList[p];
@@ -980,7 +971,6 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
 						{
 							Packet.LODIndex = 0;
 						}
-						Packet.MVP = MVPMatrix;
 					}
 				}
             }

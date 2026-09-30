@@ -283,27 +283,27 @@ void FGPUOcclusionCuller::BuildHZB(int32 ViewIndex, FTexture2D* SceneDepthTextur
 
     EnsureHZBResources(ClampedView, DepthW, DepthH);
 
-    if (!DepthCopyTexture[ClampedView] || !HZBTexture[ClampedView])
+    if (!HZBTexture[ClampedView])
     {
         return;
     }
 
     FGPUStatScope HZBScope(StatIds::GpuHZB(), L"HZB Build");
-    // 깊이 버퍼 복사
-    RenderCommand::CopyResource(DepthCopyTexture[ClampedView].Get(), SceneDepthTexture->GetRawPtr(), Context);
 
-    // 첫 패스 다운샘플링
-    FHZBBuildConstants FirstPassConstants{};
-    FirstPassConstants.DestWidth = HZBWidth;
-    FirstPassConstants.DestHeight = HZBHeight;
-    FirstPassConstants.SourceWidth = DepthW;
-    FirstPassConstants.SourceHeight = DepthH;
-    FirstPassConstants.bIsFirstPass = 1;
-    RenderCommand::UpdateBufferData(HZBBuildConstantBuffer.get(), &FirstPassConstants, sizeof(FHZBBuildConstants), Context);
+    // OM 깊이 타겟 일시 해제 및 원본 깊이 직접 바인딩
+    ID3D11RenderTargetView* CurrentRTVs[8] = { nullptr };
+    ID3D11DepthStencilView* CurrentDSV = nullptr;
+    Context->OMGetRenderTargets(1, CurrentRTVs, &CurrentDSV);
+    if (CurrentDSV)
+    {
+        Context->OMSetRenderTargets(1, CurrentRTVs, nullptr);
+    }
 
     RenderCommand::CSSetShader(HZBBuildShader.get(), Context);
-    RenderCommand::CSSetConstantBuffer(0, HZBBuildConstantBuffer.get(), Context);
-    RenderCommand::CSSetShaderResource(0, DepthCopySRV[ClampedView].Get(), Context);
+    RenderCommand::CSSetSampler(0, ESamplerState::PointClamp, Context);
+
+    // 첫 패스 다운샘플링
+    RenderCommand::CSSetShaderResource(0, SceneDepthTexture->GetSRV(), Context);
     RenderCommand::CSSetUnorderedAccessView(0, HZBMipUAV[ClampedView][0].Get(), Context);
 
     RenderCommand::Dispatch((HZBWidth + 15) / 16, (HZBHeight + 15) / 16, 1, Context);
@@ -313,21 +313,22 @@ void FGPUOcclusionCuller::BuildHZB(int32 ViewIndex, FTexture2D* SceneDepthTextur
     RenderCommand::CSSetShaderResource(0, NullSRV, Context);
     RenderCommand::CSSetUnorderedAccessView(0, NullUAV, Context);
 
+    // OM 깊이 타겟 복원
+    if (CurrentDSV)
+    {
+        Context->OMSetRenderTargets(1, CurrentRTVs, CurrentDSV);
+        CurrentDSV->Release();
+    }
+    if (CurrentRTVs[0])
+    {
+        CurrentRTVs[0]->Release();
+    }
+
     // 밉맵 연속 다운샘플링
     for (uint32 Mip = 1; Mip < HZBMipCount; ++Mip)
     {
         const uint32 MipW = (std::max)(1u, HZBWidth >> Mip);
         const uint32 MipH = (std::max)(1u, HZBHeight >> Mip);
-        const uint32 PrevW = (std::max)(1u, HZBWidth >> (Mip - 1));
-        const uint32 PrevH = (std::max)(1u, HZBHeight >> (Mip - 1));
-
-        FHZBBuildConstants MipConstants{};
-        MipConstants.DestWidth = MipW;
-        MipConstants.DestHeight = MipH;
-        MipConstants.SourceWidth = PrevW;
-        MipConstants.SourceHeight = PrevH;
-        MipConstants.bIsFirstPass = 0;
-        RenderCommand::UpdateBufferData(HZBBuildConstantBuffer.get(), &MipConstants, sizeof(FHZBBuildConstants), Context);
 
         RenderCommand::CSSetShaderResource(0, HZBMipSRV[ClampedView][Mip - 1].Get(), Context);
         RenderCommand::CSSetUnorderedAccessView(0, HZBMipUAV[ClampedView][Mip].Get(), Context);

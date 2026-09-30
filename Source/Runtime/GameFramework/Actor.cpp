@@ -42,6 +42,29 @@ void AActor::Tick(float DeltaTime)
 	}
 }
 
+void AActor::SetActorTickEnabled(const bool bEnabled)
+{
+	const bool bNewEnabled = bCanEverTick && bEnabled;
+	if (bTickEnabled == bNewEnabled)
+		return;
+
+	bTickEnabled = bNewEnabled;
+	if (World)
+		World->RefreshActorTickRegistration(this);
+}
+
+void AActor::SetCanEverTick(const bool bEnabled)
+{
+	if (bCanEverTick == bEnabled)
+		return;
+
+	bCanEverTick = bEnabled;
+	if (!bCanEverTick)
+		bTickEnabled = false;
+	if (World)
+		World->RefreshActorTickRegistration(this);
+}
+
 void AActor::RemoveOwnedComponent(UActorComponent* Component)
 {
     for (uint32 i = 0; i < Components.Num(); ++i)

@@ -88,6 +88,34 @@ FAABB MakeWorldBounds(const FBox &Value) {
   return {Center, Extent};
 }
 
+bool BuildRenderableObject(UPrimitiveComponent* Primitive, FRenderableObject& OutObject) {
+  if (!Primitive || !Primitive->IsVisible())
+    return false;
+
+  OutObject = {};
+  OutObject.Primitive = Primitive;
+  OutObject.WorldMatrix = Primitive->GetWorldMatrix();
+  OutObject.WorldBounds = MakeWorldBounds(Primitive->GetWorldBounds());
+  OutObject.BoundsRevision = Primitive->GetBoundsRevision();
+
+  if (UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(Primitive)) {
+    OutObject.StaticMeshData = StaticMeshComponent->GetMeshData();
+    OutObject.bCanBeOccluded = OutObject.StaticMeshData != nullptr &&
+        !OutObject.StaticMeshData->Vertices.IsEmpty() && !OutObject.StaticMeshData->Indices.IsEmpty();
+    OutObject.bCanOcclude = OutObject.bCanBeOccluded && !OutObject.StaticMeshData->Sections.IsEmpty();
+    if (OutObject.bCanOcclude) {
+      for (const FStaticMeshSection& Section : OutObject.StaticMeshData->Sections) {
+        UMaterial* Material = StaticMeshComponent->GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
+        if (!Material || Material->PSOType != EPSOType::StaticMesh_Opaque) {
+          OutObject.bCanOcclude = false;
+          break;
+        }
+      }
+    }
+  }
+  return true;
+}
+
 // 양·음 방향 키 상태 차이로 -1~1 축 입력을 만든다.
 float AxisValue(const EKeyCode Positive, const EKeyCode Negative) {
   return (FInputSystem::IsKeyDown(Positive) ? 1.0f : 0.0f) -
@@ -511,71 +539,71 @@ void FMultipleViewportsAdapter::UpdateInput(const float DeltaTime,
 void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
 	FStatScope CaptureScope(StatIds::CaptureWorld());
     const auto& Primitives = World.GetWorldPrimitiveComponents();
+	const uint64 TopologyRevision = World.GetPrimitiveTopologyRevision();
+	bool bNeedsFullCapture = CapturedPrimitiveTopologyRevision != TopologyRevision;
+
+	if (!bNeedsFullCapture)
+	{
+		bool bChanged = false;
+		for (const TWeakObjectPtr<UPrimitiveComponent>& WeakPrimitive : World.GetDirtyRenderPrimitiveComponents())
+		{
+			UPrimitiveComponent* Primitive = WeakPrimitive.Get();
+			if (!Primitive)
+				continue;
+
+			const uint32 ObjectIndex = Primitive->GetInternalIndex();
+			if (ObjectIndex >= static_cast<uint32>(RenderObjectIndexByObjectIndex.Num()))
+			{
+				bNeedsFullCapture = true;
+				break;
+			}
+
+			const int32 RenderIndex = RenderObjectIndexByObjectIndex[ObjectIndex];
+			if (RenderIndex < 0 || RenderIndex >= RenderObjects.Num() ||
+				RenderObjects[RenderIndex].Primitive != Primitive || !Primitive->IsVisible())
+			{
+				bNeedsFullCapture = true;
+				break;
+			}
+
+			if (RenderObjects[RenderIndex].BoundsRevision == Primitive->GetBoundsRevision())
+				continue;
+
+			FRenderableObject UpdatedObject{};
+			if (!BuildRenderableObject(Primitive, UpdatedObject))
+			{
+				bNeedsFullCapture = true;
+				break;
+			}
+			UpdatedObject.StableIndex = RenderObjects[RenderIndex].StableIndex;
+			RenderObjects[RenderIndex] = std::move(UpdatedObject);
+			bChanged = true;
+		}
+
+		if (!bNeedsFullCapture)
+		{
+			World.ClearDirtyRenderPrimitiveComponents();
+			if (bChanged)
+				SoftwareOcclusion.SynchronizeObjects(RenderObjects);
+			return;
+		}
+	}
+
+    RenderObjects.Reset();
+	RenderObjectIndexByObjectIndex.Reset();
     bCapturedBillboard = false;
     bCapturedParticle = false;
 
     const int32 TotalPrimitives = Primitives.Num();
     if (TotalPrimitives <= 0)
     {
-        RenderObjects.Reset();
+		CapturedPrimitiveTopologyRevision = TopologyRevision;
+		World.ClearDirtyRenderPrimitiveComponents();
         SoftwareOcclusion.SynchronizeObjects(RenderObjects);
         return;
     }
 
     const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
-
-    // 씬 구성 일치 검사
-    bool bTopologyMatch = (!RenderObjects.IsEmpty());
-    if (bTopologyMatch)
-    {
-        int32 RenderObjIdx = 0;
-        for (int32 i = 0; i < TotalPrimitives; ++i)
-        {
-            UPrimitiveComponent* Prim = Primitives[i].Get();
-            if (!Prim || !Prim->IsVisible())
-            {
-                continue;
-            }
-            if (RenderObjIdx >= RenderObjects.Num() || RenderObjects[RenderObjIdx].Primitive != Prim)
-            {
-                bTopologyMatch = false;
-                break;
-            }
-            ++RenderObjIdx;
-        }
-        if (RenderObjIdx != RenderObjects.Num())
-        {
-            bTopologyMatch = false;
-        }
-    }
-
-    // 변경 없는 정적 객체 재사용
-    if (bTopologyMatch)
-    {
-        const int32 ObjectCount = RenderObjects.Num();
-        const int32 FastChunkSize = (ObjectCount + NumWorkers - 1) / NumWorkers;
-
-        Tasks::ParallelFor(ObjectCount, FastChunkSize, [&](int32 Start, int32 End)
-        {
-            for (int32 Index = Start; Index < End; ++Index)
-            {
-                FRenderableObject& Object = RenderObjects[Index];
-                const uint64 CurrentRevision = Object.Primitive->GetBoundsRevision();
-                if (Object.BoundsRevision != CurrentRevision)
-                {
-                    // 변형된 객체만 갱신
-                    Object.WorldMatrix = Object.Primitive->GetWorldMatrix();
-                    Object.WorldBounds = MakeWorldBounds(Object.Primitive->GetWorldBounds());
-                    Object.BoundsRevision = CurrentRevision;
-                }
-            }
-        });
-
-        SoftwareOcclusion.SynchronizeObjects(RenderObjects);
-        return;
-    }
-
-    RenderObjects.Reset();
     const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
     const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
 
@@ -587,8 +615,6 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
     {
         WorkerRenderObjectBuffers[i].Reset();
     }
-
-    const UClass* StaticMeshClass = UStaticMeshComponent::StaticClass();
 
     // 컴포넌트 정보 병렬 수집
     Tasks::ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
@@ -605,32 +631,8 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
             }
 
             FRenderableObject RenderObject{};
-            RenderObject.Primitive = Primitive;
-            RenderObject.WorldMatrix = Primitive->GetWorldMatrix();
-            RenderObject.WorldBounds = MakeWorldBounds(Primitive->GetWorldBounds());
-            RenderObject.BoundsRevision = Primitive->GetBoundsRevision();
-
-            if (Primitive->GetClass() == StaticMeshClass)
-            {
-                auto* StaticMeshComponent = static_cast<UStaticMeshComponent*>(Primitive);
-                RenderObject.StaticMeshData = StaticMeshComponent->GetMeshData();
-                RenderObject.bCanBeOccluded = RenderObject.StaticMeshData != nullptr &&
-                    !RenderObject.StaticMeshData->Vertices.IsEmpty() && !RenderObject.StaticMeshData->Indices.IsEmpty();
-                RenderObject.bCanOcclude = RenderObject.bCanBeOccluded && !RenderObject.StaticMeshData->Sections.IsEmpty();
-                if (RenderObject.bCanOcclude)
-                {
-                    for (const FStaticMeshSection& Section : RenderObject.StaticMeshData->Sections)
-                    {
-                        UMaterial* Material = StaticMeshComponent->GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
-                        if (!Material || Material->PSOType != EPSOType::StaticMesh_Opaque)
-                        {
-                            RenderObject.bCanOcclude = false;
-                            break;
-                        }
-                    }
-                }
-            }
-            LocalList.Add(RenderObject);
+            if (BuildRenderableObject(Primitive, RenderObject))
+				LocalList.Add(std::move(RenderObject));
         }
     });
 
@@ -648,11 +650,22 @@ void FMultipleViewportsAdapter::CaptureWorld(UWorld& World) {
         for (FRenderableObject& Object : WorkerRenderObjectBuffers[JobIndex])
         {
             Object.StableIndex = StableIndex++;
+			const uint32 ObjectIndex = Object.Primitive->GetInternalIndex();
+			if (ObjectIndex >= static_cast<uint32>(RenderObjectIndexByObjectIndex.Num()))
+			{
+				const int32 PreviousSize = RenderObjectIndexByObjectIndex.Num();
+				RenderObjectIndexByObjectIndex.SetNum(static_cast<int32>(ObjectIndex + 1));
+				std::fill(RenderObjectIndexByObjectIndex.begin() + PreviousSize,
+					RenderObjectIndexByObjectIndex.end(), -1);
+			}
+			RenderObjectIndexByObjectIndex[ObjectIndex] = static_cast<int32>(Object.StableIndex);
             RenderObjects.Add(std::move(Object));
         }
     }
 
-    SoftwareOcclusion.SynchronizeObjects(RenderObjects);
+	CapturedPrimitiveTopologyRevision = TopologyRevision;
+	World.ClearDirtyRenderPrimitiveComponents();
+	SoftwareOcclusion.SynchronizeObjects(RenderObjects);
 }
 
 // 유효 Rect와 Single 대상 인덱스 또는 Quad 모드로 View 활성 여부를 판정한다.

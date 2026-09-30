@@ -22,7 +22,6 @@ bool FSettingsPanel::Init()
 	return true;
 }
 
-
 // 설정 패널의 프레임 갱신 진입점이다.
 void FSettingsPanel::Tick(float DeltaTime)
 {
@@ -36,62 +35,111 @@ void FSettingsPanel::OnRender()
 
 	//////////////////////////////////////////////////////////
 
-	// 렌더링 옵션 (Toggles)
 	ImGui::SeparatorText("Rendering");
 
-	ImGui::TextDisabled(
-		"Editor VSync: Off | Tearing: %s",
-		bTearingSupported ? "Supported" : "Unavailable");
+	ImGui::TextDisabled("Editor VSync: Off | Tearing: %s", bTearingSupported ? "Supported" : "Unavailable");
 	ImGui::TextDisabled("Fill mode is configured per viewport.");
+
+	ImGui::Spacing();
+
 	ImGui::Checkbox("Draw Primitives", &Settings.bDrawPrimitives);
-	ImGui::Checkbox("Draw Bounding Box", &Settings.bDrawBoundingBox);
-	ImGui::Checkbox("Show Object UUID", &Settings.bShowUUID);
 
-	if (ViewportAdapter)
-	{
-		const char* OcclusionModes[]{"Disabled", "Linear Subcells", "Hierarchical Subcells", "Static BVH + HZB", "Static BVH Frustum Only", "GPU Compute (Frustum + HZB)"};
-		ImGui::SetNextItemWidth(220.0f);
-		ImGui::Combo("Software Occlusion", &Settings.SoftwareOcclusionMode, OcclusionModes, 6);
-		const char* OccluderGeometryModes[]{"Auto by Distance", "AABB", "Mesh Triangles"};
-		ImGui::SetNextItemWidth(220.0f);
-		ImGui::Combo("Occluder Geometry", &Settings.SoftwareOccluderGeometry, OccluderGeometryModes, 3);
-		const int32 TileSizes[]{4, 8, 16};
-		int32 TileSelection = Settings.SoftwareOcclusionTileSize == 4 ? 0 : Settings.SoftwareOcclusionTileSize == 16 ? 2 : 1;
-		ImGui::SetNextItemWidth(220.0f);
-		if (ImGui::Combo("Occlusion Tile Size", &TileSelection, "4 px\0 8 px\0 16 px\0"))
-			Settings.SoftwareOcclusionTileSize = TileSizes[TileSelection];
-		ImGui::SetNextItemWidth(220.0f);
-		ImGui::SliderInt("Minimum Occluder Tiles", &Settings.SoftwareOcclusionMinimumTiles, 1, 64);
-		ImGui::SetNextItemWidth(220.0f);
-		ImGui::SliderInt("Triangle Budget", &Settings.SoftwareOcclusionTriangleBudget, 10000, 1000000);
-		ImGui::SetNextItemWidth(220.0f);
-		ImGui::SliderFloat("Occlusion CPU Budget (ms)", &Settings.SoftwareOcclusionCpuBudgetMs, 0.0f, 16.0f, "%.1f");
-		ImGui::SetNextItemWidth(220.0f);
-		ImGui::SliderFloat("Box Distance Threshold", &Settings.SoftwareOcclusionBoxDistanceThreshold, 0.0f, 100.0f, "%.1f m");
-		ImGui::Checkbox("Debug Occlusion Bounds", &Settings.bSoftwareOcclusionDebugBounds);
+	ImGui::Spacing();
+	ImGui::SeparatorText("Viewport Guides");
 
-		FSoftwareOcclusionSettings Occlusion = ViewportAdapter->GetSoftwareOcclusionSettings();
-		Occlusion.Mode = static_cast<ESoftwareOcclusionMode>(std::clamp(Settings.SoftwareOcclusionMode, 0, 5));
-		Occlusion.OccluderGeometry = static_cast<ESoftwareOccluderGeometry>(std::clamp(Settings.SoftwareOccluderGeometry, 0, 2));
-		Occlusion.TileSize = Settings.SoftwareOcclusionTileSize;
-		Occlusion.MinimumOccluderTiles = Settings.SoftwareOcclusionMinimumTiles;
-		Occlusion.TriangleBudget = static_cast<uint32>(std::max(0, Settings.SoftwareOcclusionTriangleBudget));
-		Occlusion.CpuTimeBudgetMs = Settings.SoftwareOcclusionCpuBudgetMs;
-		Occlusion.BoxOccluderDistanceThreshold = Settings.SoftwareOcclusionBoxDistanceThreshold;
-		Occlusion.bDebugBounds = Settings.bSoftwareOcclusionDebugBounds;
-		ViewportAdapter->SetSoftwareOcclusionSettings(Occlusion);
-	}
+	ImGui::Checkbox("Show Grid", &Settings.bDrawGrid);
+
+	ImGui::SameLine(140.0f);
+	ImGui::TextDisabled("Spacing");
+	ImGui::SameLine();
+
+	if (!Settings.bDrawGrid)
+		ImGui::BeginDisabled();
+
+	ImGui::SetNextItemWidth(100.0f);
+	ImGui::SliderInt("##GridSpacing", &Settings.GridSpacing, 1, 100);
+
+	if (!Settings.bDrawGrid)
+		ImGui::EndDisabled();
+
+	ImGui::Checkbox("Show Axis", &Settings.bDrawAxis);
 
 	//////////////////////////////////////////////////////////
 
-	ImGui::Dummy(ImVec2(0.0f, SectionGap));
-	ImGui::SeparatorText("Grid");
+	if (ViewportAdapter)
+	{
+		ImGui::Spacing();
+		ImGui::SeparatorText("Occlusion Culling");
 
-	ImGui::Checkbox("Draw Batch Line / Grid", &Settings.bDrawBatchLine);
-	ImGui::Checkbox("Draw PS Grid", &Settings.bDrawPSGrid);
+		if (ViewportAdapter)
+		{
+			const char* OcclusionModes[]{"Disabled", "Linear Subcells", "Hierarchical Subcells", "Static BVH + HZB", "Static BVH Frustum Only", "GPU Compute (Frustum + HZB)"};
 
-	ImGui::SetNextItemWidth(200.0f);
-	ImGui::SliderInt("Grid Spacing", &Settings.GridSpacing, 1, 100);
+			ImGui::TextDisabled("Mode");
+			ImGui::SetNextItemWidth(-1.0f);
+			ImGui::Combo("##OcclusionMode", &Settings.SoftwareOcclusionMode, OcclusionModes, 6);
+
+			const bool bOcclusionEnabled = Settings.SoftwareOcclusionMode != 0;
+
+			if (!bOcclusionEnabled)
+				ImGui::BeginDisabled();
+
+			ImGui::Spacing();
+			ImGui::TextDisabled("Occluder");
+
+			const char* OccluderGeometryModes[]{"Auto by Distance", "AABB", "Mesh Triangles"};
+
+			ImGui::SetNextItemWidth(-1.0f);
+			ImGui::Combo("##OccluderGeometry", &Settings.SoftwareOccluderGeometry, OccluderGeometryModes, 3);
+
+			ImGui::Spacing();
+			ImGui::TextDisabled("Rasterization");
+
+			const int32 TileSizes[]{4, 8, 16};
+			int32 TileSelection = Settings.SoftwareOcclusionTileSize == 4 ? 0 : Settings.SoftwareOcclusionTileSize == 16 ? 2 : 1;
+
+			ImGui::SetNextItemWidth(140.0f);
+			if (ImGui::Combo("Tile Size", &TileSelection, "4 px\0 8 px\0 16 px\0"))
+				Settings.SoftwareOcclusionTileSize = TileSizes[TileSelection];
+
+			ImGui::SameLine();
+
+			ImGui::SetNextItemWidth(140.0f);
+			ImGui::SliderInt("Min Tiles", &Settings.SoftwareOcclusionMinimumTiles, 1, 64);
+
+			ImGui::Spacing();
+			ImGui::TextDisabled("Budget");
+
+			ImGui::SetNextItemWidth(220.0f);
+			ImGui::SliderInt("Triangle Budget", &Settings.SoftwareOcclusionTriangleBudget, 10000, 1000000);
+
+			ImGui::SetNextItemWidth(220.0f);
+			ImGui::SliderFloat("CPU Budget", &Settings.SoftwareOcclusionCpuBudgetMs, 0.0f, 16.0f, "%.1f ms");
+
+			ImGui::SetNextItemWidth(220.0f);
+			ImGui::SliderFloat("Box Distance", &Settings.SoftwareOcclusionBoxDistanceThreshold, 0.0f, 100.0f, "%.1f m");
+
+			ImGui::Checkbox("Debug Bounds", &Settings.bSoftwareOcclusionDebugBounds);
+
+			if (!bOcclusionEnabled)
+				ImGui::EndDisabled();
+
+			FSoftwareOcclusionSettings Occlusion = ViewportAdapter->GetSoftwareOcclusionSettings();
+
+			Occlusion.Mode = static_cast<ESoftwareOcclusionMode>(std::clamp(Settings.SoftwareOcclusionMode, 0, 5));
+
+			Occlusion.OccluderGeometry = static_cast<ESoftwareOccluderGeometry>(std::clamp(Settings.SoftwareOccluderGeometry, 0, 2));
+
+			Occlusion.TileSize = Settings.SoftwareOcclusionTileSize;
+			Occlusion.MinimumOccluderTiles = Settings.SoftwareOcclusionMinimumTiles;
+			Occlusion.TriangleBudget = static_cast<uint32>(std::max(0, Settings.SoftwareOcclusionTriangleBudget));
+			Occlusion.CpuTimeBudgetMs = Settings.SoftwareOcclusionCpuBudgetMs;
+			Occlusion.BoxOccluderDistanceThreshold = Settings.SoftwareOcclusionBoxDistanceThreshold;
+			Occlusion.bDebugBounds = Settings.bSoftwareOcclusionDebugBounds;
+
+			ViewportAdapter->SetSoftwareOcclusionSettings(Occlusion);
+		}
+	}
 
 	//////////////////////////////////////////////////////////
 
@@ -150,12 +198,10 @@ bool FSettingsPanel::SaveSettings() const
 	}
 
 	File << "[Rendering]\n";
-	File << "Wireframe=" << Settings.bWireframe << "\n";
 	File << "DrawPrimitives=" << Settings.bDrawPrimitives << "\n";
-	File << "DrawBoundingBox=" << Settings.bDrawBoundingBox << "\n";
-	File << "ShowUUID=" << Settings.bShowUUID << "\n";
-	File << "DrawBatchLine=" << Settings.bDrawBatchLine << "\n";
-	File << "DrawPSGrid=" << Settings.bDrawPSGrid << "\n";
+	File << "DrawGrid=" << Settings.bDrawGrid << "\n";
+	File << "DrawAxis=" << Settings.bDrawAxis << "\n";
+
 	File << "SoftwareOcclusionMode=" << Snapshot.SoftwareOcclusionMode << "\n";
 	File << "SoftwareOccluderGeometry=" << Snapshot.SoftwareOccluderGeometry << "\n";
 	File << "SoftwareOcclusionTileSize=" << Snapshot.SoftwareOcclusionTileSize << "\n";
@@ -278,13 +324,11 @@ bool FSettingsPanel::LoadSettings()
                         RotationComponentMasks[Index] |= 1 << 3;
                     }
                 }
-                if (Key == "Wireframe") Settings.bWireframe = std::stoi(ValueStr);
-				else if (Key == "DrawPrimitives") Settings.bDrawPrimitives = std::stoi(ValueStr);
-				else if (Key == "DrawBoundingBox") Settings.bDrawBoundingBox = std::stoi(ValueStr);
-				else if (Key == "ShowUUID") Settings.bShowUUID = std::stoi(ValueStr);
-				else if (Key == "DrawBatchLine") Settings.bDrawBatchLine = std::stoi(ValueStr);
-				else if (Key == "DrawPSGrid") Settings.bDrawPSGrid = std::stoi(ValueStr);
-				else if (Key == "SoftwareOcclusionMode") Settings.SoftwareOcclusionMode = std::clamp(std::stoi(ValueStr), 0, 4);
+				if (Key == "DrawPrimitives") Settings.bDrawPrimitives = std::stoi(ValueStr);
+				else if (Key == "DrawGrid")	Settings.bDrawGrid = std::stoi(ValueStr);
+				else if (Key == "DrawAxis")	Settings.bDrawAxis = std::stoi(ValueStr);
+
+				else if (Key == "SoftwareOcclusionMode") Settings.SoftwareOcclusionMode = std::clamp(std::stoi(ValueStr), 0, 5);
 				else if (Key == "SoftwareOccluderGeometry") Settings.SoftwareOccluderGeometry = std::clamp(std::stoi(ValueStr), 0, 2);
 				else if (Key == "SoftwareOcclusionTileSize")
 				{
@@ -374,7 +418,6 @@ void FSettingsPanel::ReadViewportSettings(FEditorSettings& Out) const
 // 종료 시 Adapter를 읽지 않도록 살아 있는 동안 저장용 설정을 갱신한다.
 void FSettingsPanel::CaptureViewportSettings() { ReadViewportSettings(Settings); }
 
-// 저장 프리셋·투영·표시를 슬롯별로 복원하며 구형 ini는 초기값과 공통 Wireframe을 사용한다.
 void FSettingsPanel::ApplyViewportSettings()
 {
     if (!ViewportAdapter) return;
@@ -401,6 +444,5 @@ void FSettingsPanel::ApplyViewportSettings()
         if (Settings.bViewLocationSaved[Index]) Camera.Transform.Location = Settings.ViewLocation[Index];
         if (Settings.bViewRotationSaved[Index]) Camera.Transform.Rotation = Settings.ViewRotation[Index];
         ViewportAdapter->ApplyCameraProperties(Index, Camera, false);
-        ViewportAdapter->SetViewWireframe(Index, Settings.ViewWireframe[Index] < 0 ? Settings.bWireframe : Settings.ViewWireframe[Index] == 1);
     }
 }

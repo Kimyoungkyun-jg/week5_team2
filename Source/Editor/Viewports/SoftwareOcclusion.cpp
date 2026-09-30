@@ -285,6 +285,7 @@ void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject
 			else if (!State.bDynamic && State.BoundsRevision != Object.BoundsRevision)
 			{
 				State.bDynamic = true;
+				bBVHDirty = true;
 			}
 			State.BoundsRevision = Object.BoundsRevision;
 			State.SeenSerial = SyncSerial;

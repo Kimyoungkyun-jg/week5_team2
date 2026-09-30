@@ -77,6 +77,7 @@ AActor* UWorld::SpawnActor(UClass* Class, FName InName, const FTransform* Transf
 
 	// 4. Level->Actors에 등록
 	PersistentLevel->AddActor(NewActor);
+	RefreshActorTickRegistration(NewActor);
 
 	// 5. PlayList에 추가
 	BeginPlayList.Enqueue(NewActor);
@@ -92,12 +93,10 @@ void UWorld::Tick(float DeltaTime)
 		BeginPlayList.Dequeue();
 	}
 
-	for (ULevel* Level : Levels)
+	for (AActor* Actor : TickActors)
 	{
-		for (AActor* Actor : Level->GetActors())
-		{
+		if (Actor)
 			Actor->Tick(DeltaTime);
-		}
 	}
 
 	if (MainCamera)
@@ -129,6 +128,8 @@ void UWorld::ClearWorld()
 	}
 	WorldPrimitiveComponents.Reset();
 	DirtyPrimitiveComponents.Reset();
+	DirtyRenderPrimitiveComponents.Reset();
+	TickActors.Reset();
 	++PrimitiveTopologyRevision;
 	PrimitiveBVH.Reset();
 	LOG(Info, "{} : ", PersistentLevel->GetActorNum());
@@ -207,6 +208,14 @@ bool UWorld::DestroyActor(AActor* Actor)
 
 	FString ActorName = Actor->GetName();
 	uint32 ActorUUID = Actor->GetUUID();
+	for (int32 Index = TickActors.Num() - 1; Index >= 0; --Index)
+	{
+		if (TickActors[Index] == Actor)
+		{
+			TickActors.RemoveAt(Index, 1);
+			break;
+		}
+	}
 	if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Actor->GetRootComponent()))
 	{
 		for (int32 Index = WorldPrimitiveComponents.Num() - 1; Index >= 0; --Index)
@@ -280,7 +289,21 @@ void UWorld::TraceLineClosest(FTraceContext& Context, const FPrimitiveBVH::FRayN
 void UWorld::MarkPrimitiveBoundsDirty(UPrimitiveComponent* Primitive)
 {
 	if (Primitive)
+	{
 		DirtyPrimitiveComponents.Add(Primitive);
+		DirtyRenderPrimitiveComponents.Add(Primitive);
+	}
+}
+
+void UWorld::RefreshActorTickRegistration(AActor* Actor)
+{
+	for (int32 Index = TickActors.Num() - 1; Index >= 0; --Index)
+	{
+		if (TickActors[Index] == Actor)
+			TickActors.RemoveAt(Index, 1);
+	}
+	if (Actor && Actor->IsActorTickEnabled())
+		TickActors.Add(Actor);
 }
 
 void UWorld::BeginPlay()

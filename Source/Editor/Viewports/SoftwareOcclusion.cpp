@@ -401,6 +401,7 @@ void FSoftwareOcclusionCuller::GatherRayCandidates(const FRay& Ray, const TArray
 	if (!BVHNodes.IsEmpty())
 	{
 		float RootDist = 0.0f;
+		//if (RayIntersectsBoundingSphere(Context, BoundsMin(BVHNodes[0].Bounds), BoundsMax(BVHNodes[0].Bounds), RootDist))
 		if (RayIntersectsAABB(Context, BoundsMin(BVHNodes[0].Bounds), BoundsMax(BVHNodes[0].Bounds), RootDist))
 		{
 			TraverseRayBVH(Context, Objects, 0, RootDist, ClosestDist, OutCandidates);

@@ -210,6 +210,23 @@ void FPrimitiveBVH::GatherRayCandidates(const FRay& Ray,
 		});
 }
 
+void FPrimitiveBVH::TraceRayClosest(FTraceContext& Context, const FRayNarrowTestFn NarrowTest, void* UserContext) const
+{
+	// View에 따라 형상이 달라지는 Primitive는 Bounds를 신뢰할 수 없으므로 거리와 무관하게 먼저 정밀 검사한다
+	for (UPrimitiveComponent* Primitive : BypassPrimitives)
+	{
+		if (Primitive)
+			NarrowTest(Context, Primitive, UserContext);
+	}
+
+	if (!Nodes.IsEmpty())
+	{
+		float RootDistance = 0.0f;
+		if (RayIntersectsAABB(Context, Nodes[0].Bounds.Min, Nodes[0].Bounds.Max, RootDistance))
+			TraverseRayClosest(Context, 0, RootDistance, NarrowTest, UserContext);
+	}
+}
+
 uint32 FPrimitiveBVH::BuildNode(const uint32 First, const uint32 Count, const uint32 Parent)
 {
 	FBox NodeBounds = Entries[PrimitiveIndices[First]].Bounds;
@@ -440,5 +457,56 @@ void FPrimitiveBVH::TraverseRay(const FTraceContext& Context, const uint32 NodeI
 	else if (bHitRight)
 	{
 		TraverseRay(Context, Node.Right, OutCandidates);
+	}
+}
+
+void FPrimitiveBVH::TraverseRayClosest(FTraceContext& Context, const uint32 NodeIndex, const float NodeDistance, const FRayNarrowTestFn NarrowTest, void* UserContext) const
+{
+	// 노드 박스가 이미 실제로 맞은 거리보다 멀면 안의 Primitive는 더 가까울 수 없다
+	// (박스 진입 거리로 갱신하면 박스만 스치는 앞 객체 때문에 뒤 객체를 놓치므로 실제 교차 거리만 사용한다)
+	if (NodeDistance >= Context.BestDistance)
+		return;
+
+	const FNode& Node = Nodes[NodeIndex];
+	if (Node.Count > 0)
+	{
+		// 리프 안에서 박스를 통과한 Primitive만 모아 박스 진입 거리순으로 정밀 검사한다
+		FRayHit Hits[PrimitiveBVHLeafSize];
+		uint32 HitCount = 0;
+		for (uint32 Offset = 0; Offset < Node.Count && HitCount < PrimitiveBVHLeafSize; ++Offset)
+		{
+			const FEntry& Entry = Entries[PrimitiveIndices[Node.First + Offset]];
+			float BoundsDistance = 0.0f;
+			if (Entry.Primitive && RayIntersectsAABB(Context, Entry.Bounds.Min, Entry.Bounds.Max, BoundsDistance) && BoundsDistance < Context.BestDistance)
+				Hits[HitCount++] = {BoundsDistance, Entry.Primitive};
+		}
+
+		std::sort(Hits, Hits + HitCount, [](const FRayHit& A, const FRayHit& B) { return A.Distance < B.Distance; });
+		for (uint32 Index = 0; Index < HitCount && Hits[Index].Distance < Context.BestDistance; ++Index)
+			NarrowTest(Context, Hits[Index].Primitive, UserContext);
+		return;
+	}
+
+	float LeftDistance = 0.0f;
+	float RightDistance = 0.0f;
+	const FNode& LeftNode = Nodes[Node.Left];
+	const FNode& RightNode = Nodes[Node.Right];
+	const bool bHitLeft = RayIntersectsAABB(Context, LeftNode.Bounds.Min, LeftNode.Bounds.Max, LeftDistance);
+	const bool bHitRight = RayIntersectsAABB(Context, RightNode.Bounds.Min, RightNode.Bounds.Max, RightDistance);
+
+	// 가까운 노드 먼저. 먼 노드는 가까운 노드에서 갱신된 최근접 거리로 진입 시 다시 판정한다
+	if (bHitLeft && bHitRight)
+	{
+		const bool bLeftNear = LeftDistance <= RightDistance;
+		TraverseRayClosest(Context, bLeftNear ? Node.Left : Node.Right, bLeftNear ? LeftDistance : RightDistance, NarrowTest, UserContext);
+		TraverseRayClosest(Context, bLeftNear ? Node.Right : Node.Left, bLeftNear ? RightDistance : LeftDistance, NarrowTest, UserContext);
+	}
+	else if (bHitLeft)
+	{
+		TraverseRayClosest(Context, Node.Left, LeftDistance, NarrowTest, UserContext);
+	}
+	else if (bHitRight)
+	{
+		TraverseRayClosest(Context, Node.Right, RightDistance, NarrowTest, UserContext);
 	}
 }

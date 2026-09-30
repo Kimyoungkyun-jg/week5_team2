@@ -141,7 +141,7 @@ bool UStaticMesh::GenerateLODs()
 		LOD2Indices.SetNum(TotalIndices);
 
 		float ResultError = 0.0f;
-		size_t ReducedCount = meshopt_simplify(
+		size_t ReducedCount =  meshopt_simplify(
 			LOD2Indices.GetData(),
 			MeshData.Indices.GetData(),
 			TotalIndices,

@@ -244,25 +244,37 @@ bool UWorld::LineTraceSingle(const FRay& WorldRay, FHitResult& OutHit, const TAr
 		// Bounds를 신뢰할 수 없는 후보는 기존처럼 항상 검사한다.
 		if (Candidate.bHasBoundsDistance && Candidate.BoundsDistance >= Context.BestDistance)
 			continue;
-		//해당월드에 있음
-		if (!It->IsVisible())
-			continue;
-		FHitResult Hit;
-		// Billboard·Particle은 LineTraceWithContext override에서 View 행렬로 판정하므로
-		// 여기서는 컴포넌트 종류를 구분하지 않는다 (Cast 제거)
-		if (It->LineTraceWithContext(Context, Hit) && Hit.HitComponent && Hit.Distance >= 0.0f && Hit.Distance < OutHit.Distance)
-		{
-			OutHit = Hit;
-			Context.BestDistance = Hit.Distance; // 이후 후보는 이보다 먼 박스의 정밀 판정을 건너뛴다
-		}
+		LineTraceCandidate(Context, It, OutHit);
 	}
 	return OutHit.HitComponent != nullptr;
+}
+
+bool UWorld::LineTraceCandidate(FTraceContext& Context, UPrimitiveComponent* Primitive, FHitResult& InOutHit)
+{
+	//해당월드에 있음
+	if (!Primitive || !Primitive->IsVisible())
+		return false;
+	FHitResult Hit;
+	// Billboard·Particle은 LineTraceWithContext override에서 View 행렬로 판정하므로
+	// 여기서는 컴포넌트 종류를 구분하지 않는다 (Cast 제거)
+	if (Primitive->LineTraceWithContext(Context, Hit) && Hit.HitComponent && Hit.Distance >= 0.0f && Hit.Distance < InOutHit.Distance)
+	{
+		InOutHit = Hit;
+		Context.BestDistance = Hit.Distance; // 이후 후보는 이보다 먼 박스의 정밀 판정을 건너뛴다
+		return true;
+	}
+	return false;
 }
 
 void UWorld::GatherLineTraceCandidates(
 	const FRay& WorldRay, TArray<FLineTraceCandidate>& OutCandidates) const
 {
 	PrimitiveBVH.GatherRayCandidates(WorldRay, OutCandidates);
+}
+
+void UWorld::TraceLineClosest(FTraceContext& Context, const FPrimitiveBVH::FRayNarrowTestFn NarrowTest, void* UserContext) const
+{
+	PrimitiveBVH.TraceRayClosest(Context, NarrowTest, UserContext);
 }
 
 void UWorld::MarkPrimitiveBoundsDirty(UPrimitiveComponent* Primitive)

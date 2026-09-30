@@ -189,6 +189,26 @@ FRay ToLocalRay(const FRay& WorldRay, const FMatrix& WorldMatrix)
 	return LocalRay;
 }
 
+bool ToLocalRayAffine(const FRay& WorldRay, const FMatrix& WorldMatrix, FRay& OutLocalRay)
+{
+	// 행벡터 규약(v * M): 0~2행은 축, 3행은 이동. 역행렬의 열 = 두 축의 외적 / det
+	const FVector R0(WorldMatrix.M[0][0], WorldMatrix.M[0][1], WorldMatrix.M[0][2]);
+	const FVector R1(WorldMatrix.M[1][0], WorldMatrix.M[1][1], WorldMatrix.M[1][2]);
+	const FVector R2(WorldMatrix.M[2][0], WorldMatrix.M[2][1], WorldMatrix.M[2][2]);
+	const FVector C0 = FVector::Cross(R1, R2);
+	const FVector C1 = FVector::Cross(R2, R0);
+	const FVector C2 = FVector::Cross(R0, R1);
+	const float Det = FVector::Dot(R0, C0);
+	if (fabsf(Det) < 1e-12f)
+		return false;
+
+	const float InvDet = 1.0f / Det;
+	const FVector P(WorldRay.Origin.X - WorldMatrix.M[3][0], WorldRay.Origin.Y - WorldMatrix.M[3][1], WorldRay.Origin.Z - WorldMatrix.M[3][2]);
+	OutLocalRay.Origin = FVector(FVector::Dot(P, C0), FVector::Dot(P, C1), FVector::Dot(P, C2)) * InvDet;
+	OutLocalRay.Direction = FVector(FVector::Dot(WorldRay.Direction, C0), FVector::Dot(WorldRay.Direction, C1), FVector::Dot(WorldRay.Direction, C2)) * InvDet;
+	return true;
+}
+
 bool RayIntersectsAABB(const FRay& Ray, const FVector& BoxMin, const FVector& BoxMax, float& OutT)
 {
 	float invRayDir = 1.0f / Ray.Direction.X;
@@ -225,6 +245,51 @@ bool RayIntersectsAABB(const FRay& Ray, const FVector& BoxMin, const FVector& Bo
 	// 광선이 내부라면 tEnter는 음수.
 	OutT = fmax(0.0f, tEnter);
 	return true;
+}
+
+bool RayIntersectsBoundingSphere(const FRay& Ray, const FVector& SphereCenter, const float SphereRadius, float& OutT)
+{
+    if (SphereRadius < 0.0f) return false;
+
+    // 임시 FVector 생성/정규화 없이 성분으로 계산한다.
+    const float OX = Ray.Origin.X - SphereCenter.X;
+    const float OY = Ray.Origin.Y - SphereCenter.Y;
+    const float OZ = Ray.Origin.Z - SphereCenter.Z;
+    const float RadiusSquared = SphereRadius * SphereRadius;
+    const float C = OX * OX + OY * OY + OZ * OZ - RadiusSquared;
+    if (C <= 0.0f)
+    {
+        OutT = 0.0f;
+        return true;
+    }
+
+    const float DX = Ray.Direction.X;
+    const float DY = Ray.Direction.Y;
+    const float DZ = Ray.Direction.Z;
+    const float B = OX * DX + OY * DY + OZ * DZ;
+    // 구 밖에서 멀어지는 Ray(방향 0 포함)는 제곱근/나눗셈 전에 탈락한다.
+    if (B >= 0.0f) return false;
+
+    const float A = DX * DX + DY * DY + DZ * DZ;
+    if (A <= 0.0f) return false;
+
+    // B*B - A*C와 동치. 먼 작은 구에서 큰 두 수를 빼는 정밀도 손실을 줄인다.
+    const float CrossX = OY * DZ - OZ * DY;
+    const float CrossY = OZ * DX - OX * DZ;
+    const float CrossZ = OX * DY - OY * DX;
+    const float Discriminant = A * RadiusSquared -
+        (CrossX * CrossX + CrossY * CrossY + CrossZ * CrossZ);
+    if (Discriminant < 0.0f) return false;
+
+    // (-B - sqrt(D)) / A를 유리화: 표면 가까이에서 뺄셈 오차를 줄인다.
+    // 외부의 실제 교차에서만 sqrt 1회, 나눗셈 1회를 수행한다. 로컬 Ray의 t도 보존된다.
+    OutT = C / (-B + sqrtf(Discriminant));
+    return true;
+}
+
+bool RayIntersectsBoundingSphere(const FTraceContext& Context, const FVector& SphereCenter, const float SphereRadius, float& OutTEnter)
+{
+    return RayIntersectsBoundingSphere(Context.Ray, SphereCenter, SphereRadius, OutTEnter);
 }
 
 namespace

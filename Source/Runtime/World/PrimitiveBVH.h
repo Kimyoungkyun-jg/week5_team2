@@ -16,6 +16,12 @@ public:
 	void Reset();
 	void GatherRayCandidates(const FRay& Ray, TArray<FLineTraceCandidate>& OutCandidates) const;
 
+	// 피킹 정밀 검사 콜백. 실제로 더 가까이 맞았을 때만 Context.BestDistance를 갱신해야 한다.
+	using FRayNarrowTestFn = void (*)(FTraceContext& Context, UPrimitiveComponent* Primitive, void* UserContext);
+	// 가까운 노드부터 순회하며 박스를 통과한 Primitive를 바로 정밀 검사한다.
+	// 실제 교차로 갱신된 Context.BestDistance보다 박스가 먼 노드·Primitive는 건너뛴다.
+	void TraceRayClosest(FTraceContext& Context, FRayNarrowTestFn NarrowTest, void* UserContext) const;
+
 	int32 GetPrimitiveCount() const { return Entries.Num() + BypassPrimitives.Num(); }
 
 private:
@@ -36,11 +42,19 @@ private:
 		uint32 Count = 0;
 	};
 
+	// 박스를 통과한 피킹 후보와 박스 진입 거리
+	struct FRayHit
+	{
+		float Distance = 0.0f;
+		UPrimitiveComponent* Primitive = nullptr;
+	};
+
 	uint32 BuildNode(uint32 First, uint32 Count, uint32 Parent);
 	FBox RefitNode(uint32 NodeIndex);
 	void RefitFromLeaf(uint32 LeafIndex);
 	void TraverseRay(const FTraceContext& Context, uint32 NodeIndex,
 		TArray<FLineTraceCandidate>& OutCandidates) const;
+	void TraverseRayClosest(FTraceContext& Context, uint32 NodeIndex, float NodeDistance, FRayNarrowTestFn NarrowTest, void* UserContext) const;
 
 	TArray<FEntry> Entries;
 	TArray<uint64> EntryBoundsRevisions;

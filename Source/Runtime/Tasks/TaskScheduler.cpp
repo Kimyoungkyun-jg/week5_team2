@@ -67,6 +67,37 @@ void FTaskScheduler::Shutdown() {
   GlobalQueue.clear();
 }
 
+void FTaskScheduler::BeginFrame() {
+  CachedThreadStats.clear();
+  CachedThreadStats.reserve(NumWorkers + 1);
+
+  // 메인 스레드 통계 수집
+  {
+    FThreadExecutionStats MainStat{};
+    MainStat.WorkerIndex = -1;
+    if (NumWorkers < MaxTrackedThreads) {
+      MainStat.TasksExecuted = FrameTasksExecuted[NumWorkers].exchange(0, std::memory_order_relaxed);
+      MainStat.BusyMs = FrameBusyMicroseconds[NumWorkers].exchange(0, std::memory_order_relaxed) / 1000.0f;
+    }
+    CachedThreadStats.push_back(MainStat);
+  }
+
+  // 워커 스레드 통계 수집
+  for (uint32_t Index = 0; Index < NumWorkers; ++Index) {
+    FThreadExecutionStats WorkerStat{};
+    WorkerStat.WorkerIndex = static_cast<int32_t>(Index);
+    if (Index < MaxTrackedThreads) {
+      WorkerStat.TasksExecuted = FrameTasksExecuted[Index].exchange(0, std::memory_order_relaxed);
+      WorkerStat.BusyMs = FrameBusyMicroseconds[Index].exchange(0, std::memory_order_relaxed) / 1000.0f;
+    }
+    CachedThreadStats.push_back(WorkerStat);
+  }
+}
+
+void FTaskScheduler::GetThreadStats(std::vector<FThreadExecutionStats>& OutStats) const {
+  OutStats = CachedThreadStats;
+}
+
 void FTaskScheduler::Schedule(const FLowLevelTask &Task) {
   const int32_t CurrentWorker = TLS_WorkerIndex;
 
@@ -90,51 +121,66 @@ void FTaskScheduler::Schedule(const FLowLevelTask &Task) {
 
   {
     std::lock_guard<std::mutex> Lock(WakeMutex);
-    WakeCondition.notify_one();
+    WakeCondition.notify_all();
   }
 }
 
 bool FTaskScheduler::ExecuteOneTask() {
   const int32_t CurrentWorker = TLS_WorkerIndex;
   FLowLevelTask TaskToExecute{};
+  bool bFoundTask = false;
 
   // 로컬 큐 우선 인출
   if (CurrentWorker >= 0 &&
       static_cast<size_t>(CurrentWorker) < WorkerQueues.size()) {
     if (WorkerQueues[CurrentWorker]->Pop(TaskToExecute)) {
-      TaskToExecute.Execute();
-      return true;
+      bFoundTask = true;
     }
   }
 
   // 글로벌 큐 인출
-  {
+  if (!bFoundTask) {
     std::unique_lock<std::mutex> Lock(GlobalQueueMutex);
     if (!GlobalQueue.empty()) {
       TaskToExecute = GlobalQueue.front();
       GlobalQueue.pop_front();
-      Lock.unlock();
-      TaskToExecute.Execute();
-      return true;
+      bFoundTask = true;
     }
   }
 
   // 타 워커 큐 강탈 시도
-  const size_t QueueCount = WorkerQueues.size();
-  if (QueueCount > 0) {
-    const size_t StartOffset =
-        CurrentWorker >= 0 ? static_cast<size_t>(CurrentWorker + 1) : 0;
-    for (size_t Step = 0; Step < QueueCount; ++Step) {
-      const size_t TargetIndex = (StartOffset + Step) % QueueCount;
-      if (static_cast<int32_t>(TargetIndex) == CurrentWorker) {
-        continue;
-      }
+  if (!bFoundTask) {
+    const size_t QueueCount = WorkerQueues.size();
+    if (QueueCount > 0) {
+      const size_t StartOffset =
+          CurrentWorker >= 0 ? static_cast<size_t>(CurrentWorker + 1) : 0;
+      for (size_t Step = 0; Step < QueueCount; ++Step) {
+        const size_t TargetIndex = (StartOffset + Step) % QueueCount;
+        if (static_cast<int32_t>(TargetIndex) == CurrentWorker) {
+          continue;
+        }
 
-      if (WorkerQueues[TargetIndex]->Steal(TaskToExecute)) {
-        TaskToExecute.Execute();
-        return true;
+        if (WorkerQueues[TargetIndex]->Steal(TaskToExecute)) {
+          bFoundTask = true;
+          break;
+        }
       }
     }
+  }
+
+  // 태스크 실행 및 계측
+  if (bFoundTask && TaskToExecute.Function) {
+    const auto StartTime = std::chrono::steady_clock::now();
+    TaskToExecute.Execute();
+    const auto EndTime = std::chrono::steady_clock::now();
+    const uint64_t ElapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(EndTime - StartTime).count();
+
+    const int32_t TrackIdx = (CurrentWorker >= 0 && CurrentWorker < static_cast<int32_t>(NumWorkers)) ? CurrentWorker : static_cast<int32_t>(NumWorkers);
+    if (static_cast<size_t>(TrackIdx) < MaxTrackedThreads) {
+      FrameTasksExecuted[TrackIdx].fetch_add(1, std::memory_order_relaxed);
+      FrameBusyMicroseconds[TrackIdx].fetch_add(ElapsedUs, std::memory_order_relaxed);
+    }
+    return true;
   }
 
   return false;
@@ -164,12 +210,7 @@ void FTaskScheduler::WorkerLoop(const int32_t WorkerIndex) {
     std::unique_lock<std::mutex> Lock(WakeMutex);
     SleepingWorkerCount.fetch_add(1, std::memory_order_relaxed);
 
-    WakeCondition.wait_for(Lock, std::chrono::milliseconds(1), [this]() {
-      if (!bIsRunning.load(std::memory_order_relaxed)) {
-        return true;
-      }
-      return false;
-    });
+    WakeCondition.wait_for(Lock, std::chrono::milliseconds(1));
 
     SleepingWorkerCount.fetch_sub(1, std::memory_order_relaxed);
   }

@@ -14,6 +14,7 @@
 #include "Rendering/LineBatcher.h"
 
 #include "Editor/EditorUI/EditorUI.h"
+#include "Editor/EditorUI/LoadingScreen.h"
 #include "Editor/Viewports/MultipleViewportsAdapter.h"
 
 #include "Editor/Rendering/Outline.h"
@@ -32,6 +33,7 @@ class FSettingsPanel;
 class FViewportsPanel;
 class FContentDrawerPanel;
 class FOutlinerPanel;
+class FLoadingScreen;
 
 struct FWindowContext
 {
@@ -92,6 +94,7 @@ private:
 	TUniquePtr<FGizmo> Gizmo;
 	TUniquePtr<FOutline> Outline;
 	TUniquePtr<FOutlineRenderer> OutlineRenderer;
+	TUniquePtr<FLoadingScreen> LoadingScreen;
 
 
 	

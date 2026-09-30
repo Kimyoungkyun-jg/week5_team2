@@ -40,7 +40,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return DefWindowProc(hWnd, msg, wParam, lParam);   // return 0 대신
 }
 
-bool FWindow::Create(HINSTANCE hInstance, int InWidth, int InHeight, const wchar_t* Title)
+bool FWindow::Create(HINSTANCE hInstance, int InWidth, int InHeight, const wchar_t* Title, bool bShowImmediately)
 {
 	Width = InWidth;
 	Height = InHeight;
@@ -51,16 +51,17 @@ bool FWindow::Create(HINSTANCE hInstance, int InWidth, int InHeight, const wchar
 	wc.hInstance = hInstance;
 	wc.lpszClassName = CLASS_NAME;
 	wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON2));
+	// 검은색 배경 브러시 지정
+	wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
 	RegisterClassW(&wc);
 
 	DWORD style = WS_OVERLAPPEDWINDOW;
 
-	// 원하는 클라이언트 크기 -> 실제 윈도우 크기로 보정
+	// 원하는 클라이언트 크기 반영
 	RECT rc = { 0, 0, Width, Height };
-	AdjustWindowRect(&rc, style, FALSE);   // FALSE = 메뉴 없음
+	AdjustWindowRect(&rc, style, FALSE);
 	int WindowWidth = rc.right - rc.left;
 	int WindowHeight = rc.bottom - rc.top;
-
 
 	hWnd = CreateWindowEx(
 		0, CLASS_NAME, Title,
@@ -71,10 +72,23 @@ bool FWindow::Create(HINSTANCE hInstance, int InWidth, int InHeight, const wchar
 	if (hWnd == nullptr)
 		return false;
 
-	ShowWindow(hWnd, SW_SHOW);
-
+	// 즉시 표시 설정 확인
+	if (bShowImmediately)
+	{
+		ShowWindow(hWnd, SW_SHOW);
+	}
 
 	return true;
+}
+
+void FWindow::Show()
+{
+	// 창 출력 및 화면 갱신
+	if (hWnd)
+	{
+		ShowWindow(hWnd, SW_SHOW);
+		UpdateWindow(hWnd);
+	}
 }
 
 void FWindow::ProcessMessage(bool& bIsRunning)

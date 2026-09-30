@@ -13,6 +13,14 @@
 
 namespace Tasks
 {
+    // 스레드별 실행 통계 정보
+    struct FThreadExecutionStats
+    {
+        int32_t WorkerIndex = -1;
+        uint32_t TasksExecuted = 0;
+        float BusyMs = 0.0f;
+    };
+
     // 워커 스레드 및 스케줄링 관리자
     class FTaskScheduler
     {
@@ -25,6 +33,10 @@ namespace Tasks
         bool IsRunning() const { return bIsRunning.load(std::memory_order_relaxed); }
         uint32_t GetNumWorkers() const { return NumWorkers; }
         int32_t GetCurrentWorkerIndex() const;
+
+        // 프레임 통계 갱신 및 조회
+        void BeginFrame();
+        void GetThreadStats(std::vector<FThreadExecutionStats>& OutStats) const;
 
         // 태스크 디스패치
         void Schedule(const FLowLevelTask& Task);
@@ -40,6 +52,12 @@ namespace Tasks
         ~FTaskScheduler();
 
         void WorkerLoop(int32_t WorkerIndex);
+
+    private:
+        static constexpr size_t MaxTrackedThreads = 32;
+        std::atomic<uint32_t> FrameTasksExecuted[MaxTrackedThreads]{};
+        std::atomic<uint64_t> FrameBusyMicroseconds[MaxTrackedThreads]{};
+        std::vector<FThreadExecutionStats> CachedThreadStats;
 
     private:
         std::atomic<bool> bIsRunning{ false };

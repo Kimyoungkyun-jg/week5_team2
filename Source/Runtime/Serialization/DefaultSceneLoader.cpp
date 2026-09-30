@@ -15,16 +15,20 @@
 #include "Rendering/Mesh.h"
 #include "Core/EngineLog.h"
 
-bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
+bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path, std::function<void(float)> OnProgress)
 {
 	if (!World) return false;
 
-	std::ifstream File(Path);
+	std::ifstream File(Path, std::ios::binary);
 	if (!File.is_open())
 	{
 		LOG(Warning, "Failed to open scene file: {}", Path);
 		return false;
 	}
+
+	File.seekg(0, std::ios::end);
+	const size_t FileSize = static_cast<size_t>(File.tellg());
+	File.seekg(0, std::ios::beg);
 
 	LOG(Info, "Loading Default.scene (Single-Pass)...");
 
@@ -241,6 +245,13 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 							FBox Box = Comp->CalcBounds();
 						}
 						++SpawnedCount;
+						// 진행도 콜백 호출
+						if (OnProgress && (SpawnedCount % 5 == 0))
+						{
+							const float StreamPos = static_cast<float>(File.tellg());
+							const float Ratio = FileSize > 0 ? (StreamPos / static_cast<float>(FileSize)) : 0.0f;
+							OnProgress(Ratio);
+						}
 					}
 
 					bHasObject = false;

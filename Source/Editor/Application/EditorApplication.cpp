@@ -345,9 +345,12 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
 
   const FEditorSettings& EditorSettings = SettingsPanel ? SettingsPanel->GetSettings() : FEditorSettings{};
   const float FarClip = MultipleViewportsAdapter.GetViewCamera(ViewIndex).Projection.FarClip;
+  {
+    FGPUStatScope GridScope(StatIds::GpuGrid(), L"Grid");
   GridRenderer->OnRenderPSGrid(ViewProjection, ViewCameraLocation,
                                EditorSettings,
                                ViewRenderingInfo.ViewportSetting, FarClip);
+  }
 
   const bool bDrawPrimitives = EditorSettings.bDrawPrimitives;
   if (bDrawPrimitives) {
@@ -357,6 +360,8 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
 
   MultipleViewportsAdapter.PostRenderOpaque(ViewIndex, ViewRenderingInfo.DepthSteincil.Texture);
 
+  {
+    FGPUStatScope EditorScope(StatIds::GpuEditor(), L"Editor Overlays");
   if (MultipleViewportsAdapter.GetSoftwareOcclusionSettings().bDebugBounds) {
     LineBatcher->BeginFrame();
     MultipleViewportsAdapter.AppendSoftwareOcclusionDebugBounds(*LineBatcher);
@@ -400,6 +405,7 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
     }
   }
 
+  }
   RenderCommand::EndRenderPass(ViewRenderingInfo);
 }
 

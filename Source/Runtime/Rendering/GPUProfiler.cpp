@@ -17,7 +17,8 @@ void FGPUProfiler::BeginFrame(ID3D11Device* InDevice, ID3D11DeviceContext* InCon
 		return;
 	Resolve();
 	if (bFailed || !(FStats::IsEnabled(StatIds::GpuFrame()) || FStats::IsEnabled(StatIds::GpuOpaque())
-		|| FStats::IsEnabled(StatIds::GpuHZB()) || FStats::IsEnabled(StatIds::GpuCull())))
+		|| FStats::IsEnabled(StatIds::GpuHZB()) || FStats::IsEnabled(StatIds::GpuCull())
+		|| FStats::IsEnabled(StatIds::GpuGrid()) || FStats::IsEnabled(StatIds::GpuEditor())))
 		return;
 	for (int32 Index = 0; Index < static_cast<int32>(Frames.size()); ++Index)
 	{

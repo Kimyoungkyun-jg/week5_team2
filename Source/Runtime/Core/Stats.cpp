@@ -13,12 +13,22 @@ FStatId FStats::Register(const FStatDesc& Desc)
 
 void FStats::BeginFrame()
 {
+	++FrameNumber;
 	for (FStatRecord& Record : Records)
 	{
 		if (Record.Desc.Mode == EStatMode::FrameSum)
 		{
 			Record.CurrentValue = 0.0;
 		}
+	}
+}
+
+void FStats::ResetSamples()
+{
+	for (FStatRecord& Record : Records)
+	{
+		Record.CurrentValue = Record.TotalValue = Record.MaxValue = 0.0;
+		Record.SampleCount = Record.LastSampleFrame = 0;
 	}
 }
 
@@ -60,6 +70,7 @@ void FStats::RecordEvent(FStatId Id, double Value)
 		Record.MaxValue = Value;
 	}
 	Record.SampleCount++;
+	Record.LastSampleFrame = FrameNumber;
 }
 
 FStatScope::FStatScope(FStatId InId) : Id(InId)

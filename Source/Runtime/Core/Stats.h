@@ -40,6 +40,7 @@ struct FStatRecord
 	double TotalValue = 0.0;
 	double MaxValue = 0.0;
 	uint64 SampleCount = 0;
+	uint64 LastSampleFrame = 0;
 
 	bool bEnabled = false;
 };
@@ -53,6 +54,8 @@ class FStats
 	static const TArray<FStatRecord>& GetRecords() { return Records; }
 
 	static void BeginFrame();
+	static void ResetSamples();
+	static uint64 GetFrameNumber() { return FrameNumber; }
 
 	static void Add(FStatId Id, double Value);
 	static void Set(FStatId Id, double Value);
@@ -63,6 +66,7 @@ class FStats
 
   private:
 	inline static TArray<FStatRecord> Records;
+	inline static uint64 FrameNumber = 0;
 };
 
 class FStatScope

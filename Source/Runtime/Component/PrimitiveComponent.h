@@ -67,6 +67,7 @@ public:
 	
 
 protected:
+	virtual void OnBoundsMarkedDirty() override;
 	bool TraceMesh(const FRay& WorldRay, const FStaticMeshData& Mesh, const FMatrix& WorldMatrix, FHitResult& OutResult);
 	bool bVisible = true;
 

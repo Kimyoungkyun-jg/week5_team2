@@ -117,7 +117,9 @@ class USceneComponent : public UActorComponent
 		return CachedWorldBounds;
 	}
 
-  protected:
+protected:
+	virtual void OnBoundsMarkedDirty() {}
+
 	FTransform Transform;
 
 	USceneComponent* AttachParent = nullptr; // Attach 부모 정보

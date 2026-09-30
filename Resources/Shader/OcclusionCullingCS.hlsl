@@ -127,20 +127,20 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
             float Dist = length(Center - CameraPosition);
             float ScreenDiameter = (Bound.Radius * 2.0f) / max(Dist, 0.001f);
             
-            //if (ScreenDiameter < 0.05f)
-            //{
-            //    LodCode = 3u;
-            //}
-            //else if (ScreenDiameter < 0.15f)
-            //{
-            //    LodCode = 2u;
-            //}
-            //else
-            //{
-            //    LodCode = 1u;
-            //}
+            if (ScreenDiameter < 0.05f)
+            {
+                LodCode = 3u;
+            }
+            else if (ScreenDiameter < 0.15f)
+            {
+                LodCode = 2u;
+            }
+            else
+            {
+                LodCode = 1u;
+            }
             
-            LodCode = 1u;
+
         }
     }
 

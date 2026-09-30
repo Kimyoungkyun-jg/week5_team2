@@ -123,8 +123,10 @@ void FLoadingScreen::Draw()
 
 	if (ImGui::Begin("##LoadingScreen", nullptr, WindowFlags))
 	{
-		const float ScreenWidth = Viewport->WorkSize.x;
-		const float ScreenHeight = Viewport->WorkSize.y;
+		ImGui::PushFont(nullptr, 20.0f);
+
+		const float ViewportWidth = Viewport->WorkSize.x;
+		const float ViewportHeight = Viewport->WorkSize.y;
 
 		const float SpriteWidth = 256.0f;
 		const float SpriteHeight = 256.0f;
@@ -132,8 +134,9 @@ void FLoadingScreen::Draw()
 		const float BarHeight = 16.0f;
 
 		// 중앙 배치를 위한 세로 위치 계산
-		const float TotalContentHeight = SpriteHeight + 20.0f + 28.0f + 16.0f + BarHeight + 12.0f + 20.0f;
-		float CursorY = (ScreenHeight - TotalContentHeight) * 0.5f;
+		const float TextHeight = ImGui::GetTextLineHeight();
+		const float TotalContentHeight = SpriteHeight + 20.0f + TextHeight + 16.0f + BarHeight + 12.0f + TextHeight;
+		float CursorY = (ViewportHeight - TotalContentHeight) * 0.5f;
 		if (CursorY < 20.0f) CursorY = 20.0f;
 
 		// 스프라이트 렌더링
@@ -154,7 +157,7 @@ void FLoadingScreen::Draw()
 				const float V0 = RowCuts[Row] / 1024.0f;
 				const float V1 = RowCuts[Row + 1] / 1024.0f;
 
-				const float SpriteX = (ScreenWidth - SpriteWidth) * 0.5f;
+				const float SpriteX = (ViewportWidth - SpriteWidth) * 0.5f;
 				ImGui::SetCursorPos(ImVec2(SpriteX, CursorY));
 				ImGui::Image(reinterpret_cast<ImTextureID>(SRV), ImVec2(SpriteWidth, SpriteHeight), ImVec2(U0, V0), ImVec2(U1, V1));
 			}
@@ -165,13 +168,13 @@ void FLoadingScreen::Draw()
 		// 타이틀 텍스트
 		const char* TitleText = "H I T O R I   E N G I N E";
 		const ImVec2 TitleSize = ImGui::CalcTextSize(TitleText);
-		ImGui::SetCursorPos(ImVec2((ScreenWidth - TitleSize.x) * 0.5f, CursorY));
+		ImGui::SetCursorPos(ImVec2((ViewportWidth - TitleSize.x) * 0.5f, CursorY));
 		ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.65f, 1.0f), "%s", TitleText);
 
 		CursorY += TitleSize.y + 16.0f;
 
 		// 프로그레스 바
-		const float BarX = (ScreenWidth - BarWidth) * 0.5f;
+		const float BarX = (ViewportWidth - BarWidth) * 0.5f;
 		ImGui::SetCursorPos(ImVec2(BarX, CursorY));
 		ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(1.0f, 0.45f, 0.65f, 1.0f));
 		ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.18f, 0.18f, 0.22f, 1.0f));
@@ -193,6 +196,8 @@ void FLoadingScreen::Draw()
 
 		ImGui::SetCursorPos(ImVec2(BarX + BarWidth - PercentSize.x, CursorY));
 		ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "%s", PercentBuffer);
+
+		ImGui::PopFont();
 	}
 	ImGui::End();
 

@@ -127,6 +127,28 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 	return true;
 }
 
+uint32 FStatOverlay::GetScreenWidth()
+{
+	DEVMODE DisplayMode{};
+	DisplayMode.dmSize = sizeof(DEVMODE);
+
+	if (EnumDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &DisplayMode))
+		return DisplayMode.dmPelsWidth;
+
+	return 0;
+}
+
+uint32 FStatOverlay::GetScreenHeight()
+{
+	DEVMODE DisplayMode{};
+	DisplayMode.dmSize = sizeof(DEVMODE);
+
+	if (EnumDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &DisplayMode))
+		return DisplayMode.dmPelsHeight;
+
+	return 0;
+}
+
 uint64 FStatOverlay::GetObjectAllocationBytes()
 {
 	return FEngineStatics::TotalAllocationBytes;

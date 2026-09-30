@@ -278,6 +278,7 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 	if (FStatOverlay::IsEnabled(EStatFlags::FPS))
 	{
 		Lines.Add({"Frame", TitleColor});
+		Lines.Add({std::format("  Resolution {} x {}", FStatOverlay::GetScreenWidth(), FStatOverlay::GetScreenHeight()), ValueColor});
 		Lines.Add({std::format("  {:.0f} fps", FStatOverlay::GetFPS()), ValueColor});
 		Lines.Add({std::format("  {:.2f} ms", FStatOverlay::GetFrameTimeMs()), ValueColor});
 	}

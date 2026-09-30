@@ -74,11 +74,14 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
   FWindowContext MainWindowCtx;
   LOG(Info, "Create Main Window...");
   MainWindowCtx.Window = MakeUnique<FWindow>();
-  if (!MainWindowCtx.Window->Create(hInstance, 1920, 1080, L"Hitori Engine", false)) {
+  const int32 ScreenWidth = GetSystemMetrics(SM_CXSCREEN);
+  const int32 ScreenHeight = GetSystemMetrics(SM_CYSCREEN);
+
+  if(!MainWindowCtx.Window->Create(hInstance, ScreenWidth, ScreenHeight, L"Hitori Engine", false))
+  {
     LOG(Error, "Failed To Create Main Window!");
     return false;
   }
-  LOG(Info, "Success!");
   MainWindowCtx.Swapchain =
       MakeUnique<FSwapchain>(RenderDevice.get(), MainWindowCtx.Window.get());
   MainWindow = MainWindowCtx.Window.get();

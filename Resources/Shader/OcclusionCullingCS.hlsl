@@ -27,15 +27,12 @@ cbuffer CullConstants : register(b0)
     float Pad;
 };
 
-groupshared uint s_Bits[4];
+groupshared uint s_ThreadBits[64];
 
 [numthreads(64, 1, 1)]
 void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, uint3 DispatchThreadID : SV_DispatchThreadID)
 {
-    if (GroupThreadID.x < 4)
-    {
-        s_Bits[GroupThreadID.x] = 0;
-    }
+    s_ThreadBits[GroupThreadID.x] = 0;
     GroupMemoryBarrierWithGroupSync();
 
     uint Index = DispatchThreadID.x;
@@ -68,7 +65,7 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
             float Dist = length(Center - CameraPosition);
             float ScreenDiameter = (Bound.Radius * 2.0f) / max(Dist, 0.001f);
 
-            if (ScreenDiameter < 0.008f)
+            if (ScreenDiameter < 0.01f)
             {
                 LodCode = 0u;
             }
@@ -88,18 +85,21 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
 
         if (bVisible && LodCode > 0u && bUseHZB != 0)
         {
-            float3 BoxMin = Center - Extent;
-            float3 BoxMax = Center + Extent;
+            // 바운딩 박스 코너 투영 최적화
+            float4 CenterClip = mul(float4(Center, 1.0f), ViewProjection);
+            float4 VX = ViewProjection[0] * Extent.x;
+            float4 VY = ViewProjection[1] * Extent.y;
+            float4 VZ = ViewProjection[2] * Extent.z;
 
-            float3 Corners[8];
-            Corners[0] = float3(BoxMin.x, BoxMin.y, BoxMin.z);
-            Corners[1] = float3(BoxMax.x, BoxMin.y, BoxMin.z);
-            Corners[2] = float3(BoxMin.x, BoxMax.y, BoxMin.z);
-            Corners[3] = float3(BoxMax.x, BoxMax.y, BoxMin.z);
-            Corners[4] = float3(BoxMin.x, BoxMin.y, BoxMax.z);
-            Corners[5] = float3(BoxMax.x, BoxMin.y, BoxMax.z);
-            Corners[6] = float3(BoxMin.x, BoxMax.y, BoxMax.z);
-            Corners[7] = float3(BoxMax.x, BoxMax.y, BoxMax.z);
+            float4 CornersClip[8];
+            CornersClip[0] = CenterClip - VX - VY - VZ;
+            CornersClip[1] = CenterClip + VX - VY - VZ;
+            CornersClip[2] = CenterClip - VX + VY - VZ;
+            CornersClip[3] = CenterClip + VX + VY - VZ;
+            CornersClip[4] = CenterClip - VX - VY + VZ;
+            CornersClip[5] = CenterClip + VX - VY + VZ;
+            CornersClip[6] = CenterClip - VX + VY + VZ;
+            CornersClip[7] = CenterClip + VX + VY + VZ;
 
             float3 MinNDC = float3(1e9f, 1e9f, 1e9f);
             float3 MaxNDC = float3(-1e9f, -1e9f, -1e9f);
@@ -108,7 +108,7 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
             [unroll]
             for (int c = 0; c < 8; ++c)
             {
-                float4 Clip = mul(float4(Corners[c], 1.0f), ViewProjection);
+                float4 Clip = CornersClip[c];
                 if (Clip.w <= 0.001f)
                 {
                     bNearClipped = true;
@@ -146,21 +146,34 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
         }
     }
 
-    // 두 비트씩 묶어 공유 메모리에 저장
+    // 비트 인코딩 및 공유 메모리 저장
+    uint MyBits = 0;
     if (bVisible && LodCode > 0u)
     {
-        uint LocalWord = GroupThreadID.x / 16;
         uint LocalShift = (GroupThreadID.x % 16) * 2;
-        InterlockedOr(s_Bits[LocalWord], LodCode << LocalShift);
+        MyBits = LodCode << LocalShift;
     }
+    s_ThreadBits[GroupThreadID.x] = MyBits;
+
     GroupMemoryBarrierWithGroupSync();
 
+    // 병렬 비트 병합 및 결과 기록
     if (GroupThreadID.x < 4)
     {
+        uint Base = GroupThreadID.x * 16;
+        uint FinalWord = s_ThreadBits[Base]      | s_ThreadBits[Base + 1]  |
+                         s_ThreadBits[Base + 2]  | s_ThreadBits[Base + 3]  |
+                         s_ThreadBits[Base + 4]  | s_ThreadBits[Base + 5]  |
+                         s_ThreadBits[Base + 6]  | s_ThreadBits[Base + 7]  |
+                         s_ThreadBits[Base + 8]  | s_ThreadBits[Base + 9]  |
+                         s_ThreadBits[Base + 10] | s_ThreadBits[Base + 11] |
+                         s_ThreadBits[Base + 12] | s_ThreadBits[Base + 13] |
+                         s_ThreadBits[Base + 14] | s_ThreadBits[Base + 15];
+
         uint OutIndex = GroupID.x * 4 + GroupThreadID.x;
         if (OutIndex < NumWords)
         {
-            VisibilityBits[OutIndex] = s_Bits[GroupThreadID.x];
+            VisibilityBits[OutIndex] = FinalWord;
         }
     }
 }

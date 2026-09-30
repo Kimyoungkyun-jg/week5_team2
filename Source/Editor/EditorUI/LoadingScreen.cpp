@@ -66,7 +66,7 @@ void FLoadingScreen::Tick(float DeltaTime)
 	ElapsedTime += DeltaTime;
 
 	// 프레임 애니메이션 갱신
-	CurrentFrameIndex = static_cast<int32>(ElapsedTime * AnimationFps) % 6;
+	CurrentFrameIndex = static_cast<int32>(ElapsedTime * AnimationFps) % TotalFrames;
 
 	// 진행도 갱신
 	const float ApproachRate = (bSceneLoaded ? 0.9f : 0.5f);
@@ -126,7 +126,7 @@ void FLoadingScreen::Draw()
 		const float ScreenWidth = Viewport->WorkSize.x;
 		const float ScreenHeight = Viewport->WorkSize.y;
 
-		const float SpriteWidth = 240.0f;
+		const float SpriteWidth = 256.0f;
 		const float SpriteHeight = 256.0f;
 		const float BarWidth = 480.0f;
 		const float BarHeight = 16.0f;
@@ -142,10 +142,17 @@ void FLoadingScreen::Draw()
 			ID3D11ShaderResourceView* SRV = SpriteTexture->GetResource()->GetSRV();
 			if (SRV)
 			{
-				const float U0 = static_cast<float>(CurrentFrameIndex) / 6.0f;
-				const float U1 = static_cast<float>(CurrentFrameIndex + 1) / 6.0f;
-				const float V0 = 0.0f;
-				const float V1 = 1.0f;
+				// 경계 분할점 정의
+				static constexpr float ColCuts[] = { 0.0f, 251.0f, 501.0f, 759.0f, 1003.0f, 1267.0f, 1536.0f };
+				static constexpr float RowCuts[] = { 0.0f, 274.0f, 523.0f, 774.0f, 1024.0f };
+
+				// 행과 열 기반 좌표 계산
+				const int32 Col = CurrentFrameIndex % FrameColumns;
+				const int32 Row = CurrentFrameIndex / FrameColumns;
+				const float U0 = ColCuts[Col] / 1536.0f;
+				const float U1 = ColCuts[Col + 1] / 1536.0f;
+				const float V0 = RowCuts[Row] / 1024.0f;
+				const float V1 = RowCuts[Row + 1] / 1024.0f;
 
 				const float SpriteX = (ScreenWidth - SpriteWidth) * 0.5f;
 				ImGui::SetCursorPos(ImVec2(SpriteX, CursorY));

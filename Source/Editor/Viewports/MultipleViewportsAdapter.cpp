@@ -931,19 +931,29 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
                     {
                         TargetLOD = static_cast<uint8>(SMC->GetForcedLOD());
                     }
-                    else if (TargetLOD == 0 && bVisibleLODsEmpty)
+                    else
                     {
                         const float Dist = (std::max)(1.0f, FVector::Distance(RenderCamera.Transform.Location, SMC->GetWorldLocation()));
                         const FBox Bounds = SMC->GetWorldBounds();
                         const float Radius = (Bounds.Max - Bounds.Min).Length() * 0.5f;
                         const float DiameterRatio = (Radius * 2.0f) / Dist;
-                        if (DiameterRatio < 0.05f)
+
+                        // 화면 크기 미달 시 렌더링 제외
+                        if (DiameterRatio < 0.008f)
                         {
-                            TargetLOD = 2;
+                            continue;
                         }
-                        else if (DiameterRatio < 0.15f)
+
+                        if (TargetLOD == 0 && bVisibleLODsEmpty)
                         {
-                            TargetLOD = 1;
+                            if (DiameterRatio < 0.05f)
+                            {
+                                TargetLOD = 2;
+                            }
+                            else if (DiameterRatio < 0.15f)
+                            {
+                                TargetLOD = 1;
+                            }
                         }
                     }
                 }

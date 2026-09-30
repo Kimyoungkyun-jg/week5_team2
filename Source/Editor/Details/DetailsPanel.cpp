@@ -597,6 +597,7 @@ namespace
 									else
 										Override->PSOType = EPSOType::StaticMesh_Opaque;
 									Effective = Override;
+									MeshComponent->MarkBoundsDirty();
 								}
 							}
 						}

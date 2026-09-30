@@ -50,7 +50,13 @@ public:
 	// FShader* GetShader() const { return Shader.get(); };
 
 	bool IsVisible() const { return bVisible; }
-	void SetVisible(bool bInVisible) { bVisible = bInVisible; }
+	void SetVisible(bool bInVisible)
+	{
+		if (bVisible == bInVisible)
+			return;
+		bVisible = bInVisible;
+		MarkBoundsDirtyRecursive();
+	}
 
 	virtual bool LineTraceComponent(const FRay& WorldRay, FHitResult& OutHit);
 	// 피킹 전용 판정: 클릭당 한 번 준비한 컨텍스트(레이 역수, 최근접 거리, Billboard 행렬 공급자)를 쓴다.

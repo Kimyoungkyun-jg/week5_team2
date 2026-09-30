@@ -234,9 +234,11 @@ void FEditorApplication::UpdateMultipleViewportState(const float DeltaTime) {
   EMultipleViewportsCameraPreset RequestedPreset =
       EMultipleViewportsCameraPreset::Perspective;
   if (ViewportsPanel->ConsumeCameraPresetRequest(PresetViewIndex,
-                                                 RequestedPreset))
-    MultipleViewportsAdapter.ApplyCameraPreset(PresetViewIndex,
-                                               RequestedPreset);
+                                                 RequestedPreset)) {
+    if (PresetViewIndex == 0) {
+      MultipleViewportsAdapter.ApplyCameraPreset(0, RequestedPreset);
+    }
+  }
   MultipleViewportsAdapter.UpdateLayout(ViewportSize, LocalMousePosition);
 
   const float HorizontalDrag = ViewportsPanel->ConsumeHorizontalDrag();
@@ -287,9 +289,8 @@ void FEditorApplication::RenderMultipleViewports() {
               SceneRenderPackets);
 
   EMultipleViewportsCameraPreset CameraPresets[4]{};
-  // for (int32 ViewIndex = 0; ViewIndex < 4; ++ViewIndex)
-  //	CameraPresets[ViewIndex] =
-  // MultipleViewportsAdapter.GetCameraPreset(ViewIndex);
+  // 첫 번째 뷰포트 프리셋 동기화
+  CameraPresets[0] = MultipleViewportsAdapter.GetCameraPreset(0);
 
   ViewportsPanel->SetControlState(MultipleViewportsAdapter.GetLayoutMode(),
                                   MultipleViewportsAdapter.GetSingleViewIndex(),

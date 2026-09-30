@@ -932,34 +932,37 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
 
                 const int32 PrevCount = LocalList.Num();
                 Primitive->SubmitToRenderPackets(LocalList);
-                for (int32 p = PrevCount; p < LocalList.Num(); ++p)
+                if (LocalList.Num() > PrevCount)
                 {
-                    FRenderPacket& Packet = LocalList[p];
-                    if (Packet.mesh && !Packet.mesh->LODs.IsEmpty())
+                    // 패킷 생성 직후 변환 및 거리 계산
+                    const FRenderPacket& FirstPacket = LocalList[PrevCount];
+                    const float DX = FirstPacket.model.M[3][0] - RenderCamera.Transform.Location.X;
+                    const float DY = FirstPacket.model.M[3][1] - RenderCamera.Transform.Location.Y;
+                    const float DZ = FirstPacket.model.M[3][2] - RenderCamera.Transform.Location.Z;
+                    const float CamDistSq = DX * DX + DY * DY + DZ * DZ;
+                    const FMatrixRegister ModelReg = FMatrixRegister::Load(FirstPacket.model);
+                    FMatrix MVPMatrix;
+                    (ModelReg * VPReg).Store(MVPMatrix);
+
+                    for (int32 p = PrevCount; p < LocalList.Num(); ++p)
                     {
-                        const uint8 MaxLOD = static_cast<uint8>(Packet.mesh->LODs.Num() - 1);
-                        Packet.LODIndex = (std::min)(TargetLOD, MaxLOD);
-                        Packet.IndexCount = Packet.mesh->GetIndexCount(Packet.LODIndex);
-                        Packet.StartIndex = 0;
-                    }
-                    else
-                    {
-                        Packet.LODIndex = 0;
+                        FRenderPacket& Packet = LocalList[p];
+                        if (Packet.mesh && !Packet.mesh->LODs.IsEmpty())
+                        {
+                            const uint8 MaxLOD = static_cast<uint8>(Packet.mesh->LODs.Num() - 1);
+                            Packet.LODIndex = (std::min)(TargetLOD, MaxLOD);
+                            Packet.IndexCount = Packet.mesh->GetIndexCount(Packet.LODIndex);
+                            Packet.StartIndex = 0;
+                        }
+                        else
+                        {
+                            Packet.LODIndex = 0;
+                        }
+                        Packet.CameraDistanceSquared = CamDistSq;
+                        Packet.MVP = MVPMatrix;
                     }
                 }
             }
-        }
-
-        // 파이버 워커에서 행렬 곱셈 수행
-        for (int32 k = 0; k < LocalList.Num(); ++k)
-        {
-            FRenderPacket& Packet = LocalList[k];
-            const float DX = Packet.model.M[3][0] - RenderCamera.Transform.Location.X;
-            const float DY = Packet.model.M[3][1] - RenderCamera.Transform.Location.Y;
-            const float DZ = Packet.model.M[3][2] - RenderCamera.Transform.Location.Z;
-            Packet.CameraDistanceSquared = DX * DX + DY * DY + DZ * DZ;
-            const FMatrixRegister Model = FMatrixRegister::Load(Packet.model);
-            (Model * VPReg).Store(Packet.MVP);
         }
     });
 

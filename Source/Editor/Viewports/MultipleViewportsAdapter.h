@@ -153,6 +153,8 @@ private:
     // Host가 컬링 입력 버퍼를 소유하고 용량을 재사용한다.
     TArray<FRenderableObject> RenderObjects;
     TArray<TArray<FRenderableObject>> WorkerRenderObjectBuffers;
+	TArray<int32> RenderObjectIndexByObjectIndex;
+	uint64 CapturedPrimitiveTopologyRevision = 0;
     TArray<TArray<FRenderPacket>> WorkerPacketBuffers;
     // 불투명 파티클은 최종 렌더러가 거리 정렬하지 않아 기존 Core 정렬을 유지한다.
     TArray<FParticleSortInput> SortInputs;

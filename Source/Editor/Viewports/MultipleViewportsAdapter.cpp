@@ -949,13 +949,8 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
                 Primitive->SubmitToRenderPackets(LocalList);
 				if (LocalList.Num() > PrevCount)
 				{
-					// 패킷 생성 직후 변환 및 거리 계산
+					// 패킷 생성 직후 변환 계산
 					const FRenderPacket& FirstPacket = LocalList[PrevCount];
-
-					const float DX = FirstPacket.model.M[3][0] - RenderCamera.Transform.Location.X;
-					const float DY = FirstPacket.model.M[3][1] - RenderCamera.Transform.Location.Y;
-					const float DZ = FirstPacket.model.M[3][2] - RenderCamera.Transform.Location.Z;
-					const float CamDistSq = DX * DX + DY * DY + DZ * DZ;
 
 					const FMatrixRegister ModelReg = FMatrixRegister::Load(FirstPacket.model);
 					FMatrix MVPMatrix;
@@ -977,7 +972,7 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
 							}
 							else if (Packet.LODIndex > 0)
 							{
-								// Multi-section은 LOD별 section range가 없으므로 LOD0 사용
+								// 섹션 정보에 따라 단계 설정
 								Packet.LODIndex = 0;
 							}
 						}
@@ -985,7 +980,6 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
 						{
 							Packet.LODIndex = 0;
 						}
-						Packet.CameraDistanceSquared = CamDistSq;
 						Packet.MVP = MVPMatrix;
 					}
 				}

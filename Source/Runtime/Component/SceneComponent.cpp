@@ -63,6 +63,7 @@ void USceneComponent::MarkBoundsDirtyRecursive()
 {
 	bBoundsDirty = true;
 	++BoundsRevision;
+	OnBoundsMarkedDirty();
 	// 0은 미설정 표시로 남기고 overflow 시 1로 돌린다.
 	if (BoundsRevision == 0)
 		BoundsRevision = 1;
@@ -79,6 +80,7 @@ void USceneComponent::MarkTransformDirtyRecursive()
 	bWorldMatrixDirty = true;
 	bBoundsDirty = true;
 	++BoundsRevision;
+	OnBoundsMarkedDirty();
 	if (BoundsRevision == 0)
 		BoundsRevision = 1;
 

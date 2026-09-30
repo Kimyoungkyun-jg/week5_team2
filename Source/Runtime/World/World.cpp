@@ -71,6 +71,7 @@ AActor* UWorld::SpawnActor(UClass* Class, FName InName, const FTransform* Transf
 		if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(NewActor->GetRootComponent()))
 		{
 			WorldPrimitiveComponents.Add(PrimComp);
+			++PrimitiveTopologyRevision;
 		}
 	}
 
@@ -103,6 +104,11 @@ void UWorld::Tick(float DeltaTime)
 	{
 		MainCamera->Tick(DeltaTime);
 	}
+
+	// 모든 Actor와 Component의 Transform 갱신이 끝난 뒤 피킹 공간 인덱스를 갱신한다.
+	PrimitiveBVH.Update(WorldPrimitiveComponents, PrimitiveTopologyRevision, DirtyPrimitiveComponents);
+	DirtyPrimitiveComponents.Reset();
+
 }
 
 void UWorld::ClearWorld()
@@ -121,6 +127,10 @@ void UWorld::ClearWorld()
 	{
 		Level->ClearActors();
 	}
+	WorldPrimitiveComponents.Reset();
+	DirtyPrimitiveComponents.Reset();
+	++PrimitiveTopologyRevision;
+	PrimitiveBVH.Reset();
 	LOG(Info, "{} : ", PersistentLevel->GetActorNum());
 }
 
@@ -197,6 +207,18 @@ bool UWorld::DestroyActor(AActor* Actor)
 
 	FString ActorName = Actor->GetName();
 	uint32 ActorUUID = Actor->GetUUID();
+	if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Actor->GetRootComponent()))
+	{
+		for (int32 Index = WorldPrimitiveComponents.Num() - 1; Index >= 0; --Index)
+		{
+			if (WorldPrimitiveComponents[Index].Get() == Primitive)
+			{
+				WorldPrimitiveComponents.RemoveAt(Index, 1);
+				++PrimitiveTopologyRevision;
+				break;
+			}
+		}
+	}
 
 	// 6. Actor 삭제
 	delete Actor;
@@ -235,6 +257,18 @@ bool UWorld::LineTraceSingle(const FRay& WorldRay, FHitResult& OutHit, const TAr
 		}
 	}
 	return OutHit.HitComponent != nullptr;
+}
+
+void UWorld::GatherLineTraceCandidates(
+	const FRay& WorldRay, TArray<FLineTraceCandidate>& OutCandidates) const
+{
+	PrimitiveBVH.GatherRayCandidates(WorldRay, OutCandidates);
+}
+
+void UWorld::MarkPrimitiveBoundsDirty(UPrimitiveComponent* Primitive)
+{
+	if (Primitive)
+		DirtyPrimitiveComponents.Add(Primitive);
 }
 
 void UWorld::BeginPlay()

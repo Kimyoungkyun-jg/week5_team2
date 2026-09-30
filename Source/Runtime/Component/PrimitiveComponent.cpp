@@ -3,6 +3,8 @@
 #include "../Rendering/Renderer.h"
 #include "Asset/AssetManager.h"
 #include "Rendering/RenderCommand.h"
+#include "GameFramework/Actor.h"
+#include "World/World.h"
 
 namespace
 {
@@ -44,6 +46,13 @@ void UPrimitiveComponent::BeginPlay()
 
 void UPrimitiveComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets)
 {
+}
+
+void UPrimitiveComponent::OnBoundsMarkedDirty()
+{
+	AActor* OwnerActor = GetOwner();
+	if (OwnerActor && OwnerActor->GetWorld())
+		OwnerActor->GetWorld()->MarkPrimitiveBoundsDirty(this);
 }
 
 bool UPrimitiveComponent::LineTraceComponent(const FRay& WorldRay, FHitResult& OutHit)

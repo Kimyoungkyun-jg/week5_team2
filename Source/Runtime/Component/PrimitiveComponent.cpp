@@ -6,28 +6,28 @@
 
 namespace
 {
-	FString PrimitiveTypeToString(EPrimitiveType Type)
+FString PrimitiveTypeToString(EPrimitiveType Type)
+{
+	switch (Type)
 	{
-		switch (Type)
-		{
-		case EPrimitiveType::Sphere:
-			return "Sphere";
-			break;
-		case EPrimitiveType::Cube:
-			return "Cube";
-			break;
-		case EPrimitiveType::Cone:
-			return "Cone";
-			break;
-		case EPrimitiveType::Plane:
-			return "Plane";
-			break;
-		default:
-			return "";
-			break;
-		}
+	case EPrimitiveType::Sphere:
+		return "Sphere";
+		break;
+	case EPrimitiveType::Cube:
+		return "Cube";
+		break;
+	case EPrimitiveType::Cone:
+		return "Cone";
+		break;
+	case EPrimitiveType::Plane:
+		return "Plane";
+		break;
+	default:
+		return "";
+		break;
 	}
 }
+} // namespace
 
 UPrimitiveComponent::UPrimitiveComponent()
 {
@@ -51,7 +51,8 @@ bool UPrimitiveComponent::LineTraceComponent(const FRay& WorldRay, FHitResult& O
 
 	// world Ray�� world AABB ����
 	const FBox Bounds = GetWorldBounds();
-	if (!RayIntersectsAABB(WorldRay, Bounds.Min, Bounds.Max, OutHit.Distance)) return false;
+	if (!RayIntersectsAABB(WorldRay, Bounds.Min, Bounds.Max, OutHit.Distance))
+		return false;
 
 	const FStaticMeshData* Mesh = GetMeshData();
 	return Mesh && TraceMesh(WorldRay, *Mesh, GetWorldMatrix(), OutHit);
@@ -63,11 +64,13 @@ bool UPrimitiveComponent::LineTraceWithContext(const FTraceContext& Context, FHi
 	// 월드 AABB: 미리 구한 역수로 판정 (나눗셈 없음). 박스 진입 거리는 지역 변수로 받는다.
 	const FBox Bounds = GetWorldBounds();
 	float BoxEnter = 0.0f;
-	if (!RayIntersectsAABB(Context, Bounds.Min, Bounds.Max, BoxEnter)) return false;
+	if (!RayIntersectsAABB(Context, Bounds.Min, Bounds.Max, BoxEnter))
+		return false;
 
 	// 박스 안의 물체는 박스 진입 거리보다 가까울 수 없다.
 	// 이미 더 가까운 교차를 찾았다면 월드 행렬·역행렬·삼각형 판정을 생략한다.
-	if (BoxEnter > Context.BestDistance) return false;
+	if (BoxEnter > Context.BestDistance)
+		return false;
 
 	const FStaticMeshData* Mesh = GetMeshData();
 	return Mesh && TraceMesh(Context.Ray, *Mesh, GetWorldMatrix(), OutHit);
@@ -79,7 +82,8 @@ bool UPrimitiveComponent::TraceMesh(const FRay& WorldRay, const FStaticMeshData&
 	FRay LocalRay = ToLocalRay(WorldRay, WorldMatrix);
 	float T;
 
-	if (!RayIntersectsMesh(LocalRay, Mesh, T)) return false;
+	if (!RayIntersectsMesh(LocalRay, Mesh, T))
+		return false;
 
 	OutResult.HitComponent = this;
 	OutResult.Distance = T;

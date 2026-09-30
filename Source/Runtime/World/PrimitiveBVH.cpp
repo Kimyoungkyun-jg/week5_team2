@@ -78,8 +78,10 @@ void FPrimitiveBVH::Update(
 		PrimitiveIndices.Reset();
 		EntryLeafNodes.Reset();
 		Nodes.Reset();
+		Nodes4.Reset();
 		NodeParents.Reset();
 		NodeRefitSerials.Reset();
+		NodeSlots.Reset();
 		EntryIndexByObjectIndex.clear();
 
 		Entries.Reserve(UpdateBoundedPrimitives.Num());
@@ -108,7 +110,17 @@ void FPrimitiveBVH::Update(
 			BypassPrimitives.Add(Primitive);
 
 		if (!PrimitiveIndices.IsEmpty())
+		{
 			BuildNode(0, static_cast<uint32>(PrimitiveIndices.Num()), InvalidNodeIndex);
+			SortEntriesByLeaf();
+			NodeSlots.Init(InvalidNodeIndex, Nodes.Num());
+			// 루트가 리프면(Primitive가 리프 크기 이하) 4갈래 노드 없이 리프 하나로 검사한다
+			if (Nodes[0].Count == 0)
+			{
+				Nodes4.Reserve(Nodes.Num() / 2);
+				BuildNode4(0);
+			}
+		}
 		return;
 	}
 
@@ -169,8 +181,10 @@ void FPrimitiveBVH::Reset()
 	PrimitiveIndices.Reset();
 	EntryLeafNodes.Reset();
 	Nodes.Reset();
+	Nodes4.Reset();
 	NodeParents.Reset();
 	NodeRefitSerials.Reset();
+	NodeSlots.Reset();
 	EntryIndexByObjectIndex.clear();
 	UpdateBoundedPrimitives.Reset();
 	UpdateBypassPrimitives.Reset();
@@ -219,11 +233,16 @@ void FPrimitiveBVH::TraceRayClosest(FTraceContext& Context, const FRayNarrowTest
 			NarrowTest(Context, Primitive, UserContext);
 	}
 
-	if (!Nodes.IsEmpty())
+	// 4갈래 루트는 자식 박스 4개 검사가 루트 박스 검사를 대신한다
+	if (!Nodes4.IsEmpty())
+	{
+		TraverseRayClosest(Context, 0, 0.0f, NarrowTest, UserContext);
+	}
+	else if (!Nodes.IsEmpty())
 	{
 		float RootDistance = 0.0f;
 		if (RayIntersectsAABB(Context, Nodes[0].Bounds.Min, Nodes[0].Bounds.Max, RootDistance))
-			TraverseRayClosest(Context, 0, RootDistance, NarrowTest, UserContext);
+			TraceLeaf(Context, Nodes[0].First, Nodes[0].Count, NarrowTest, UserContext);
 	}
 }
 
@@ -381,6 +400,79 @@ uint32 FPrimitiveBVH::BuildNode(const uint32 First, const uint32 Count, const ui
 	return NodeIndex;
 }
 
+// 리프 순서대로 Entry를 다시 놓는다. 리프 검사가 흩어진 Entry 대신 연속된 메모리를 읽고, PrimitiveIndices는 0, 1, 2...가 된다.
+void FPrimitiveBVH::SortEntriesByLeaf()
+{
+	TArray<FEntry> SortedEntries;
+	TArray<uint64> SortedRevisions;
+	TArray<uint32> SortedLeafNodes;
+	SortedEntries.Reserve(Entries.Num());
+	SortedRevisions.Reserve(Entries.Num());
+	SortedLeafNodes.Reserve(Entries.Num());
+	for (const uint32 EntryIndex : PrimitiveIndices)
+	{
+		SortedEntries.Add(Entries[EntryIndex]);
+		SortedRevisions.Add(EntryBoundsRevisions[EntryIndex]);
+		SortedLeafNodes.Add(EntryLeafNodes[EntryIndex]);
+	}
+
+	for (uint32 Index = 0; Index < static_cast<uint32>(SortedEntries.Num()); ++Index)
+	{
+		PrimitiveIndices[Index] = Index;
+		EntryIndexByObjectIndex[SortedEntries[Index].Primitive->GetInternalIndex()] = static_cast<int32>(Index);
+	}
+	Entries = std::move(SortedEntries);
+	EntryBoundsRevisions = std::move(SortedRevisions);
+	EntryLeafNodes = std::move(SortedLeafNodes);
+}
+
+// 이진 트리를 4갈래로 합친다. 자식이 4개가 될 때까지 면적이 가장 큰 안쪽 자식을 그 자식 둘로 펼친다.
+uint32 FPrimitiveBVH::BuildNode4(const uint32 NodeIndex)
+{
+	uint32 Children[4] = {Nodes[NodeIndex].Left, Nodes[NodeIndex].Right, 0, 0};
+	uint32 ChildCount = 2;
+	while (ChildCount < 4)
+	{
+		int32 Widest = -1;
+		for (uint32 Index = 0; Index < ChildCount; ++Index)
+		{
+			if (Nodes[Children[Index]].Count == 0 && (Widest < 0 || SurfaceArea(Nodes[Children[Index]].Bounds) > SurfaceArea(Nodes[Children[Widest]].Bounds)))
+				Widest = static_cast<int32>(Index);
+		}
+		if (Widest < 0)
+			break;
+		const FNode& Expanded = Nodes[Children[Widest]];
+		Children[Widest] = Expanded.Left;
+		Children[ChildCount++] = Expanded.Right;
+	}
+
+	FPickingBVHNode4 Node4{};
+	const uint32 Node4Index = Nodes4.Add(Node4);
+	for (uint32 Slot = 0; Slot < 4; ++Slot)
+	{
+		if (Slot >= ChildCount)
+		{
+			Node4.Count[Slot] = FPickingBVHNode4::EmptySlot;
+			continue;
+		}
+		const FNode& Child = Nodes[Children[Slot]];
+		Node4.SetBounds(Slot, Child.Bounds);
+		Node4.Child[Slot] = Child.Count > 0 ? Child.First : BuildNode4(Children[Slot]);
+		Node4.Count[Slot] = Child.Count;
+		NodeSlots[Children[Slot]] = Node4Index * 4 + Slot;
+	}
+	Nodes4[Node4Index] = Node4;
+	return Node4Index;
+}
+
+// refit으로 바뀐 이진 노드 박스를 그 노드가 들어간 4갈래 칸에 옮긴다 (칸이 없는 노드는 순회에 쓰이지 않는다)
+void FPrimitiveBVH::SyncNode4Bounds(const uint32 NodeIndex)
+{
+	const uint32 SlotIndex = NodeSlots[NodeIndex];
+	if (SlotIndex != InvalidNodeIndex)
+		Nodes4[SlotIndex / 4].SetBounds(SlotIndex % 4, Nodes[NodeIndex].Bounds);
+}
+
 FBox FPrimitiveBVH::RefitNode(const uint32 NodeIndex)
 {
 	FNode& Node = Nodes[NodeIndex];
@@ -390,10 +482,12 @@ FBox FPrimitiveBVH::RefitNode(const uint32 NodeIndex)
 		for (uint32 Offset = 1; Offset < Node.Count; ++Offset)
 			Bounds = UnionBounds(Bounds, Entries[PrimitiveIndices[Node.First + Offset]].Bounds);
 		Node.Bounds = Bounds;
+		SyncNode4Bounds(NodeIndex);
 		return Bounds;
 	}
 
 	Node.Bounds = UnionBounds(RefitNode(Node.Left), RefitNode(Node.Right));
+	SyncNode4Bounds(NodeIndex);
 	return Node.Bounds;
 }
 
@@ -404,12 +498,14 @@ void FPrimitiveBVH::RefitFromLeaf(const uint32 LeafIndex)
 	for (uint32 Offset = 1; Offset < Leaf.Count; ++Offset)
 		Bounds = UnionBounds(Bounds, Entries[PrimitiveIndices[Leaf.First + Offset]].Bounds);
 	Leaf.Bounds = Bounds;
+	SyncNode4Bounds(LeafIndex);
 
 	uint32 ParentIndex = NodeParents[LeafIndex];
 	while (ParentIndex != InvalidNodeIndex)
 	{
 		FNode& Parent = Nodes[ParentIndex];
 		Parent.Bounds = UnionBounds(Nodes[Parent.Left].Bounds, Nodes[Parent.Right].Bounds);
+		SyncNode4Bounds(ParentIndex);
 		ParentIndex = NodeParents[ParentIndex];
 	}
 }
@@ -460,53 +556,46 @@ void FPrimitiveBVH::TraverseRay(const FTraceContext& Context, const uint32 NodeI
 	}
 }
 
-void FPrimitiveBVH::TraverseRayClosest(FTraceContext& Context, const uint32 NodeIndex, const float NodeDistance, const FRayNarrowTestFn NarrowTest, void* UserContext) const
+void FPrimitiveBVH::TraverseRayClosest(FTraceContext& Context, const uint32 Node4Index, const float NodeDistance, const FRayNarrowTestFn NarrowTest, void* UserContext) const
 {
 	// 노드 박스가 이미 실제로 맞은 거리보다 멀면 안의 Primitive는 더 가까울 수 없다
 	// (박스 진입 거리로 갱신하면 박스만 스치는 앞 객체 때문에 뒤 객체를 놓치므로 실제 교차 거리만 사용한다)
 	if (NodeDistance >= Context.BestDistance)
 		return;
 
-	const FNode& Node = Nodes[NodeIndex];
-	if (Node.Count > 0)
-	{
-		// 리프 안에서 박스를 통과한 Primitive만 모아 박스 진입 거리순으로 정밀 검사한다
-		FRayHit Hits[PrimitiveBVHLeafSize];
-		uint32 HitCount = 0;
-		for (uint32 Offset = 0; Offset < Node.Count && HitCount < PrimitiveBVHLeafSize; ++Offset)
-		{
-			const FEntry& Entry = Entries[PrimitiveIndices[Node.First + Offset]];
-			float BoundsDistance = 0.0f;
-			if (Entry.Primitive && RayIntersectsAABB(Context, Entry.Bounds.Min, Entry.Bounds.Max, BoundsDistance) && BoundsDistance < Context.BestDistance)
-				Hits[HitCount++] = {BoundsDistance, Entry.Primitive};
-		}
+	// 자식 박스 4개를 한 번에 검사하고, 통과한 자식을 가까운 순서로 받는다
+	const FPickingBVHNode4& Node = Nodes4[Node4Index];
+	float Distances[4];
+	uint32 Slots[4];
+	const uint32 HitCount = RayIntersectsNode4(Context, Node, Distances, Slots);
 
-		std::sort(Hits, Hits + HitCount, [](const FRayHit& A, const FRayHit& B) { return A.Distance < B.Distance; });
-		for (uint32 Index = 0; Index < HitCount && Hits[Index].Distance < Context.BestDistance; ++Index)
-			NarrowTest(Context, Hits[Index].Primitive, UserContext);
-		return;
+	// 가까운 자식 먼저. 먼 자식은 앞 자식에서 갱신된 최근접 거리로 다시 판정한다
+	for (uint32 Index = 0; Index < HitCount; ++Index)
+	{
+		const uint32 Slot = Slots[Index];
+		if (Distances[Slot] >= Context.BestDistance)
+			break;
+		if (Node.Count[Slot] > 0)
+			TraceLeaf(Context, Node.Child[Slot], Node.Count[Slot], NarrowTest, UserContext);
+		else
+			TraverseRayClosest(Context, Node.Child[Slot], Distances[Slot], NarrowTest, UserContext);
+	}
+}
+
+// 리프 안에서 박스를 통과한 Primitive만 모아 박스 진입 거리순으로 정밀 검사한다
+void FPrimitiveBVH::TraceLeaf(FTraceContext& Context, const uint32 First, const uint32 Count, const FRayNarrowTestFn NarrowTest, void* UserContext) const
+{
+	FRayHit Hits[PrimitiveBVHLeafSize];
+	uint32 HitCount = 0;
+	for (uint32 Offset = 0; Offset < Count && HitCount < PrimitiveBVHLeafSize; ++Offset)
+	{
+		const FEntry& Entry = Entries[First + Offset];
+		float BoundsDistance = 0.0f;
+		if (Entry.Primitive && RayIntersectsAABB(Context, Entry.Bounds.Min, Entry.Bounds.Max, BoundsDistance) && BoundsDistance < Context.BestDistance)
+			Hits[HitCount++] = {BoundsDistance, Entry.Primitive};
 	}
 
-	float LeftDistance = 0.0f;
-	float RightDistance = 0.0f;
-	const FNode& LeftNode = Nodes[Node.Left];
-	const FNode& RightNode = Nodes[Node.Right];
-	const bool bHitLeft = RayIntersectsAABB(Context, LeftNode.Bounds.Min, LeftNode.Bounds.Max, LeftDistance);
-	const bool bHitRight = RayIntersectsAABB(Context, RightNode.Bounds.Min, RightNode.Bounds.Max, RightDistance);
-
-	// 가까운 노드 먼저. 먼 노드는 가까운 노드에서 갱신된 최근접 거리로 진입 시 다시 판정한다
-	if (bHitLeft && bHitRight)
-	{
-		const bool bLeftNear = LeftDistance <= RightDistance;
-		TraverseRayClosest(Context, bLeftNear ? Node.Left : Node.Right, bLeftNear ? LeftDistance : RightDistance, NarrowTest, UserContext);
-		TraverseRayClosest(Context, bLeftNear ? Node.Right : Node.Left, bLeftNear ? RightDistance : LeftDistance, NarrowTest, UserContext);
-	}
-	else if (bHitLeft)
-	{
-		TraverseRayClosest(Context, Node.Left, LeftDistance, NarrowTest, UserContext);
-	}
-	else if (bHitRight)
-	{
-		TraverseRayClosest(Context, Node.Right, RightDistance, NarrowTest, UserContext);
-	}
+	std::sort(Hits, Hits + HitCount, [](const FRayHit& A, const FRayHit& B) { return A.Distance < B.Distance; });
+	for (uint32 Index = 0; Index < HitCount && Hits[Index].Distance < Context.BestDistance; ++Index)
+		NarrowTest(Context, Hits[Index].Primitive, UserContext);
 }

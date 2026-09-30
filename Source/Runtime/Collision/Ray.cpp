@@ -217,6 +217,45 @@ uint32 BuildPickingBVHNode(const FStaticMeshData& Mesh, const FPickingBuildData&
 	return NodeIndex;
 }
 
+// 이진 트리를 4갈래로 합친다. 자식이 4개가 될 때까지 면적이 가장 큰 안쪽 자식을 그 자식 둘로 펼친다.
+uint32 BuildPickingBVHNode4(const FStaticMeshData& Mesh, const uint32 NodeIndex)
+{
+	const TArray<FMeshPickingBVHNode>& Nodes = Mesh.PickingBVHNodes;
+	uint32 Children[4] = {Nodes[NodeIndex].Left, Nodes[NodeIndex].Right, 0, 0};
+	uint32 ChildCount = 2;
+	while (ChildCount < 4)
+	{
+		int32 Widest = -1;
+		for (uint32 Index = 0; Index < ChildCount; ++Index)
+		{
+			if (!Nodes[Children[Index]].bLeaf && (Widest < 0 || SurfaceArea(Nodes[Children[Index]].Bounds) > SurfaceArea(Nodes[Children[Widest]].Bounds)))
+				Widest = static_cast<int32>(Index);
+		}
+		if (Widest < 0)
+			break;
+		const FMeshPickingBVHNode& Expanded = Nodes[Children[Widest]];
+		Children[Widest] = Expanded.Left;
+		Children[ChildCount++] = Expanded.Right;
+	}
+
+	FPickingBVHNode4 Node4{};
+	const uint32 Node4Index = Mesh.PickingBVHNodes4.Add(Node4);
+	for (uint32 Slot = 0; Slot < 4; ++Slot)
+	{
+		if (Slot >= ChildCount)
+		{
+			Node4.Count[Slot] = FPickingBVHNode4::EmptySlot;
+			continue;
+		}
+		const FMeshPickingBVHNode& Child = Nodes[Children[Slot]];
+		Node4.SetBounds(Slot, Child.Bounds);
+		Node4.Child[Slot] = Child.bLeaf ? Child.First : BuildPickingBVHNode4(Mesh, Children[Slot]);
+		Node4.Count[Slot] = Child.bLeaf ? Child.Count : 0;
+	}
+	Mesh.PickingBVHNodes4[Node4Index] = Node4;
+	return Node4Index;
+}
+
 void EnsurePickingBVH(const FStaticMeshData& Mesh)
 {
 	if (Mesh.bPickingBVHBuilt)
@@ -224,6 +263,7 @@ void EnsurePickingBVH(const FStaticMeshData& Mesh)
 
 	Mesh.PickingTriangleIndices.Reset();
 	Mesh.PickingBVHNodes.Reset();
+	Mesh.PickingBVHNodes4.Reset();
 	const uint32 TriangleCount = static_cast<uint32>(Mesh.Indices.Num() / 3);
 	if (TriangleCount > PickingBVHLeafTriangles)
 	{
@@ -250,6 +290,10 @@ void EnsurePickingBVH(const FStaticMeshData& Mesh)
 			const uint32 FirstIndex = TriangleIndex * 3;
 			Mesh.PickingTriangles.Add({Mesh.Vertices[Mesh.Indices[FirstIndex]].Position, Mesh.Vertices[Mesh.Indices[FirstIndex + 1]].Position, Mesh.Vertices[Mesh.Indices[FirstIndex + 2]].Position});
 		}
+
+		// 루트는 삼각형이 리프 크기보다 많아 항상 안쪽 노드다
+		Mesh.PickingBVHNodes4.Reserve(Mesh.PickingBVHNodes.Num() / 2);
+		BuildPickingBVHNode4(Mesh, 0);
 	}
 	Mesh.bPickingBVHBuilt = true;
 }
@@ -279,43 +323,29 @@ void TraceTriangle(const FRay& Ray, const FPickingTriangle& Triangle, float& InO
 	}
 }
 
-// NodeDistance는 부모(또는 루트 검사)가 이미 구한 이 노드의 박스 진입 거리다. 박스를 다시 검사하지 않는다.
-void TracePickingBVHNode(const FTraceContext& Context, const FStaticMeshData& Mesh, const uint32 NodeIndex, const float NodeDistance, float& InOutNearestT, bool& bInOutHit)
+// NodeDistance는 부모가 이미 구한 이 노드의 박스 진입 거리다 (루트는 0). 박스를 다시 검사하지 않는다.
+void TracePickingBVHNode(const FTraceContext& Context, const FStaticMeshData& Mesh, const uint32 Node4Index, const float NodeDistance, float& InOutNearestT, bool& bInOutHit)
 {
 	if (NodeDistance >= InOutNearestT)
 		return;
 
-	const FMeshPickingBVHNode& Node = Mesh.PickingBVHNodes[NodeIndex];
-	if (Node.bLeaf)
+	// 자식 박스 4개를 한 번에 검사하고, 통과한 자식을 가까운 순서로 받는다
+	const FPickingBVHNode4& Node = Mesh.PickingBVHNodes4[Node4Index];
+	float Distances[4];
+	uint32 Slots[4];
+	const uint32 HitCount = RayIntersectsNode4(Context, Node, Distances, Slots);
+	for (uint32 Index = 0; Index < HitCount; ++Index)
 	{
-		for (uint32 Offset = 0; Offset < Node.Count; ++Offset)
-			TraceTriangle(Context.Ray, Mesh.PickingTriangles[Node.First + Offset], InOutNearestT, bInOutHit);
-		return;
-	}
-
-	const FMeshPickingBVHNode& LeftNode = Mesh.PickingBVHNodes[Node.Left];
-	const FMeshPickingBVHNode& RightNode = Mesh.PickingBVHNodes[Node.Right];
-	float LeftDistance = 0.0f;
-	float RightDistance = 0.0f;
-	const bool bHitLeft = RayIntersectsAABB(Context, LeftNode.Bounds.Min, LeftNode.Bounds.Max, LeftDistance);
-	const bool bHitRight = RayIntersectsAABB(Context, RightNode.Bounds.Min, RightNode.Bounds.Max, RightDistance);
-
-	if (bHitLeft && bHitRight)
-	{
-		const uint32 NearNode = LeftDistance <= RightDistance ? Node.Left : Node.Right;
-		const uint32 FarNode = LeftDistance <= RightDistance ? Node.Right : Node.Left;
-		const float NearDistance = LeftDistance <= RightDistance ? LeftDistance : RightDistance;
-		const float FarDistance = LeftDistance <= RightDistance ? RightDistance : LeftDistance;
-		TracePickingBVHNode(Context, Mesh, NearNode, NearDistance, InOutNearestT, bInOutHit);
-		TracePickingBVHNode(Context, Mesh, FarNode, FarDistance, InOutNearestT, bInOutHit);
-	}
-	else if (bHitLeft)
-	{
-		TracePickingBVHNode(Context, Mesh, Node.Left, LeftDistance, InOutNearestT, bInOutHit);
-	}
-	else if (bHitRight)
-	{
-		TracePickingBVHNode(Context, Mesh, Node.Right, RightDistance, InOutNearestT, bInOutHit);
+		const uint32 Slot = Slots[Index];
+		if (Distances[Slot] >= InOutNearestT)
+			break;
+		if (Node.Count[Slot] == 0)
+		{
+			TracePickingBVHNode(Context, Mesh, Node.Child[Slot], Distances[Slot], InOutNearestT, bInOutHit);
+			continue;
+		}
+		for (uint32 Offset = 0; Offset < Node.Count[Slot]; ++Offset)
+			TraceTriangle(Context.Ray, Mesh.PickingTriangles[Node.Child[Slot] + Offset], InOutNearestT, bInOutHit);
 	}
 }
 } // namespace
@@ -490,6 +520,43 @@ bool RayIntersectsAABB(const FTraceContext& Context, const FVector& BoxMin, cons
 	return true;
 }
 
+uint32 RayIntersectsNode4(const FTraceContext& Context, const FPickingBVHNode4& Node, float OutTEnter[4], uint32 OutSlots[4])
+{
+	const __m128 OX = _mm_set1_ps(Context.Ray.Origin.X);
+	const __m128 OY = _mm_set1_ps(Context.Ray.Origin.Y);
+	const __m128 OZ = _mm_set1_ps(Context.Ray.Origin.Z);
+	const __m128 IX = _mm_set1_ps(Context.InvDir.X);
+	const __m128 IY = _mm_set1_ps(Context.InvDir.Y);
+	const __m128 IZ = _mm_set1_ps(Context.InvDir.Z);
+
+	const __m128 tX1 = _mm_mul_ps(_mm_sub_ps(_mm_load_ps(Node.MinX), OX), IX);
+	const __m128 tX2 = _mm_mul_ps(_mm_sub_ps(_mm_load_ps(Node.MaxX), OX), IX);
+	const __m128 tY1 = _mm_mul_ps(_mm_sub_ps(_mm_load_ps(Node.MinY), OY), IY);
+	const __m128 tY2 = _mm_mul_ps(_mm_sub_ps(_mm_load_ps(Node.MaxY), OY), IY);
+	const __m128 tZ1 = _mm_mul_ps(_mm_sub_ps(_mm_load_ps(Node.MinZ), OZ), IZ);
+	const __m128 tZ2 = _mm_mul_ps(_mm_sub_ps(_mm_load_ps(Node.MaxZ), OZ), IZ);
+
+	const __m128 tEnter = _mm_max_ps(_mm_max_ps(_mm_min_ps(tX1, tX2), _mm_min_ps(tY1, tY2)), _mm_min_ps(tZ1, tZ2)); // 진입점
+	const __m128 tExit = _mm_min_ps(_mm_min_ps(_mm_max_ps(tX1, tX2), _mm_max_ps(tY1, tY2)), _mm_max_ps(tZ1, tZ2));  // 이탈점
+
+	// RayIntersectsAABB의 빗나감 조건(tEnter > tExit || tExit < 0)을 뒤집은 것
+	const uint32 HitMask = static_cast<uint32>(_mm_movemask_ps(_mm_and_ps(_mm_cmple_ps(tEnter, tExit), _mm_cmpge_ps(tExit, _mm_setzero_ps()))));
+	_mm_storeu_ps(OutTEnter, _mm_max_ps(tEnter, _mm_setzero_ps())); // 레이 시작점이 박스 안이면 0
+
+	// 통과한 칸만 진입 거리 오름차순으로 끼워 넣는다 (최대 4개라 삽입 정렬)
+	uint32 HitCount = 0;
+	for (uint32 Slot = 0; Slot < 4; ++Slot)
+	{
+		if ((HitMask & (1u << Slot)) == 0 || Node.Count[Slot] == FPickingBVHNode4::EmptySlot)
+			continue;
+		uint32 Insert = HitCount++;
+		for (; Insert > 0 && OutTEnter[OutSlots[Insert - 1]] > OutTEnter[Slot]; --Insert)
+			OutSlots[Insert] = OutSlots[Insert - 1];
+		OutSlots[Insert] = Slot;
+	}
+	return HitCount;
+}
+
 bool RayIntersectsTriangle(const FRay& Ray, const FVector& v1, const FVector& v2, const FVector& v3, float& OutT)
 {
 	constexpr float epsilon = 1e-5f;
@@ -546,14 +613,11 @@ bool RayIntersectsMesh(const FRay& LocalRay, const FStaticMeshData& Mesh, float&
 	bool bHit = false;
 	float NearestT = MaxT;
 
-	if (!Mesh.PickingBVHNodes.IsEmpty())
+	if (!Mesh.PickingBVHNodes4.IsEmpty())
 	{
-		// 로컬 레이의 역수는 메시당 한 번만 구해 모든 노드가 공유한다.
+		// 로컬 레이의 역수는 메시당 한 번만 구해 모든 노드가 공유한다. 루트는 자식 박스 4개 검사가 루트 박스 검사를 대신한다.
 		const FTraceContext Context = MakeTraceContext(LocalRay, nullptr, nullptr);
-		const FMeshPickingBVHNode& Root = Mesh.PickingBVHNodes[0];
-		float RootDistance = 0.0f;
-		if (RayIntersectsAABB(Context, Root.Bounds.Min, Root.Bounds.Max, RootDistance))
-			TracePickingBVHNode(Context, Mesh, 0, RootDistance, NearestT, bHit);
+		TracePickingBVHNode(Context, Mesh, 0, 0.0f, NearestT, bHit);
 	}
 	else
 	{

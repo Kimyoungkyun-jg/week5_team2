@@ -5,6 +5,7 @@
 #include <cfloat>
 
 struct FStaticMeshData;
+struct FPickingBVHNode4;
 class UBillboardComponent;
 class UPrimitiveComponent;
 
@@ -60,6 +61,10 @@ FTraceContext MakeTraceContext(const FRay& WorldRay, FBillboardTraceFn ResolveBi
 
 // 월드 AABB 판정 (컨텍스트의 역수 사용, 나눗셈 없음). 맞으면 진입 거리(0 이상)를 돌려준다.
 bool RayIntersectsAABB(const FTraceContext& Context, const FVector& BoxMin, const FVector& BoxMax, float& OutTEnter);
+
+// 4갈래 노드의 자식 박스 4개를 SSE로 한 번에 검사한다. RayIntersectsAABB와 계산 순서가 같아 진입 거리도 같다.
+// 레이가 통과한 칸을 진입 거리 오름차순으로 OutSlots에 담고 그 개수를 돌려준다. OutTEnter는 칸 번호로 읽는다.
+uint32 RayIntersectsNode4(const FTraceContext& Context, const FPickingBVHNode4& Node, float OutTEnter[4], uint32 OutSlots[4]);
 
 bool RayIntersectsBoundingSphere(const FTraceContext& Context, const FVector& SphereCenter, float SphereRadius, float& OutTEnter);
 

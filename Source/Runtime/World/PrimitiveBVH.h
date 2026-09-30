@@ -51,11 +51,15 @@ private:
 	};
 
 	uint32 BuildNode(uint32 First, uint32 Count, uint32 Parent);
+	void SortEntriesByLeaf();
+	uint32 BuildNode4(uint32 NodeIndex);
+	void SyncNode4Bounds(uint32 NodeIndex);
 	FBox RefitNode(uint32 NodeIndex);
 	void RefitFromLeaf(uint32 LeafIndex);
 	void TraverseRay(const FTraceContext& Context, uint32 NodeIndex,
 		TArray<FLineTraceCandidate>& OutCandidates) const;
-	void TraverseRayClosest(FTraceContext& Context, uint32 NodeIndex, float NodeDistance, FRayNarrowTestFn NarrowTest, void* UserContext) const;
+	void TraverseRayClosest(FTraceContext& Context, uint32 Node4Index, float NodeDistance, FRayNarrowTestFn NarrowTest, void* UserContext) const;
+	void TraceLeaf(FTraceContext& Context, uint32 First, uint32 Count, FRayNarrowTestFn NarrowTest, void* UserContext) const;
 
 	TArray<FEntry> Entries;
 	TArray<uint64> EntryBoundsRevisions;
@@ -63,9 +67,13 @@ private:
 	TArray<uint32> PrimitiveIndices;
 	TArray<uint32> EntryLeafNodes;
 	TArray<FNode> Nodes;
+	// 피킹 순회용 4갈래 노드. 이진 트리(Nodes)는 구축·refit에 쓰고, 박스가 바뀌면 같은 칸에 복사한다.
+	TArray<FPickingBVHNode4> Nodes4;
 	// Query 시 건드리지 않는 refit 메타데이터는 Node와 분리해 traversal cache 밀도를 유지한다.
 	TArray<uint32> NodeParents;
 	TArray<uint64> NodeRefitSerials;
+	// 이진 노드가 들어간 4갈래 칸 (Node4 인덱스 * 4 + 칸). 4갈래로 합치며 빠진 노드와 루트는 InvalidNodeIndex
+	TArray<uint32> NodeSlots;
 	std::vector<int32> EntryIndexByObjectIndex;
 	uint64 LastTopologyRevision = 0;
 	uint64 RefitSerial = 0;

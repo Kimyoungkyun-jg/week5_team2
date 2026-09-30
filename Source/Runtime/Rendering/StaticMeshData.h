@@ -88,6 +88,32 @@ struct FMeshPickingBVHNode
 	bool bLeaf = false;
 };
 
+// 피킹 BVH의 4갈래 노드 (World·Mesh 공용). 이진 트리의 두 층을 한 층으로 합쳐 내려가는 단계를 절반으로 줄인다.
+// 자식 박스 4개를 축별 배열로 모아 SIMD로 한 번에 검사한다. 128B = 캐시 라인 2개.
+struct alignas(64) FPickingBVHNode4
+{
+	static constexpr uint32 EmptySlot = static_cast<uint32>(-1);
+
+	float MinX[4];
+	float MinY[4];
+	float MinZ[4];
+	float MaxX[4];
+	float MaxY[4];
+	float MaxZ[4];
+	uint32 Child[4]; // Count > 0: 리프의 첫 원소 인덱스, Count == 0: 자식 4갈래 노드 인덱스
+	uint32 Count[4]; // 리프 원소 수. 0은 안쪽 노드, EmptySlot은 빈 칸
+
+	void SetBounds(const uint32 Slot, const FBox& Bounds)
+	{
+		MinX[Slot] = Bounds.Min.X;
+		MinY[Slot] = Bounds.Min.Y;
+		MinZ[Slot] = Bounds.Min.Z;
+		MaxX[Slot] = Bounds.Max.X;
+		MaxY[Slot] = Bounds.Max.Y;
+		MaxZ[Slot] = Bounds.Max.Z;
+	}
+};
+
 // 피킹 전용 삼각형. 세 꼭짓점 위치만 BVH 리프 순서로 연속 저장해 정밀 검사 때 인덱스·정점 간접 참조를 없앤다.
 struct FPickingTriangle
 {
@@ -107,6 +133,8 @@ struct FStaticMeshData
 	// 동일 Mesh를 사용하는 모든 Component가 공유한다. 첫 정밀 피킹 때 한 번만 구축한다.
 	mutable TArray<uint32> PickingTriangleIndices;
 	mutable TArray<FMeshPickingBVHNode> PickingBVHNodes;
+	// 피킹 순회용 4갈래 노드. 이진 노드(PickingBVHNodes)를 구축한 뒤 두 층씩 합쳐 만든다.
+	mutable TArray<FPickingBVHNode4> PickingBVHNodes4;
 	// PickingTriangleIndices와 같은 순서(BVH 리프 순서)의 삼각형 위치. BVH 리프 검사는 이 배열만 읽는다.
 	mutable TArray<FPickingTriangle> PickingTriangles;
 	mutable bool bPickingBVHBuilt = false;
@@ -115,6 +143,7 @@ struct FStaticMeshData
 	{
 		PickingTriangleIndices.Reset();
 		PickingBVHNodes.Reset();
+		PickingBVHNodes4.Reset();
 		PickingTriangles.Reset();
 		bPickingBVHBuilt = false;
 	}

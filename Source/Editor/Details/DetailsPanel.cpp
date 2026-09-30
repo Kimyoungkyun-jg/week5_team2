@@ -295,6 +295,31 @@ namespace
 			}
 			ImGui::EndCombo();
 		}
+
+		if (UStaticMeshComponent* MeshComponent = Cast<UStaticMeshComponent>(Owner))
+		{
+			ImGui::Spacing();
+			ImGui::Text("LOD Level");
+
+			int CurrentForced = MeshComponent->GetForcedLOD();
+			int SelectedIndex = CurrentForced + 1;
+			const char* LODItems[] = { "Auto (GPU)", "LOD 0", "LOD 1", "LOD 2" };
+
+			ImGui::SetNextItemWidth(-1.0f);
+			if (ImGui::Combo("##LODSelection", &SelectedIndex, LODItems, IM_ARRAYSIZE(LODItems)))
+			{
+				MeshComponent->SetForcedLOD(static_cast<int8>(SelectedIndex - 1));
+			}
+
+			if (Current)
+			{
+				const uint32 TotalLODs = static_cast<uint32>(Current->LODs.Num());
+				const uint32 Idx0 = Current->GetIndexCount(0);
+				const uint32 Idx1 = Current->GetIndexCount(1);
+				const uint32 Idx2 = Current->GetIndexCount(2);
+				ImGui::TextDisabled("LODs: %u | Indices: %u / %u / %u", TotalLODs, Idx0, Idx1, Idx2);
+			}
+		}
 	}
 
 	UMaterial* EnsureMaterialOverride(UMeshComponent* MeshComponent, int32 Slot, UMaterial* Effective, UMaterial* Override)

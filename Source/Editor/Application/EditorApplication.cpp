@@ -306,7 +306,7 @@ void FEditorApplication::EndFrame() {
 void FEditorApplication::UpdateGizmoAndPicking() {
   // Delete는 BeginFrame에서 한 번만 처리하고 여기서는 View 입력만 다룬다.
   const int32 ViewIndex = MultipleViewportsAdapter.GetActiveViewIndex();
-  if (ViewIndex == InvalidViewIndex || !ViewportsPanel->IsHovered())
+  if (ViewIndex == InvalidViewIndex || (!ViewportsPanel->IsHovered() && !Gizmo->IsUsing()))
     return;
 
   const FVector2 LocalMousePosition = ViewportsPanel->GetLocalMousePosition();
@@ -351,7 +351,8 @@ void FEditorApplication::RenderFrame(const int32 ViewIndex,
 
   const bool bDrawPrimitives = EditorSettings.bDrawPrimitives;
   if (bDrawPrimitives) {
-    Renderer->RenderOpaque(RenderPackets, ViewProjection);
+    const bool bWireframe = MultipleViewportsAdapter.IsViewWireframe(ViewIndex);
+    Renderer->RenderOpaque(RenderPackets, ViewProjection, bWireframe);
   }
 
   MultipleViewportsAdapter.PostRenderOpaque(ViewIndex, ViewRenderingInfo.DepthSteincil.Texture);

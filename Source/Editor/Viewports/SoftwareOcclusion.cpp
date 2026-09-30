@@ -188,6 +188,7 @@ void FSoftwareOcclusionCuller::ResetScene()
 	SyncSerial = 0;
 	bInitialized = false;
 	bBVHDirty = true;
+	LastBuiltObjectCount = -1;
 	StaticObjectIndices.Reset();
 	DynamicObjectIndices.Reset();
 	BypassObjectIndices.Reset();
@@ -232,6 +233,10 @@ void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject
 		}
 	}
 
+	const bool bShouldSettle = bPendingSettle;
+	bPendingSettle = false;
+	bool bHadDynamicSettle = false;
+
 	++SyncSerial;
 	StaticObjectIndices.Reset();
 	DynamicObjectIndices.Reset();
@@ -271,10 +276,15 @@ void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject
 		}
 		else // 기존에 있었던 객체
 		{
-			if (!State.bDynamic && State.BoundsRevision != Object.BoundsRevision)
+			if (bShouldSettle && State.bDynamic)
+			{
+				State.bDynamic = false;
+				State.BoundsRevision = Object.BoundsRevision;
+				bHadDynamicSettle = true;
+			}
+			else if (!State.bDynamic && State.BoundsRevision != Object.BoundsRevision)
 			{
 				State.bDynamic = true;
-				bBVHDirty = true;
 			}
 			State.BoundsRevision = Object.BoundsRevision;
 			State.SeenSerial = SyncSerial;
@@ -290,12 +300,14 @@ void FSoftwareOcclusionCuller::SynchronizeObjects(const TArray<FRenderableObject
 		}
 	}
 
-	bool bSameStaticLayout = StaticObjectIndices.Num() == BuiltStaticObjectIndices.Num();
-	for (int32 Index = 0; bSameStaticLayout && Index < StaticObjectIndices.Num(); ++Index)
+	if (bHadDynamicSettle)
 	{
-		bSameStaticLayout = StaticObjectIndices[Index] == BuiltStaticObjectIndices[Index];
+		bBVHDirty = true;
 	}
-	bBVHDirty = bBVHDirty || !bSameStaticLayout;
+
+	// 객체 총량이 변경되었거나 트리가 비어있는 경우에만 정적 트리를 재빌드
+	const bool bObjectCountChanged = (Objects.Num() != LastBuiltObjectCount);
+	bBVHDirty = bBVHDirty || bObjectCountChanged || BVHNodes.IsEmpty();
 	bInitialized = true;
 }
 
@@ -361,7 +373,7 @@ void FSoftwareOcclusionCuller::ClearBuffers()
 
 void FSoftwareOcclusionCuller::EnsureBVH(const TArray<FRenderableObject>& Objects)
 {
-	if (!bBVHDirty)
+	if (!bBVHDirty && !BVHNodes.IsEmpty())
 		return;
 
 	const double Start = NowSeconds();
@@ -373,6 +385,7 @@ void FSoftwareOcclusionCuller::EnsureBVH(const TArray<FRenderableObject>& Object
 		BuildBVHNode(Objects, 0, static_cast<uint32>(BVHObjectIndices.Num()));
 	LastBVHBuildMs = static_cast<float>((NowSeconds() - Start) * 1000.0);
 	bBVHDirty = false;
+	LastBuiltObjectCount = Objects.Num();
 }
 
 void FSoftwareOcclusionCuller::GatherRayCandidates(
@@ -385,8 +398,17 @@ void FSoftwareOcclusionCuller::GatherRayCandidates(
 	EnsureBVH(Objects);
 	LastRayQueryBVHBuildMs = bLastRayQueryRebuiltBVH ? LastBVHBuildMs : 0.0f;
 
+	const FTraceContext Context = MakeTraceContext(Ray, nullptr, nullptr);
+	float ClosestDist = FLT_MAX;
+
 	if (!BVHNodes.IsEmpty())
-		TraverseRayBVH(Ray, Objects, 0, OutCandidates);
+	{
+		float RootDist = 0.0f;
+		if (RayIntersectsAABB(Context, BoundsMin(BVHNodes[0].Bounds), BoundsMax(BVHNodes[0].Bounds), RootDist))
+		{
+			TraverseRayBVH(Context, Objects, 0, RootDist, ClosestDist, OutCandidates);
+		}
+	}
 
 	// 이동 객체는 정적 BVH에서 제외되므로 최신 Bounds로 개별 검사를 수행한다
 	for (const uint32 ObjectIndex : DynamicObjectIndices)
@@ -397,8 +419,14 @@ void FSoftwareOcclusionCuller::GatherRayCandidates(
 		const FRenderableObject& Object = Objects[ObjectIndex];
 		float Distance = 0.0f;
 		if (Object.Primitive && RayIntersectsAABB(
-			Ray, BoundsMin(Object.WorldBounds), BoundsMax(Object.WorldBounds), Distance))
-			OutCandidates.Add({Object.Primitive, Distance, true});
+			Context, BoundsMin(Object.WorldBounds), BoundsMax(Object.WorldBounds), Distance))
+		{
+			if (Distance <= ClosestDist)
+			{
+				ClosestDist = Distance;
+				OutCandidates.Add({Object.Primitive, Distance, true});
+			}
+		}
 	}
 
 	// 피킹 형상이 다른 객체는 기존 정밀 검사에 맡긴다
@@ -418,23 +446,63 @@ void FSoftwareOcclusionCuller::GatherRayCandidates(
 }
 
 void FSoftwareOcclusionCuller::TraverseRayBVH(
-	const FRay& Ray,
+	const FTraceContext& Context,
 	const TArray<FRenderableObject>& Objects,
 	const uint32 NodeIndex,
+	const float NodeDistance,
+	float& ClosestDist,
 	TArray<FLineTraceCandidate>& OutCandidates) const
 {
-	if (!BVHNodes.IsValidIndex(static_cast<int32>(NodeIndex)))
+	if (NodeDistance >= ClosestDist)
 		return;
 
 	const FBVHNode& Node = BVHNodes[NodeIndex];
-	float Distance = 0.0f;
-	if (!RayIntersectsAABB(Ray, BoundsMin(Node.Bounds), BoundsMax(Node.Bounds), Distance))
-		return;
 
 	if (!Node.bLeaf)
 	{
-		TraverseRayBVH(Ray, Objects, Node.Left, OutCandidates);
-		TraverseRayBVH(Ray, Objects, Node.Right, OutCandidates);
+		float LeftDistance = FLT_MAX;
+		float RightDistance = FLT_MAX;
+		bool bHitLeft = false;
+		bool bHitRight = false;
+
+		if (BVHNodes.IsValidIndex(static_cast<int32>(Node.Left)))
+		{
+			const FBVHNode& LeftChild = BVHNodes[Node.Left];
+			bHitLeft = RayIntersectsAABB(Context, BoundsMin(LeftChild.Bounds), BoundsMax(LeftChild.Bounds), LeftDistance);
+		}
+
+		if (BVHNodes.IsValidIndex(static_cast<int32>(Node.Right)))
+		{
+			const FBVHNode& RightChild = BVHNodes[Node.Right];
+			bHitRight = RayIntersectsAABB(Context, BoundsMin(RightChild.Bounds), BoundsMax(RightChild.Bounds), RightDistance);
+		}
+
+		// 가까운 노드를 먼저 탐색하고 탐색 후 갱신된 최근접 거리로 반대편 노드를 차단
+		if (bHitLeft && bHitRight)
+		{
+			if (LeftDistance <= RightDistance)
+			{
+				if (LeftDistance < ClosestDist)
+					TraverseRayBVH(Context, Objects, Node.Left, LeftDistance, ClosestDist, OutCandidates);
+				if (RightDistance < ClosestDist)
+					TraverseRayBVH(Context, Objects, Node.Right, RightDistance, ClosestDist, OutCandidates);
+			}
+			else
+			{
+				if (RightDistance < ClosestDist)
+					TraverseRayBVH(Context, Objects, Node.Right, RightDistance, ClosestDist, OutCandidates);
+				if (LeftDistance < ClosestDist)
+					TraverseRayBVH(Context, Objects, Node.Left, LeftDistance, ClosestDist, OutCandidates);
+			}
+		}
+		else if (bHitLeft && LeftDistance < ClosestDist)
+		{
+			TraverseRayBVH(Context, Objects, Node.Left, LeftDistance, ClosestDist, OutCandidates);
+		}
+		else if (bHitRight && RightDistance < ClosestDist)
+		{
+			TraverseRayBVH(Context, Objects, Node.Right, RightDistance, ClosestDist, OutCandidates);
+		}
 		return;
 	}
 
@@ -451,8 +519,14 @@ void FSoftwareOcclusionCuller::TraverseRayBVH(
 		const FRenderableObject& Object = Objects[ObjectIndex];
 		float ObjectDistance = 0.0f;
 		if (Object.Primitive && RayIntersectsAABB(
-			Ray, BoundsMin(Object.WorldBounds), BoundsMax(Object.WorldBounds), ObjectDistance))
-			OutCandidates.Add({Object.Primitive, ObjectDistance, true});
+			Context, BoundsMin(Object.WorldBounds), BoundsMax(Object.WorldBounds), ObjectDistance))
+		{
+			if (ObjectDistance <= ClosestDist)
+			{
+				ClosestDist = (std::min)(ClosestDist, ObjectDistance);
+				OutCandidates.Add({Object.Primitive, ObjectDistance, true});
+			}
+		}
 	}
 }
 
@@ -1404,12 +1478,15 @@ void FSoftwareOcclusionCuller::Cull(const int32 ViewIndex,
 	CurrentCameraLocation = CameraLocation;
 	CurrentFrustum = Frustum;
 
-	if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute && !bWireframe && ViewWidth > 0 && ViewHeight > 0)
+	const int32 SafeView = std::clamp(ViewIndex, 0, MaxViews - 1);
+	VisibleLODs[SafeView].Reset();
+
+	if (Settings.Mode == ESoftwareOcclusionMode::GPUCompute && ViewWidth > 0 && ViewHeight > 0)
 	{
 		if (FGPUOcclusionCuller* Culler = GetGPUCuller())
 		{
 			Culler->SynchronizeObjects(Objects);
-			Culler->Cull(ViewIndex, Objects, Frustum, ViewProjection, OutVisible, OutStats);
+			Culler->Cull(ViewIndex, Objects, Frustum, ViewProjection, CameraLocation, OutVisible, VisibleLODs[SafeView], OutStats);
 			OutStats.CullMs = static_cast<float>((NowSeconds() - CullStartSeconds) * 1000.0);
 			ActiveStats = nullptr;
 			return;
@@ -1735,6 +1812,8 @@ void FSoftwareOcclusionCuller::Cull(const int32 ViewIndex,
 		}
 	}
 	OutStats.FinalVisible = static_cast<uint32>(OutVisible.Num());
+	VisibleLODs[SafeView].SetNum(OutVisible.Num());
+	std::fill(VisibleLODs[SafeView].begin(), VisibleLODs[SafeView].end(), static_cast<uint8>(0));
 	OutStats.CullMs = static_cast<float>((NowSeconds() - CullStartSeconds) * 1000.0);
 	ActiveStats = nullptr;
 

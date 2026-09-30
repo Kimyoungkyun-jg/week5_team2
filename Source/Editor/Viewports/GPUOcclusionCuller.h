@@ -23,6 +23,8 @@ struct alignas(16) FGPUCullConstants
 {
     FVector4 FrustumPlanes[6];
     FMatrix ViewProjection;
+    FVector CameraPosition;
+    float Pad0;
     FVector2 HZBSize;
     uint32 NumInstances;
     uint32 NumWords;
@@ -60,7 +62,9 @@ public:
         const TArray<FRenderableObject>& Objects,
         const FFrustumPlanes& Frustum,
         const FMatrix& ViewProjection,
+        const FVector& CameraLocation,
         TArray<UPrimitiveComponent*>& OutVisible,
+        TArray<uint8>& OutLODs,
         FSoftwareOcclusionStats& OutStats);
 
     // 깊이 버퍼 다운샘플링 피라미드 생성

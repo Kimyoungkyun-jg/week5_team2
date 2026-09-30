@@ -114,10 +114,10 @@ void RenderCommand::BindShaderProgram(FShaderProgram* Shader, ID3D11DeviceContex
 	Ctx->IASetInputLayout(Shader->VertexShader->GetLayout());
 }
 
-void RenderCommand::BindMesh(UStaticMesh* Mesh, ID3D11DeviceContext* Context)
+void RenderCommand::BindMesh(UStaticMesh* Mesh, uint8 LODIndex, ID3D11DeviceContext* Context)
 {
 	BindVertexBuffer(Mesh->VertexBuffer.get(), Context);
-	BindIndexBuffer(Mesh->IndexBuffer.get(), Context);
+	BindIndexBuffer(Mesh->GetIndexBuffer(LODIndex), Context);
 }
 
 void RenderCommand::Draw(uint32 VertexCount, uint32 StartIndexLocation, ID3D11DeviceContext* Context)

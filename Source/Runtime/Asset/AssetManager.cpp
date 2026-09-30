@@ -61,6 +61,7 @@ namespace
 		// Vertex/Index GPU 업로드
 		Mesh->VertexBuffer = std::move(VB);
 		Mesh->IndexBuffer = std::move(IB);
+		Mesh->GenerateLODs();
 
 		UMaterial* DefaultMaterial = UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial");
 		if (!DefaultMaterial)

@@ -27,8 +27,13 @@ public:
 	virtual FString GetMaterialSlotName(int32 SlotIndex) const override;
 	virtual UMaterial* GetDefaultMaterial(int32 SlotIndex) const override;
 
+	// 수동 지정 강제 세부 단계
+	int8 GetForcedLOD() const { return ForcedLOD; }
+	void SetForcedLOD(int8 InLOD) { ForcedLOD = InLOD; }
+
 private:
 	UStaticMesh* StaticMesh = nullptr;
+	int8 ForcedLOD = -1;
 	// Mesh의 Section별 Material과 Texture를 보존해 각각의 렌더 패킷으로 제출한다.
 	virtual void SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets) override;
 };

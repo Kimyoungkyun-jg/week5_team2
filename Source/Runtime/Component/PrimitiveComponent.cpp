@@ -82,16 +82,16 @@ bool UPrimitiveComponent::LineTraceWithContext(const FTraceContext& Context, FHi
 		return false;
 
 	const FStaticMeshData* Mesh = GetMeshData();
-	return Mesh && TraceMesh(Context.Ray, *Mesh, GetWorldMatrix(), OutHit);
+	return Mesh && TraceMesh(Context.Ray, *Mesh, GetWorldMatrix(), OutHit, Context.BestDistance);
 }
 
-bool UPrimitiveComponent::TraceMesh(const FRay& WorldRay, const FStaticMeshData& Mesh, const FMatrix& WorldMatrix, FHitResult& OutResult)
+bool UPrimitiveComponent::TraceMesh(const FRay& WorldRay, const FStaticMeshData& Mesh, const FMatrix& WorldMatrix, FHitResult& OutResult, const float MaxT)
 {
 
 	FRay LocalRay = ToLocalRay(WorldRay, WorldMatrix);
 	float T;
 
-	if (!RayIntersectsMesh(LocalRay, Mesh, T))
+	if (!RayIntersectsMesh(LocalRay, Mesh, T, MaxT))
 		return false;
 
 	OutResult.HitComponent = this;

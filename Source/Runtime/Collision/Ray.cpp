@@ -132,17 +132,17 @@ void TraceTriangle(const FRay& Ray, const FStaticMeshData& Mesh, const uint32 Tr
 	}
 }
 
-void TracePickingBVHNode(const FRay& Ray, const FStaticMeshData& Mesh, const uint32 NodeIndex, float& InOutNearestT, bool& bInOutHit)
+// NodeDistance는 부모(또는 루트 검사)가 이미 구한 이 노드의 박스 진입 거리다. 박스를 다시 검사하지 않는다.
+void TracePickingBVHNode(const FTraceContext& Context, const FStaticMeshData& Mesh, const uint32 NodeIndex, const float NodeDistance, float& InOutNearestT, bool& bInOutHit)
 {
-	const FMeshPickingBVHNode& Node = Mesh.PickingBVHNodes[NodeIndex];
-	float NodeDistance = 0.0f;
-	if (!RayIntersectsAABB(Ray, Node.Bounds.Min, Node.Bounds.Max, NodeDistance) || NodeDistance >= InOutNearestT)
+	if (NodeDistance >= InOutNearestT)
 		return;
 
+	const FMeshPickingBVHNode& Node = Mesh.PickingBVHNodes[NodeIndex];
 	if (Node.bLeaf)
 	{
 		for (uint32 Offset = 0; Offset < Node.Count; ++Offset)
-			TraceTriangle(Ray, Mesh, Mesh.PickingTriangleIndices[Node.First + Offset], InOutNearestT, bInOutHit);
+			TraceTriangle(Context.Ray, Mesh, Mesh.PickingTriangleIndices[Node.First + Offset], InOutNearestT, bInOutHit);
 		return;
 	}
 
@@ -150,25 +150,25 @@ void TracePickingBVHNode(const FRay& Ray, const FStaticMeshData& Mesh, const uin
 	const FMeshPickingBVHNode& RightNode = Mesh.PickingBVHNodes[Node.Right];
 	float LeftDistance = 0.0f;
 	float RightDistance = 0.0f;
-	const bool bHitLeft = RayIntersectsAABB(Ray, LeftNode.Bounds.Min, LeftNode.Bounds.Max, LeftDistance);
-	const bool bHitRight = RayIntersectsAABB(Ray, RightNode.Bounds.Min, RightNode.Bounds.Max, RightDistance);
+	const bool bHitLeft = RayIntersectsAABB(Context, LeftNode.Bounds.Min, LeftNode.Bounds.Max, LeftDistance);
+	const bool bHitRight = RayIntersectsAABB(Context, RightNode.Bounds.Min, RightNode.Bounds.Max, RightDistance);
 
 	if (bHitLeft && bHitRight)
 	{
 		const uint32 NearNode = LeftDistance <= RightDistance ? Node.Left : Node.Right;
 		const uint32 FarNode = LeftDistance <= RightDistance ? Node.Right : Node.Left;
+		const float NearDistance = LeftDistance <= RightDistance ? LeftDistance : RightDistance;
 		const float FarDistance = LeftDistance <= RightDistance ? RightDistance : LeftDistance;
-		TracePickingBVHNode(Ray, Mesh, NearNode, InOutNearestT, bInOutHit);
-		if (FarDistance < InOutNearestT)
-			TracePickingBVHNode(Ray, Mesh, FarNode, InOutNearestT, bInOutHit);
+		TracePickingBVHNode(Context, Mesh, NearNode, NearDistance, InOutNearestT, bInOutHit);
+		TracePickingBVHNode(Context, Mesh, FarNode, FarDistance, InOutNearestT, bInOutHit);
 	}
 	else if (bHitLeft)
 	{
-		TracePickingBVHNode(Ray, Mesh, Node.Left, InOutNearestT, bInOutHit);
+		TracePickingBVHNode(Context, Mesh, Node.Left, LeftDistance, InOutNearestT, bInOutHit);
 	}
 	else if (bHitRight)
 	{
-		TracePickingBVHNode(Ray, Mesh, Node.Right, InOutNearestT, bInOutHit);
+		TracePickingBVHNode(Context, Mesh, Node.Right, RightDistance, InOutNearestT, bInOutHit);
 	}
 }
 } // namespace
@@ -293,30 +293,33 @@ bool RayIntersectsTriangle(const FRay& Ray, const FVector& v1, const FVector& v2
 		return false;
 	}
 
-	float invDet = 1.0f / det;
+	// det > 0이므로 u, v, t의 비교를 det 곱으로 옮겨 나눗셈을 통과한 삼각형에서만 한다.
 	// 수식: Ray.Origin - v1 = u * edge1 + v * edge2 - t * Ray.Direction
-	// 1. u 구하기
-	FVector s = Ray.Origin - v1;
-	float u = invDet * FVector::Dot(s, rayCrossVec);
+	const float epsDet = epsilon * det;
+	const float upperDet = det * (1.0f + epsilon);
 
-	if (-epsilon > u || epsilon < u - 1)
+	// 1. u 구하기 (u = uNum / det)
+	FVector s = Ray.Origin - v1;
+	const float uNum = FVector::Dot(s, rayCrossVec);
+
+	if (uNum < -epsDet || uNum > upperDet)
 	{
 		return false;
 	}
 
 	FVector sCrossE1 = FVector::Cross(s, edge1);
-	float v = invDet * FVector::Dot(RayVector, sCrossE1);
+	const float vNum = FVector::Dot(RayVector, sCrossE1);
 
-	if (-epsilon > v || epsilon < u + v - 1)
+	if (vNum < -epsDet || uNum + vNum > upperDet)
 	{
 		return false;
 	}
 
-	float t = invDet * FVector::Dot(edge2, sCrossE1);
+	const float tNum = FVector::Dot(edge2, sCrossE1);
 
-	if (t > epsilon)
+	if (tNum > epsDet)
 	{
-		OutT = t;
+		OutT = tNum / det;
 		return true;
 	}
 
@@ -324,15 +327,20 @@ bool RayIntersectsTriangle(const FRay& Ray, const FVector& v1, const FVector& v2
 }
 
 // Mesh AABB를 통과한 Ray에 삼각형 교차를 적용해 가장 가까운 거리만 반환한다.
-bool RayIntersectsMesh(const FRay& LocalRay, const FStaticMeshData& Mesh, float& OutT)
+bool RayIntersectsMesh(const FRay& LocalRay, const FStaticMeshData& Mesh, float& OutT, const float MaxT)
 {
 	PrepareMeshPickingBVH(Mesh);
 	bool bHit = false;
-	float NearestT = FLT_MAX;
+	float NearestT = MaxT;
 
 	if (!Mesh.PickingBVHNodes.IsEmpty())
 	{
-		TracePickingBVHNode(LocalRay, Mesh, 0, NearestT, bHit);
+		// 로컬 레이의 역수는 메시당 한 번만 구해 모든 노드가 공유한다.
+		const FTraceContext Context = MakeTraceContext(LocalRay, nullptr, nullptr);
+		const FMeshPickingBVHNode& Root = Mesh.PickingBVHNodes[0];
+		float RootDistance = 0.0f;
+		if (RayIntersectsAABB(Context, Root.Bounds.Min, Root.Bounds.Max, RootDistance))
+			TracePickingBVHNode(Context, Mesh, 0, RootDistance, NearestT, bHit);
 	}
 	else
 	{

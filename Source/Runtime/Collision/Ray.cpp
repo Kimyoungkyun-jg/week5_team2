@@ -457,15 +457,16 @@ bool RayIntersectsAABB(const FTraceContext& Context, const FVector& BoxMin, cons
 	const float tZ1 = (BoxMin.Z - O.Z) * I.Z;
 	const float tZ2 = (BoxMax.Z - O.Z) * I.Z;
 
-	const float tEnter = fmaxf(fmaxf(fminf(tX1, tX2), fminf(tY1, tY2)), fminf(tZ1, tZ2)); // 진입점
-	const float tExit = fminf(fminf(fmaxf(tX1, tX2), fmaxf(tY1, tY2)), fmaxf(tZ1, tZ2));  // 이탈점
+	// 역수는 SafeReciprocal로 항상 유한해 NaN이 생기지 않는다. fminf/fmaxf는 NaN 규칙 때문에 함수 호출로 컴파일되므로 std::min/max(CPU 명령 1개)를 쓴다
+	const float tEnter = std::max(std::max(std::min(tX1, tX2), std::min(tY1, tY2)), std::min(tZ1, tZ2)); // 진입점
+	const float tExit = std::min(std::min(std::max(tX1, tX2), std::max(tY1, tY2)), std::max(tZ1, tZ2));  // 이탈점
 
 	if (tEnter > tExit || tExit < 0.0f)
 	{ // 빗나감, 또는 박스가 레이 뒤에 있음
 		return false;
 	}
 
-	OutTEnter = fmaxf(tEnter, 0.0f); // 레이 시작점이 박스 안이면 0
+	OutTEnter = std::max(tEnter, 0.0f); // 레이 시작점이 박스 안이면 0
 	return true;
 }
 

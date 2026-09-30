@@ -89,10 +89,7 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
   MainWindowSC = MainWindowCtx.Swapchain.get();
   Windows.Add(std::move(MainWindowCtx));
 
-  LOG(Info, "Initialize AssetManager...");
   FRenderResourceManager::Init();
-  UAssetManager::Get().Init();
-  LOG(Info, "Initialize AssetManager Success!");
 
   LOG(Info, "Initialize ImGui...");
   ImGuiRenderer = MakeUnique<FImGuiRenderer>();
@@ -104,11 +101,25 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
 
   LoadingScreen = MakeUnique<FLoadingScreen>();
   LoadingScreen->Init();
-  LoadingScreen->SetProgress(0.05f);
+  LoadingScreen->SetProgress(0.0f);
+  LoadingScreen->SetStatusText("Scanning assets...");
   LoadingScreen->Tick(0.016f);
   // 초기 로딩 화면 출력 및 창 표시
   PresentFrame();
   MainWindow->Show();
+
+  // 애셋 초기화 및 진행률 연동
+  LOG(Info, "Initialize AssetManager...");
+  UAssetManager::Get().Init([this](float Ratio, const FString& AssetName) {
+    if (LoadingScreen) {
+      LoadingScreen->SetProgress(Ratio);
+      LoadingScreen->SetStatusText(AssetName);
+      LoadingScreen->Tick(0.016f);
+      PresentFrame();
+      MainWindow->ProcessMessage(bIsRunning);
+    }
+  });
+  LOG(Info, "Initialize AssetManager Success!");
 
   GridRenderer = MakeUnique<FGridRenderer>();
   GridRenderer->Init(Renderer.get());

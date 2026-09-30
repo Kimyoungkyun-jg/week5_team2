@@ -26,6 +26,7 @@ bool FLoadingScreen::Init()
 void FLoadingScreen::SetProgress(float InProgress)
 {
 	TargetProgress = (std::min)(1.0f, (std::max)(TargetProgress, InProgress));
+	CurrentProgress = TargetProgress;
 	if (InProgress >= 1.0f)
 	{
 		bSceneLoaded = true;
@@ -67,23 +68,21 @@ void FLoadingScreen::Tick(float DeltaTime)
 
 	// 진행도 갱신
 	const float ApproachRate = (bSceneLoaded ? 0.9f : 0.5f);
-	CurrentProgress = (std::min)(1.0f, (std::min)(TargetProgress, CurrentProgress + DeltaTime * ApproachRate));
+	CurrentProgress = (std::min)(1.0f, (std::max)(CurrentProgress, (std::min)(TargetProgress, CurrentProgress + DeltaTime * ApproachRate)));
 
 	// 진행도 연동 애니메이션 갱신
 	const float AnimationCycles = 0.7f;
 	CurrentFrameIndex = (static_cast<int32>(CurrentProgress * static_cast<float>(TotalFrames) * AnimationCycles) % TotalFrames + TotalFrames) % TotalFrames;
 
 	// 상태 텍스트 갱신
-	if (CurrentProgress < 0.25f)
-		CurrentStatusText = "Initializing engine subsystems...";
-	else if (CurrentProgress < 0.55f)
-		CurrentStatusText = "Loading shaders and textures...";
-	else if (CurrentProgress < 0.85f)
-		CurrentStatusText = "Building scene primitives...";
-	else if (CurrentProgress < 1.0f)
-		CurrentStatusText = "Finalizing render pipelines...";
-	else
+	if (CurrentProgress >= 1.0f)
+	{
 		CurrentStatusText = "Ready";
+	}
+	else if (CurrentStatusText.empty())
+	{
+		CurrentStatusText = "Loading assets...";
+	}
 
 	// 건너뛰기 입력 확인
 	if (FInputSystem::IsKeyPressed(EKeyCode::Space) || ImGui::IsMouseClicked(0))

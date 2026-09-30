@@ -6,6 +6,7 @@
 #include "Rendering/Shader.h"
 
 #include <filesystem>
+#include <functional>
 
 enum class EAssetType
 {
@@ -29,10 +30,10 @@ private:
 public:
 	static UAssetManager& Get();
 
-	void ScanAssets(const fs::path& AssetRoot);
+	void ScanAssets(const fs::path& AssetRoot, std::function<void(float, const FString&)> OnProgress = nullptr);
 	void LoadAsset(const FString& Key, const FString& Path);
 
-	void Init();
+	void Init(std::function<void(float, const FString&)> OnProgress = nullptr);
 	void CreateDefaultTextures();
 	void CreateDefaultMeshes();
 	void CreateDefaultMaterial();

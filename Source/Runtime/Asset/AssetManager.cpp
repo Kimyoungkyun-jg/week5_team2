@@ -162,7 +162,7 @@ UAssetManager& UAssetManager::Get()
 	return *Instance;
 }
 
-void UAssetManager::ScanAssets(const fs::path& AssetRoot)
+void UAssetManager::ScanAssets(const fs::path& AssetRoot, std::function<void(float, const FString&)> OnProgress)
 {
 	if (!fs::exists(AssetRoot))
 	{
@@ -170,14 +170,32 @@ void UAssetManager::ScanAssets(const fs::path& AssetRoot)
 		return;
 	}
 
+	// 애셋 목록 수집
+	TArray<fs::path> AssetFiles;
 	for (const fs::directory_entry& Entry : fs::recursive_directory_iterator(AssetRoot))
 	{
 		if (!Entry.is_regular_file()) continue;
+		AssetFiles.Add(Entry.path());
+	}
 
-		FString Key = fs::relative(Entry.path(), AssetRoot).generic_string();
-		FString Path = Entry.path().generic_string();
+	const int32 TotalFiles = static_cast<int32>(AssetFiles.Num());
+	int32 ProcessedCount = 0;
+
+	// 애셋 순회 로드
+	for (const fs::path& FilePath : AssetFiles)
+	{
+		FString Key = fs::relative(FilePath, AssetRoot).generic_string();
+		FString Path = FilePath.generic_string();
 		AssetPathMap.Add(Key, Path);
 		LoadAsset(Key, Path);
+
+		++ProcessedCount;
+		// 진행도 콜백 호출
+		if (OnProgress && TotalFiles > 0)
+		{
+			const float Ratio = static_cast<float>(ProcessedCount) / static_cast<float>(TotalFiles);
+			OnProgress(Ratio, Key);
+		}
 	}
 }
 
@@ -205,13 +223,13 @@ void UAssetManager::LoadAsset(const FString& Key, const FString& Path)
 	}
 }
 
-void UAssetManager::Init()
+void UAssetManager::Init(std::function<void(float, const FString&)> OnProgress)
 {
 	FGeometryGenerator::CreateDefaultMeshDatas();
 	// 머티리얼이 참조하므로 반드시 먼저 만든다
 	CreateDefaultTextures();
 	CreateDefaultMaterial();
-	ScanAssets("Assets");
+	ScanAssets("Assets", OnProgress);
 	CreateDefaultMeshes();
 	CreateParticleMaterial();
 }

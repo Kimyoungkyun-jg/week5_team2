@@ -173,8 +173,8 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 	EnsureDeferredWorkers();
 
 	{
-		FStatScope SortScope(StatIds::RenderSort());
-		std::sort(InPackets.begin(), InPackets.end(), CompareStateThenDepth);
+		//FStatScope SortScope(StatIds::RenderSort());
+		//std::sort(InPackets.begin(), InPackets.end(), CompareStateThenDepth);
 	}
 
 	{

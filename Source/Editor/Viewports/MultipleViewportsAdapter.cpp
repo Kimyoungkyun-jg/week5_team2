@@ -941,7 +941,7 @@ void FMultipleViewportsAdapter::AppendSoftwareOcclusionDebugBounds(FLineBatcher&
 FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosition, UWorld& World)
 {
     LastPick = {};
-    LastPickObjectCount = RenderObjects.Num();
+    LastPickObjectCount = World.GetWorldPrimitiveComponents().Num();
 
     FRay Ray{};
     if (!TryGetActiveViewRay(LocalMousePosition, Ray)) return LastPick;
@@ -961,7 +961,7 @@ FPickHit FMultipleViewportsAdapter::PickActiveView(const FVector2 LocalMousePosi
 			FStatScope TotalScope(StatIds::PickingTotal());
 			{
 				FStatScope BroadScope(StatIds::PickingBroad());
-				SoftwareOcclusion.GatherRayCandidates(Ray, RenderObjects, PickCandidates);
+				World.GatherLineTraceCandidates(Ray, PickCandidates);
 			}
 
 			LastPickCandidateCount = PickCandidates.Num();

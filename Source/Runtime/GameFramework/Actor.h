@@ -21,6 +21,9 @@ public:
 
 	virtual void BeginPlay(); // xx World->AddPrimitive 책임이동 필요
 	virtual void Tick(float DeltaTime); // xx component 호출
+	bool CanEverTick() const { return bCanEverTick; }
+	bool IsActorTickEnabled() const { return bCanEverTick && bTickEnabled; }
+	void SetActorTickEnabled(bool bEnabled);
 
 	UWorld* GetWorld() const { return World; }
 	ULevel* GetLevel() const { return Level; }
@@ -52,12 +55,16 @@ public:
 	}
 
 protected:
+	void SetCanEverTick(bool bEnabled);
+
 	//TSet<TObjectPtr<UActorComponent>> OwnedComponents;
 	TArray<UActorComponent*> Components;
 	USceneComponent* RootComponent = nullptr;
 
 	UWorld* World = nullptr;
 	ULevel* Level = nullptr;
+	bool bCanEverTick = true;
+	bool bTickEnabled = true;
 
 private:
 

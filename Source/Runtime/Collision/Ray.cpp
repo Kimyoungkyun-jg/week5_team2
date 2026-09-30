@@ -4,6 +4,8 @@
 #include "Math/EngineMath.h"
 
 #include <algorithm>
+#include <array>
+#include <vector>
 
 namespace
 {
@@ -43,20 +45,41 @@ float AxisValue(const FVector& Value, const int32 Axis)
 	return Value.Z;
 }
 
-uint32 BuildPickingBVHNode(const FStaticMeshData& Mesh, const uint32 First, const uint32 Count)
+constexpr int32 PickingSAHBinCount = 16;
+constexpr float PickingSplitEpsilon = 1.0e-6f;
+
+// 빌드 중 삼각형마다 Indices/Vertices를 다시 따라가지 않도록 경계와 중심을 한 번만 계산해 둔다.
+struct FPickingBuildData
+{
+	std::vector<FBox> TriangleBounds;
+	std::vector<FVector> Centroids;
+};
+
+float SurfaceArea(const FBox& Bounds)
+{
+	const FVector Size = Bounds.Max - Bounds.Min;
+	return 2.0f * (Size.X * Size.Y + Size.Y * Size.Z + Size.Z * Size.X);
+}
+
+int32 SAHBinIndex(const float Centroid, const float Minimum, const float Scale)
+{
+	return std::clamp(static_cast<int32>((Centroid - Minimum) * Scale), 0, PickingSAHBinCount - 1);
+}
+
+uint32 BuildPickingBVHNode(const FStaticMeshData& Mesh, const FPickingBuildData& Data, const uint32 First, const uint32 Count)
 {
 	const uint32 NodeIndex = Mesh.PickingBVHNodes.Add(FMeshPickingBVHNode{});
-	FBox Bounds = GetTriangleBounds(Mesh, Mesh.PickingTriangleIndices[First]);
-	FVector CentroidMin = GetTriangleCentroid(Mesh, Mesh.PickingTriangleIndices[First]);
+	FBox Bounds = Data.TriangleBounds[Mesh.PickingTriangleIndices[First]];
+	FVector CentroidMin = Data.Centroids[Mesh.PickingTriangleIndices[First]];
 	FVector CentroidMax = CentroidMin;
 
 	for (uint32 Offset = 1; Offset < Count; ++Offset)
 	{
 		const uint32 TriangleIndex = Mesh.PickingTriangleIndices[First + Offset];
-		const FBox TriangleBounds = GetTriangleBounds(Mesh, TriangleIndex);
+		const FBox& TriangleBounds = Data.TriangleBounds[TriangleIndex];
 		Bounds.Min = MinVector(Bounds.Min, TriangleBounds.Min);
 		Bounds.Max = MaxVector(Bounds.Max, TriangleBounds.Max);
-		const FVector Centroid = GetTriangleCentroid(Mesh, TriangleIndex);
+		const FVector& Centroid = Data.Centroids[TriangleIndex];
 		CentroidMin = MinVector(CentroidMin, Centroid);
 		CentroidMax = MaxVector(CentroidMax, Centroid);
 	}
@@ -71,27 +94,122 @@ uint32 BuildPickingBVHNode(const FStaticMeshData& Mesh, const uint32 First, cons
 		return NodeIndex;
 	}
 
-	const FVector CentroidExtent = CentroidMax - CentroidMin;
-	int32 SplitAxis = 0;
-	if (CentroidExtent.Y > CentroidExtent.X)
-		SplitAxis = 1;
-	if (AxisValue(CentroidExtent, 2) > AxisValue(CentroidExtent, SplitAxis))
-		SplitAxis = 2;
+	// Binned SAH: 세 축을 각각 빈으로 나눠 SA(왼쪽)*N(왼쪽) + SA(오른쪽)*N(오른쪽)이 가장 작은 분할을 고른다.
+	struct FBin
+	{
+		FBox Bounds{};
+		uint32 Count = 0;
+	};
 
-	const uint32 LeftCount = Count / 2;
 	auto Begin = Mesh.PickingTriangleIndices.begin() + First;
-	auto Middle = Begin + LeftCount;
 	auto End = Begin + Count;
-	std::nth_element(Begin,
-		Middle,
-		End,
-		[&](const uint32 A, const uint32 B)
-		{
-			return AxisValue(GetTriangleCentroid(Mesh, A), SplitAxis) < AxisValue(GetTriangleCentroid(Mesh, B), SplitAxis);
-		});
 
-	const uint32 Left = BuildPickingBVHNode(Mesh, First, LeftCount);
-	const uint32 Right = BuildPickingBVHNode(Mesh, First + LeftCount, Count - LeftCount);
+	float BestCost = FLT_MAX;
+	int32 BestAxis = -1;
+	int32 BestSplit = -1;
+	float BestMinimum = 0.0f;
+	float BestScale = 0.0f;
+	for (int32 Axis = 0; Axis < 3; ++Axis)
+	{
+		const float Minimum = AxisValue(CentroidMin, Axis);
+		const float Extent = AxisValue(CentroidMax, Axis) - Minimum;
+		if (Extent <= PickingSplitEpsilon)
+			continue;
+
+		const float Scale = static_cast<float>(PickingSAHBinCount) / Extent;
+		std::array<FBin, PickingSAHBinCount> Bins{};
+		for (auto It = Begin; It != End; ++It)
+		{
+			const FBox& TriangleBounds = Data.TriangleBounds[*It];
+			FBin& Bin = Bins[SAHBinIndex(AxisValue(Data.Centroids[*It], Axis), Minimum, Scale)];
+			if (Bin.Count == 0)
+			{
+				Bin.Bounds = TriangleBounds;
+			}
+			else
+			{
+				Bin.Bounds.Min = MinVector(Bin.Bounds.Min, TriangleBounds.Min);
+				Bin.Bounds.Max = MaxVector(Bin.Bounds.Max, TriangleBounds.Max);
+			}
+			++Bin.Count;
+		}
+
+		// 오른쪽 누적(빈 i 이상)을 먼저 구하고, 왼쪽 누적을 늘려 가며 분할 비용을 계산한다.
+		std::array<FBox, PickingSAHBinCount> RightBounds{};
+		std::array<uint32, PickingSAHBinCount> RightCounts{};
+		FBox RightAccum{};
+		uint32 RightAccumCount = 0;
+		for (int32 BinIndex = PickingSAHBinCount - 1; BinIndex >= 1; --BinIndex)
+		{
+			const FBin& Bin = Bins[BinIndex];
+			if (Bin.Count > 0)
+			{
+				if (RightAccumCount == 0)
+				{
+					RightAccum = Bin.Bounds;
+				}
+				else
+				{
+					RightAccum.Min = MinVector(RightAccum.Min, Bin.Bounds.Min);
+					RightAccum.Max = MaxVector(RightAccum.Max, Bin.Bounds.Max);
+				}
+				RightAccumCount += Bin.Count;
+			}
+			RightBounds[BinIndex] = RightAccum;
+			RightCounts[BinIndex] = RightAccumCount;
+		}
+
+		FBox LeftAccum{};
+		uint32 LeftAccumCount = 0;
+		for (int32 Split = 0; Split < PickingSAHBinCount - 1; ++Split)
+		{
+			const FBin& Bin = Bins[Split];
+			if (Bin.Count > 0)
+			{
+				if (LeftAccumCount == 0)
+				{
+					LeftAccum = Bin.Bounds;
+				}
+				else
+				{
+					LeftAccum.Min = MinVector(LeftAccum.Min, Bin.Bounds.Min);
+					LeftAccum.Max = MaxVector(LeftAccum.Max, Bin.Bounds.Max);
+				}
+				LeftAccumCount += Bin.Count;
+			}
+			if (LeftAccumCount == 0 || RightCounts[Split + 1] == 0)
+				continue;
+
+			const float Cost = SurfaceArea(LeftAccum) * static_cast<float>(LeftAccumCount) +
+				SurfaceArea(RightBounds[Split + 1]) * static_cast<float>(RightCounts[Split + 1]);
+			if (Cost < BestCost)
+			{
+				BestCost = Cost;
+				BestAxis = Axis;
+				BestSplit = Split;
+				BestMinimum = Minimum;
+				BestScale = Scale;
+			}
+		}
+	}
+
+	uint32 LeftCount = 0;
+	if (BestAxis >= 0)
+	{
+		const auto Middle = std::partition(Begin,
+			End,
+			[&](const uint32 TriangleIndex)
+			{
+				return SAHBinIndex(AxisValue(Data.Centroids[TriangleIndex], BestAxis), BestMinimum, BestScale) <= BestSplit;
+			});
+		LeftCount = static_cast<uint32>(Middle - Begin);
+	}
+	// 모든 중심이 같아 SAH 분할이 불가능하면 개수 기준으로 반씩 나눠 재귀가 끝나도록 한다.
+	if (LeftCount == 0 || LeftCount == Count)
+		LeftCount = Count / 2;
+
+	const uint32 Left = BuildPickingBVHNode(Mesh, Data, First, LeftCount);
+	const uint32 Right = BuildPickingBVHNode(Mesh, Data, First + LeftCount, Count - LeftCount);
 	FMeshPickingBVHNode& Node = Mesh.PickingBVHNodes[NodeIndex];
 	Node.Bounds = Bounds;
 	Node.Left = Left;
@@ -113,7 +231,16 @@ void EnsurePickingBVH(const FStaticMeshData& Mesh)
 		for (uint32 TriangleIndex = 0; TriangleIndex < TriangleCount; ++TriangleIndex)
 			Mesh.PickingTriangleIndices.Add(TriangleIndex);
 		Mesh.PickingBVHNodes.Reserve(TriangleCount * 2);
-		BuildPickingBVHNode(Mesh, 0, TriangleCount);
+
+		FPickingBuildData BuildData;
+		BuildData.TriangleBounds.reserve(TriangleCount);
+		BuildData.Centroids.reserve(TriangleCount);
+		for (uint32 TriangleIndex = 0; TriangleIndex < TriangleCount; ++TriangleIndex)
+		{
+			BuildData.TriangleBounds.push_back(GetTriangleBounds(Mesh, TriangleIndex));
+			BuildData.Centroids.push_back(GetTriangleCentroid(Mesh, TriangleIndex));
+		}
+		BuildPickingBVHNode(Mesh, BuildData, 0, TriangleCount);
 	}
 	Mesh.bPickingBVHBuilt = true;
 }

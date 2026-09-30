@@ -70,17 +70,7 @@ bool UPrimitiveComponent::LineTraceComponent(const FRay& WorldRay, FHitResult& O
 // 피킹 전용 경로: 레이 역수는 컨텍스트에서 받고, 이미 찾은 최근접보다 먼 박스는 정밀 판정을 건너뛴다.
 bool UPrimitiveComponent::LineTraceWithContext(const FTraceContext& Context, FHitResult& OutHit)
 {
-	const FBox Bounds = GetWorldBounds();
-	float BoxEnter = 0.0f;
-
-	//if (!RayIntersectsAABB(Context, Bounds.Min, Bounds.Max, BoxEnter))
-	//	return false;
-
-	// 박스 안의 물체는 박스 진입 거리보다 가까울 수 없다.
-	// 이미 더 가까운 교차를 찾았다면 월드 행렬·역행렬·삼각형 판정을 생략한다.
-	if (BoxEnter > Context.BestDistance)
-		return false;
-
+	// 월드 AABB 판정은 피킹 BVH가 이미 마쳤으므로 다시 하지 않는다. 메시 검사는 MaxT로 먼 히트를 잘라낸다.
 	const FStaticMeshData* Mesh = GetMeshData();
 	return Mesh && TraceMesh(Context.Ray, *Mesh, GetWorldMatrix(), OutHit, Context.BestDistance);
 }

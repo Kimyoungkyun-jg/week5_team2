@@ -43,10 +43,11 @@ private:
 	};
 
 	// 박스를 통과한 피킹 후보와 박스 진입 거리
+	// 리프마다 스택 배열로 만들어 쓰므로 기본값 초기화를 두지 않는다. 채운 개수(HitCount)만 읽는다.
 	struct FRayHit
 	{
-		float Distance = 0.0f;
-		UPrimitiveComponent* Primitive = nullptr;
+		float Distance;
+		UPrimitiveComponent* Primitive;
 	};
 
 	uint32 BuildNode(uint32 First, uint32 Count, uint32 Parent);

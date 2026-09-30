@@ -43,25 +43,35 @@ FSwapchain::FSwapchain(FRenderDevice* InRenderDevice, FWindow* InWindow)
 
 	HRESULT hr = RenderDevice->GetFactory()->CreateSwapChain(RenderDevice->GetDevice(), &Desc, Swapchain.GetAddressOf());
 	if (FAILED(hr))
+	{
 		LOG(Error, "Failed To Create Swapchain!");
+		return;
+	}
 	else
 		LOG(Info, "Swapchain tearing support: {}", bAllowTearing ? "enabled" : "unavailable");
 
 	CreateBackbuffer();
-
-
+	if (!BackbufferTexture)
+		return;
 	ValidateRenderingInfo();
 }
 
 void FSwapchain::CreateBackbuffer()
 {
-	ComPtr<ID3D11Texture2D> Backbuffer;
-	Swapchain->GetBuffer(
-		0,
-		IID_PPV_ARGS(&Backbuffer)
-	);
+	if (!Swapchain)
+		return;
 
-	D3D11_TEXTURE2D_DESC TextureDesc;
+	ComPtr<ID3D11Texture2D> Backbuffer;
+
+	const HRESULT Hr = Swapchain->GetBuffer(0, IID_PPV_ARGS(&Backbuffer));
+
+	if (FAILED(Hr) || !Backbuffer)
+	{
+		LOG(Error, "Failed To Get Swapchain Backbuffer!");
+		return;
+	}
+
+	D3D11_TEXTURE2D_DESC TextureDesc{};
 	Backbuffer->GetDesc(&TextureDesc);
 
 	BackbufferTexture = MakeUnique<FTexture2D>(RenderDevice->GetDevice(), Backbuffer, TextureDesc);
@@ -73,21 +83,29 @@ FSwapchain::~FSwapchain()
 
 void FSwapchain::Resize(int32 InWidth, int32 InHeight)
 {
+	if (!Swapchain || InWidth <= 0 || InHeight <= 0)
+		return;
+
 	BackbufferTexture = nullptr;
+	const HRESULT Hr = Swapchain->ResizeBuffers(0, InWidth, InHeight, DXGI_FORMAT_UNKNOWN, 0);
 
-	// Swapchain 크기 변경
-	Swapchain->ResizeBuffers(
-		0,
-		InWidth,
-		InHeight,
-		DXGI_FORMAT_UNKNOWN,
-		Desc.Flags
-	);
+	if (FAILED(Hr))
+	{
+		LOG(Error, "Failed To Resize Swapchain!");
 
-	//Update Desc
+		// 기존 Swapchain의 backbuffer라도 다시 얻어본다.
+		CreateBackbuffer();
+
+		if (BackbufferTexture)
+			ValidateRenderingInfo();
+		return;
+	}
+
 	Swapchain->GetDesc(&Desc);
-
 	CreateBackbuffer();
+
+	if (!BackbufferTexture)
+		return;
 
 	ValidateRenderingInfo();
 }

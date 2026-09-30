@@ -37,6 +37,9 @@ public:
 			Flags &= ~Flag;
 	}
 
+	static uint32 GetScreenWidth();
+	static uint32 GetScreenHeight();
+
 	// 샘플 구간 평균 FPS와 프레임 시간(ms). 매 프레임 값은 흔들려서 평균만 노출한다.
 	static float GetFPS() { return static_cast<float>(FStats::GetRecord(StatIds::FrameFPS()).CurrentValue); }
 	static float GetFrameTimeMs() { return static_cast<float>(FStats::GetRecord(StatIds::FrameTime()).CurrentValue); }

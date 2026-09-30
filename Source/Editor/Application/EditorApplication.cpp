@@ -75,11 +75,14 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
   FWindowContext MainWindowCtx;
   LOG(Info, "Create Main Window...");
   MainWindowCtx.Window = MakeUnique<FWindow>();
-  if (!MainWindowCtx.Window->Create(hInstance, 1920, 1080, L"Hitori Engine", false)) {
+  const int32 ScreenWidth = GetSystemMetrics(SM_CXSCREEN);
+  const int32 ScreenHeight = GetSystemMetrics(SM_CYSCREEN);
+
+  if(!MainWindowCtx.Window->Create(hInstance, ScreenWidth, ScreenHeight, L"Hitori Engine", false))
+  {
     LOG(Error, "Failed To Create Main Window!");
     return false;
   }
-  LOG(Info, "Success!");
   MainWindowCtx.Swapchain =
       MakeUnique<FSwapchain>(RenderDevice.get(), MainWindowCtx.Window.get());
   MainWindow = MainWindowCtx.Window.get();
@@ -262,11 +265,9 @@ void FEditorApplication::UpdateMultipleViewportState(const float DeltaTime) {
   EMultipleViewportsCameraPreset RequestedPreset =
       EMultipleViewportsCameraPreset::Perspective;
   if (ViewportsPanel->ConsumeCameraPresetRequest(PresetViewIndex,
-                                                 RequestedPreset)) {
-    if (PresetViewIndex == 0) {
-      MultipleViewportsAdapter.ApplyCameraPreset(0, RequestedPreset);
-    }
-  }
+                                                 RequestedPreset))
+    MultipleViewportsAdapter.ApplyCameraPreset(PresetViewIndex,
+                                               RequestedPreset);
   MultipleViewportsAdapter.UpdateLayout(ViewportSize, LocalMousePosition);
 
   const float HorizontalDrag = ViewportsPanel->ConsumeHorizontalDrag();
@@ -287,9 +288,11 @@ void FEditorApplication::UpdateMultipleViewportState(const float DeltaTime) {
 
   MultipleViewportsAdapter.UpdateInput(DeltaTime, LocalMousePosition, MoveSpeed,
                                        0.1f);
-  if (ViewportsPanel->IsHovered() ||
-      MultipleViewportsAdapter.GetCapturedViewIndex() != InvalidViewIndex)
-    MultipleViewportsAdapter.SetEditorViewIndex(0); // 0번 뷰로 고정
+  const int32 ActiveViewIndex = MultipleViewportsAdapter.GetActiveViewIndex();
+  if (ActiveViewIndex != InvalidViewIndex &&
+      (ViewportsPanel->IsHovered() ||
+       MultipleViewportsAdapter.GetCapturedViewIndex() != InvalidViewIndex))
+    MultipleViewportsAdapter.SetEditorViewIndex(ActiveViewIndex);
 }
 
 // 월드를 한 번 Tick·Capture한 뒤 에디터와 피킹을 갱신한다.
@@ -304,21 +307,24 @@ void FEditorApplication::TickWorldAndEditor(const float DeltaTime) {
 
 // 공유 월드 캡처로 활성 View별 렌더 큐를 만들고 렌더한다.
 void FEditorApplication::RenderMultipleViewports() {
-
-  const bool bActive = MultipleViewportsAdapter.IsViewActive(0);
-  ViewportsPanel->SetView(0, MultipleViewportsAdapter.GetViewRect(0), bActive);
-
-  MultipleViewportsAdapter.BuildRenderPackets(0, SceneRenderPackets);
-
-  RenderFrame(0, ViewportsPanel->GetRenderingInfo(0),
-              MultipleViewportsAdapter.GetEngineViewProjection(0),
-              MultipleViewportsAdapter.GetEngineCameraLocation(0),
-              MultipleViewportsAdapter.GetEngineCameraForward(0),
-              SceneRenderPackets);
-
   EMultipleViewportsCameraPreset CameraPresets[4]{};
-  // 첫 번째 뷰포트 프리셋 동기화
-  CameraPresets[0] = MultipleViewportsAdapter.GetCameraPreset(0);
+  for (int32 ViewIndex = 0; ViewIndex < 4; ++ViewIndex) {
+    const bool bActive = MultipleViewportsAdapter.IsViewActive(ViewIndex);
+    ViewportsPanel->SetView(
+        ViewIndex, MultipleViewportsAdapter.GetViewRect(ViewIndex), bActive);
+    CameraPresets[ViewIndex] =
+        MultipleViewportsAdapter.GetCameraPreset(ViewIndex);
+
+    if (!bActive)
+      continue;
+
+    MultipleViewportsAdapter.BuildRenderPackets(ViewIndex, SceneRenderPackets);
+    RenderFrame(ViewIndex, ViewportsPanel->GetRenderingInfo(ViewIndex),
+                MultipleViewportsAdapter.GetEngineViewProjection(ViewIndex),
+                MultipleViewportsAdapter.GetEngineCameraLocation(ViewIndex),
+                MultipleViewportsAdapter.GetEngineCameraForward(ViewIndex),
+                SceneRenderPackets);
+  }
 
   ViewportsPanel->SetControlState(MultipleViewportsAdapter.GetLayoutMode(),
                                   MultipleViewportsAdapter.GetSingleViewIndex(),

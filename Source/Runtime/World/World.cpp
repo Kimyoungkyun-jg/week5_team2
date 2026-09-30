@@ -17,10 +17,9 @@
 
 UWorld::~UWorld()
 {
-
 }
 
-bool  UWorld::Init()
+bool UWorld::Init()
 {
 	// Spawn Actor로 카메라 생성하고 세팅하기
 	PersistentLevel = FObjectFactory::ConstructObject<ULevel>();
@@ -44,8 +43,10 @@ bool  UWorld::Init()
 
 AActor* UWorld::SpawnActor(UClass* Class, FName InName, const FTransform* Transform)
 {
-	if (!Class) return nullptr;
-	if (!Class->IsChildOf(AActor::StaticClass())) return nullptr;
+	if (!Class)
+		return nullptr;
+	if (!Class->IsChildOf(AActor::StaticClass()))
+		return nullptr;
 
 	// 1. ObjectFactory로 Actor 생성
 	AActor* NewActor = Cast<AActor>(FObjectFactory::ConstructObject(Class, PersistentLevel, InName));
@@ -71,7 +72,6 @@ AActor* UWorld::SpawnActor(UClass* Class, FName InName, const FTransform* Transf
 		{
 			WorldPrimitiveComponents.Add(PrimComp);
 		}
-
 	}
 
 	// 4. Level->Actors에 등록
@@ -97,14 +97,12 @@ void UWorld::Tick(float DeltaTime)
 		{
 			Actor->Tick(DeltaTime);
 		}
-
 	}
 
 	if (MainCamera)
 	{
 		MainCamera->Tick(DeltaTime);
 	}
-
 }
 
 void UWorld::ClearWorld()
@@ -187,7 +185,6 @@ bool UWorld::DestroyActor(AActor* Actor)
 
 	BeginPlayList = std::move(NewBeginPlayList);
 
-
 	// 4. Level의 Actors에서 제거
 	for (int32 i = Level->Actors.Num() - 1; i >= 0; --i)
 	{
@@ -210,8 +207,7 @@ bool UWorld::DestroyActor(AActor* Actor)
 }
 
 // 다른 World의 객체를 제외하고 Component 교차 중 최근접 결과를 선택한다.
-bool UWorld::LineTraceSingle(const FRay& WorldRay, FHitResult& OutHit, const TArray<FLineTraceCandidate>& Candidates,
-	FBillboardTraceTransform ResolveBillboard, const void* ViewContext)
+bool UWorld::LineTraceSingle(const FRay& WorldRay, FHitResult& OutHit, const TArray<FLineTraceCandidate>& Candidates, FBillboardTraceTransform ResolveBillboard, const void* ViewContext)
 {
 	OutHit = FHitResult();
 	// 클릭당 한 번: 레이 역수, 최근접 거리, Billboard 행렬 공급자를 한 곳에 모은다
@@ -220,21 +216,22 @@ bool UWorld::LineTraceSingle(const FRay& WorldRay, FHitResult& OutHit, const TAr
 	for (const FLineTraceCandidate& Candidate : Candidates)
 	{
 		UPrimitiveComponent* It = Candidate.Primitive;
-		if (!It) continue;
+		if (!It)
+			continue;
 		// Bounds 후보는 가까운 순서다. 현재 실제 Hit보다 뒤에서 시작하면 정밀 검사를 생략한다.
 		// Bounds를 신뢰할 수 없는 후보는 기존처럼 항상 검사한다.
 		if (Candidate.bHasBoundsDistance && Candidate.BoundsDistance >= Context.BestDistance)
 			continue;
 		//해당월드에 있음
-		if (!It->IsVisible()) continue;
+		if (!It->IsVisible())
+			continue;
 		FHitResult Hit;
 		// Billboard·Particle은 LineTraceWithContext override에서 View 행렬로 판정하므로
 		// 여기서는 컴포넌트 종류를 구분하지 않는다 (Cast 제거)
-		if (It->LineTraceWithContext(Context, Hit) && Hit.HitComponent &&
-			Hit.Distance >= 0.0f && Hit.Distance < OutHit.Distance)
+		if (It->LineTraceWithContext(Context, Hit) && Hit.HitComponent && Hit.Distance >= 0.0f && Hit.Distance < OutHit.Distance)
 		{
 			OutHit = Hit;
-			Context.BestDistance = Hit.Distance;	// 이후 후보는 이보다 먼 박스의 정밀 판정을 건너뛴다
+			Context.BestDistance = Hit.Distance; // 이후 후보는 이보다 먼 박스의 정밀 판정을 건너뛴다
 		}
 	}
 	return OutHit.HitComponent != nullptr;

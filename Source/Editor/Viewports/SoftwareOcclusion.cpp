@@ -388,10 +388,7 @@ void FSoftwareOcclusionCuller::EnsureBVH(const TArray<FRenderableObject>& Object
 	LastBuiltObjectCount = Objects.Num();
 }
 
-void FSoftwareOcclusionCuller::GatherRayCandidates(
-	const FRay& Ray,
-	const TArray<FRenderableObject>& Objects,
-	TArray<FLineTraceCandidate>& OutCandidates)
+void FSoftwareOcclusionCuller::GatherRayCandidates(const FRay& Ray, const TArray<FRenderableObject>& Objects, TArray<FLineTraceCandidate>& OutCandidates)
 {
 	OutCandidates.Reset();
 	bLastRayQueryRebuiltBVH = bBVHDirty;
@@ -418,14 +415,9 @@ void FSoftwareOcclusionCuller::GatherRayCandidates(
 
 		const FRenderableObject& Object = Objects[ObjectIndex];
 		float Distance = 0.0f;
-		if (Object.Primitive && RayIntersectsAABB(
-			Context, BoundsMin(Object.WorldBounds), BoundsMax(Object.WorldBounds), Distance))
+		if (Object.Primitive && RayIntersectsAABB(Context, BoundsMin(Object.WorldBounds), BoundsMax(Object.WorldBounds), Distance))
 		{
-			if (Distance <= ClosestDist)
-			{
-				ClosestDist = Distance;
-				OutCandidates.Add({Object.Primitive, Distance, true});
-			}
+			OutCandidates.Add({Object.Primitive, Distance, true});
 		}
 	}
 
@@ -437,25 +429,23 @@ void FSoftwareOcclusionCuller::GatherRayCandidates(
 	}
 
 	// 유효한 Bounds 정보를 가까운 순서로 배치한다
-	std::sort(OutCandidates.begin(), OutCandidates.end(), [](const FLineTraceCandidate& A, const FLineTraceCandidate& B)
-	{
-		if (A.bHasBoundsDistance != B.bHasBoundsDistance)
-			return A.bHasBoundsDistance;
-		return A.bHasBoundsDistance && A.BoundsDistance < B.BoundsDistance;
-	});
+	std::sort(OutCandidates.begin(),
+		OutCandidates.end(),
+		[](const FLineTraceCandidate& A, const FLineTraceCandidate& B)
+		{
+			if (A.bHasBoundsDistance != B.bHasBoundsDistance)
+				return A.bHasBoundsDistance;
+			return A.bHasBoundsDistance && A.BoundsDistance < B.BoundsDistance;
+		});
 }
 
-void FSoftwareOcclusionCuller::TraverseRayBVH(
-	const FTraceContext& Context,
+void FSoftwareOcclusionCuller::TraverseRayBVH(const FTraceContext& Context,
 	const TArray<FRenderableObject>& Objects,
 	const uint32 NodeIndex,
 	const float NodeDistance,
 	float& ClosestDist,
 	TArray<FLineTraceCandidate>& OutCandidates) const
 {
-	if (NodeDistance >= ClosestDist)
-		return;
-
 	const FBVHNode& Node = BVHNodes[NodeIndex];
 
 	if (!Node.bLeaf)
@@ -477,29 +467,25 @@ void FSoftwareOcclusionCuller::TraverseRayBVH(
 			bHitRight = RayIntersectsAABB(Context, BoundsMin(RightChild.Bounds), BoundsMax(RightChild.Bounds), RightDistance);
 		}
 
-		// 가까운 노드를 먼저 탐색하고 탐색 후 갱신된 최근접 거리로 반대편 노드를 차단
+		// 가까운 노드 순서로 탐색
 		if (bHitLeft && bHitRight)
 		{
 			if (LeftDistance <= RightDistance)
 			{
-				if (LeftDistance < ClosestDist)
-					TraverseRayBVH(Context, Objects, Node.Left, LeftDistance, ClosestDist, OutCandidates);
-				if (RightDistance < ClosestDist)
-					TraverseRayBVH(Context, Objects, Node.Right, RightDistance, ClosestDist, OutCandidates);
+				TraverseRayBVH(Context, Objects, Node.Left, LeftDistance, ClosestDist, OutCandidates);
+				TraverseRayBVH(Context, Objects, Node.Right, RightDistance, ClosestDist, OutCandidates);
 			}
 			else
 			{
-				if (RightDistance < ClosestDist)
-					TraverseRayBVH(Context, Objects, Node.Right, RightDistance, ClosestDist, OutCandidates);
-				if (LeftDistance < ClosestDist)
-					TraverseRayBVH(Context, Objects, Node.Left, LeftDistance, ClosestDist, OutCandidates);
+				TraverseRayBVH(Context, Objects, Node.Right, RightDistance, ClosestDist, OutCandidates);
+				TraverseRayBVH(Context, Objects, Node.Left, LeftDistance, ClosestDist, OutCandidates);
 			}
 		}
-		else if (bHitLeft && LeftDistance < ClosestDist)
+		else if (bHitLeft)
 		{
 			TraverseRayBVH(Context, Objects, Node.Left, LeftDistance, ClosestDist, OutCandidates);
 		}
-		else if (bHitRight && RightDistance < ClosestDist)
+		else if (bHitRight)
 		{
 			TraverseRayBVH(Context, Objects, Node.Right, RightDistance, ClosestDist, OutCandidates);
 		}
@@ -518,14 +504,9 @@ void FSoftwareOcclusionCuller::TraverseRayBVH(
 
 		const FRenderableObject& Object = Objects[ObjectIndex];
 		float ObjectDistance = 0.0f;
-		if (Object.Primitive && RayIntersectsAABB(
-			Context, BoundsMin(Object.WorldBounds), BoundsMax(Object.WorldBounds), ObjectDistance))
+		if (Object.Primitive && RayIntersectsAABB(Context, BoundsMin(Object.WorldBounds), BoundsMax(Object.WorldBounds), ObjectDistance))
 		{
-			if (ObjectDistance <= ClosestDist)
-			{
-				ClosestDist = (std::min)(ClosestDist, ObjectDistance);
-				OutCandidates.Add({Object.Primitive, ObjectDistance, true});
-			}
+			OutCandidates.Add({Object.Primitive, ObjectDistance, true});
 		}
 	}
 }

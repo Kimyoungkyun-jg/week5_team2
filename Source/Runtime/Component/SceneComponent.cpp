@@ -9,8 +9,8 @@ USceneComponent::~USceneComponent()
 	AttachChildren.Reset();
 	for (USceneComponent* Child : Children)
 	{
-		Child->AttachParent = nullptr;          
-		Child->SetupAttachment(AttachParent);   
+		Child->AttachParent = nullptr;
+		Child->SetupAttachment(AttachParent);
 	}
 
 	if (AActor* OwnerActor = GetOwner())
@@ -24,11 +24,13 @@ USceneComponent::~USceneComponent()
 
 void USceneComponent::SetupAttachment(USceneComponent* InParent)
 {
-	if (InParent == this || AttachParent == InParent) return;
+	if (InParent == this || AttachParent == InParent)
+		return;
 
 	// 순환 체크
 	for (USceneComponent* Parent = InParent; Parent != nullptr; Parent = Parent->AttachParent)
-		if (Parent == this) return;
+		if (Parent == this)
+			return;
 
 	DetachFromParent();
 	AttachParent = InParent;
@@ -41,10 +43,11 @@ void USceneComponent::SetupAttachment(USceneComponent* InParent)
 
 void USceneComponent::DetachFromParent()
 {
-	if (!AttachParent) return;
+	if (!AttachParent)
+		return;
 
 	TArray<USceneComponent*>& Siblings = AttachParent->AttachChildren;
-	for (uint32 i = 0;i < Siblings.Num(); ++i)
+	for (uint32 i = 0; i < Siblings.Num(); ++i)
 	{
 		if (Siblings[i] == this)
 		{
@@ -119,11 +122,7 @@ FVector USceneComponent::GetWorldScale3D() const
 	{
 		FVector ParentScale = AttachParent->GetWorldScale3D();
 
-		return FVector(
-			Transform.Scale.X * ParentScale.X,
-			Transform.Scale.Y * ParentScale.Y,
-			Transform.Scale.Z * ParentScale.Z
-		);
+		return FVector(Transform.Scale.X * ParentScale.X, Transform.Scale.Y * ParentScale.Y, Transform.Scale.Z * ParentScale.Z);
 	}
 
 	return Transform.Scale;
@@ -140,4 +139,3 @@ FMatrix USceneComponent::GetWorldMatrix() const
 	}
 	return CachedWorldMatrix;
 }
-

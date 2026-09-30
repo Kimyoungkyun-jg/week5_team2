@@ -42,10 +42,10 @@ using FBillboardTraceFn = FMatrix (*)(const UBillboardComponent&, const void*);
 // 레이 역수는 클릭당 한 번만 구하고, 최근접 거리는 루프가 갱신한다.
 struct FTraceContext
 {
-	FRay Ray;										// 월드 레이
-	FVector InvDir;									// 1/D (0 성분은 부호를 유지한 아주 작은 값으로 바꾼 뒤 역수)
-	float BestDistance = FLT_MAX;					// 지금까지 찾은 최근접 교차 거리
-	FBillboardTraceFn ResolveBillboard = nullptr;	// 있으면 Billboard는 클릭한 View의 행렬로 판정
+	FRay Ray;                                     // 월드 레이
+	FVector InvDir;                               // 1/D (0 성분은 부호를 유지한 아주 작은 값으로 바꾼 뒤 역수)
+	float BestDistance = FLT_MAX;                 // 지금까지 찾은 최근접 교차 거리
+	FBillboardTraceFn ResolveBillboard = nullptr; // 있으면 Billboard는 클릭한 View의 행렬로 판정
 	const void* ViewContext = nullptr;
 };
 

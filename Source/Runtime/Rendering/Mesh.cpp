@@ -221,7 +221,6 @@ bool UStaticMesh::RebuildFromMeshData(FStaticMeshData&& InData)
 
 	PrepareMeshPickingBVH(MeshData);
 
-	GenerateLODs();
 	if (!GenerateLODs())
 	{
 		return false;

@@ -157,8 +157,9 @@ project "HitoriEngine"
 		"Source/Runtime/**.h",
 		"Source/Runtime/**.hpp",
 		"Source/Runtime/**.cpp",
-		"%{IncludeDir.meshoptimizer}/**.h",
-		"%{IncludeDir.meshoptimizer}/**.cpp",
+		"%{IncludeDir.meshoptimizer}/meshoptimizer.h",
+		"%{IncludeDir.meshoptimizer}/allocator.cpp",
+		"%{IncludeDir.meshoptimizer}/simplifier.cpp",
 	}
 
 	filter "files:Source/ThirdParty/meshoptimizer/**.cpp"

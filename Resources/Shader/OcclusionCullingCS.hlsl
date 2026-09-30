@@ -62,7 +62,31 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
             }
         }
 
-        if (bVisible && bUseHZB != 0)
+        // HZB 투영보다 싼 거리 기반 LOD를 먼저 판정해 아주 작은 물체는 조기에 제외한다.
+        if (bVisible)
+        {
+            float Dist = length(Center - CameraPosition);
+            float ScreenDiameter = (Bound.Radius * 2.0f) / max(Dist, 0.001f);
+
+            if (ScreenDiameter < 0.008f)
+            {
+                LodCode = 0u;
+            }
+            else if (ScreenDiameter < 0.05f)
+            {
+                LodCode = 3u;
+            }
+            else if (ScreenDiameter < 0.15f)
+            {
+                LodCode = 2u;
+            }
+            else
+            {
+                LodCode = 1u;
+            }
+        }
+
+        if (bVisible && LodCode > 0u && bUseHZB != 0)
         {
             float3 BoxMin = Center - Extent;
             float3 BoxMax = Center + Extent;
@@ -120,36 +144,10 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
                 }
             }
         }
-
-        // 거리 비율 기반 단계 판정
-        if (bVisible)
-        {
-            float Dist = length(Center - CameraPosition);
-            float ScreenDiameter = (Bound.Radius * 2.0f) / max(Dist, 0.001f);
-            
-            if (ScreenDiameter < 0.008f)
-            {
-                LodCode = 0u; // 화면 크기 미달 시 비가시 처리 (0비트 유지)
-            }
-            else if (ScreenDiameter < 0.05f)
-            {
-                LodCode = 3u;
-            }
-            else if (ScreenDiameter < 0.15f)
-            {
-                LodCode = 2u;
-            }
-            else
-            {
-                LodCode = 1u;
-            }
-            
-
-        }
     }
 
     // 두 비트씩 묶어 공유 메모리에 저장
-    if (LodCode > 0u)
+    if (bVisible && LodCode > 0u)
     {
         uint LocalWord = GroupThreadID.x / 16;
         uint LocalShift = (GroupThreadID.x % 16) * 2;

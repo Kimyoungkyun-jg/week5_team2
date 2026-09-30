@@ -399,13 +399,13 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 					LastPSO = RenderPacket.material->PSOType;
 				}
 
-					const uint32 LocalIndex = i - Start;
-					const uint32 FirstConstant = LocalIndex * (PerObjectSlotSize / 16);
-					const uint32 NumConstants = PerObjectSlotSize / 16;
+				const uint32 LocalIndex = i - Start;
+				const uint32 FirstConstant = LocalIndex * (PerObjectSlotSize / 16);
+				const uint32 NumConstants = PerObjectSlotSize / 16;
 
-					RenderCommand::BindConstantBufferRange(0, WorkerCB, EShaderBindFlagBits::Vertex, FirstConstant, NumConstants, Context1);
+				RenderCommand::BindConstantBufferRange(0, WorkerCB, EShaderBindFlagBits::Vertex, FirstConstant, NumConstants, Context1);
 
-				const uint32 IndexCount = RenderPacket.mesh->GetIndexCount(RenderPacket.LODIndex);
+				const uint32 IndexCount = RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->GetIndexCount(RenderPacket.LODIndex);
 				RenderCommand::DrawIndexed(
 					IndexCount,
 					RenderPacket.StartIndex,

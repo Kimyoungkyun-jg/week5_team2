@@ -36,6 +36,9 @@ public:
 	FIndexBuffer* GetIndexBuffer(uint8 LODIndex = 0) const;
 	uint32 GetIndexCount(uint8 LODIndex = 0) const;
 
+	uint64 RenderDataRevision = 1;
+	uint64 GetRenderDataRevision() const { return RenderDataRevision; }
+
 	// 메시 간소화 라이브러리를 통한 자동 생성
 	bool GenerateLODs();
 	bool RebuildFromMeshData(FStaticMeshData&& InData);

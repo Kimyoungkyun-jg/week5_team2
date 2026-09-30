@@ -18,13 +18,21 @@ public:
 
 	bool IsFinished() const { return bIsFinished; }
 	float GetProgress() const { return CurrentProgress; }
+	void SetProgress(float InProgress);
+	void SetStatusText(const FString& InText);
+	void SetSceneLoaded(bool bLoaded);
+	void SetAnimationFps(float InFps) { AnimationFps = InFps; }
 
 private:
 	UTexture2D* SpriteTexture = nullptr;
 	float CurrentProgress = 0.0f;
+	float TargetProgress = 0.0f;
 	float ElapsedTime = 0.0f;
-	float TotalDuration = 2.5f;
+	float MinDuration = 2.0f;
+	float AnimationFps = 0.07f;
 	int32 CurrentFrameIndex = 0;
+	float CompletionHoldTimer = 0.0f;
 	bool bIsFinished = false;
+	bool bSceneLoaded = false;
 	FString CurrentStatusText;
 };

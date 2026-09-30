@@ -74,7 +74,7 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
   FWindowContext MainWindowCtx;
   LOG(Info, "Create Main Window...");
   MainWindowCtx.Window = MakeUnique<FWindow>();
-  if (!MainWindowCtx.Window->Create(hInstance, 1920, 1080, L"Hitori Engine")) {
+  if (!MainWindowCtx.Window->Create(hInstance, 1920, 1080, L"Hitori Engine", false)) {
     LOG(Error, "Failed To Create Main Window!");
     return false;
   }
@@ -97,6 +97,14 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
     LOG(Error, "Failed To Initialize ImGui!");
   }
   LOG(Info, "Initialize ImGui Success!");
+
+  LoadingScreen = MakeUnique<FLoadingScreen>();
+  LoadingScreen->Init();
+  LoadingScreen->SetProgress(0.05f);
+  LoadingScreen->Tick(0.016f);
+  // 초기 로딩 화면 출력 및 창 표시
+  PresentFrame();
+  MainWindow->Show();
 
   GridRenderer = MakeUnique<FGridRenderer>();
   GridRenderer->Init(Renderer.get());
@@ -128,7 +136,14 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
   World->Init();
 
   // 공식 씬 파일 고속 로드
-  if (!FDefaultSceneLoader::LoadScene(World, "Scenes/Default.scene")) {
+  if (!FDefaultSceneLoader::LoadScene(World, "Scenes/Default.scene", [this](float Ratio) {
+    if (LoadingScreen) {
+      LoadingScreen->SetProgress(0.1f + Ratio * 0.75f);
+      LoadingScreen->Tick(0.016f);
+      PresentFrame();
+      MainWindow->ProcessMessage(bIsRunning);
+    }
+  })) {
     LOG(Warning, "Failed to load Scenes/Default.scene");
   }
 
@@ -136,6 +151,11 @@ bool FEditorApplication::Init(HINSTANCE hInstance) {
   MultipleViewportsAdapter.InitializeFromWorld(*World);
   MultipleViewportsAdapter.SetLayoutMode(ELayoutMode::Single);
   MultipleViewportsAdapter.SetSingleViewIndex(0);
+
+  if (LoadingScreen) {
+    // 씬 적재 완료 상태 설정
+    LoadingScreen->SetSceneLoaded(true);
+  }
 
   World->GetMainCamera()->GetCameraComponent()->SetExternalInputManaged(true);
 
@@ -179,6 +199,13 @@ void FEditorApplication::Run() {
     float DeltaTime = 0.0f;
     if (!BeginFrame(DeltaTime))
       break;
+
+    // 로딩 화면 처리
+    if (LoadingScreen && !LoadingScreen->IsFinished()) {
+      LoadingScreen->Tick(DeltaTime);
+      PresentFrame();
+      continue;
+    }
 
     UpdateMultipleViewportState(DeltaTime);
     TickWorldAndEditor(DeltaTime);
@@ -418,7 +445,12 @@ void FEditorApplication::PresentFrame() {
 
   ImGuiRenderer->Begin();
 
-  EditorUI->OnRender();
+  // 로딩 화면 또는 에디터 UI 렌더링
+  if (LoadingScreen && !LoadingScreen->IsFinished()) {
+    LoadingScreen->Draw();
+  } else {
+    EditorUI->OnRender();
+  }
 
   ImGuiRenderer->End();
 

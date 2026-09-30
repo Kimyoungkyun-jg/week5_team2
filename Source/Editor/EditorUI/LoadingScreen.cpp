@@ -4,6 +4,7 @@
 #include "Rendering/Texture2D.h"
 #include "Input/InputSystem.h"
 #include "ThirdParty/ImGui/imgui.h"
+#include <chrono>
 
 FLoadingScreen::FLoadingScreen() = default;
 FLoadingScreen::~FLoadingScreen() = default;
@@ -12,11 +13,37 @@ bool FLoadingScreen::Init()
 {
 	SpriteTexture = UAssetManager::Get().LoadTexture("Assets/LoadingSprite.png");
 	CurrentProgress = 0.0f;
+	TargetProgress = 0.0f;
 	ElapsedTime = 0.0f;
+	CompletionHoldTimer = 0.0f;
 	CurrentFrameIndex = 0;
 	bIsFinished = false;
-	CurrentStatusText = "엔진 하위 시스템 초기화 중...";
+	bSceneLoaded = false;
+	CurrentStatusText = "Initializing engine subsystems...";
 	return SpriteTexture != nullptr;
+}
+
+void FLoadingScreen::SetProgress(float InProgress)
+{
+	TargetProgress = (std::min)(1.0f, (std::max)(TargetProgress, InProgress));
+	if (InProgress >= 1.0f)
+	{
+		bSceneLoaded = true;
+	}
+}
+
+void FLoadingScreen::SetSceneLoaded(bool bLoaded)
+{
+	bSceneLoaded = bLoaded;
+	if (bLoaded)
+	{
+		TargetProgress = 1.0f;
+	}
+}
+
+void FLoadingScreen::SetStatusText(const FString& InText)
+{
+	CurrentStatusText = InText;
 }
 
 void FLoadingScreen::Tick(float DeltaTime)
@@ -24,32 +51,59 @@ void FLoadingScreen::Tick(float DeltaTime)
 	if (bIsFinished)
 		return;
 
-	ElapsedTime += DeltaTime;
-	CurrentProgress = std::min(1.0f, ElapsedTime / TotalDuration);
-
-	// 프레임 애니메이션 갱신
-	CurrentFrameIndex = static_cast<int32>(ElapsedTime * 10.0f) % 6;
-
-	// 진행도 상태 텍스트 갱신
-	if (CurrentProgress < 0.25f)
-		CurrentStatusText = "엔진 하위 시스템 초기화 중...";
-	else if (CurrentProgress < 0.55f)
-		CurrentStatusText = "쉐이더 및 텍스처 자원 적재 중...";
-	else if (CurrentProgress < 0.85f)
-		CurrentStatusText = "씬 프리미티브 구성 중...";
-	else if (CurrentProgress < 1.0f)
-		CurrentStatusText = "뷰포트 및 렌더 파이프라인 준비 중...";
-	else
-		CurrentStatusText = "준비 완료";
-
-	if (FInputSystem::IsKeyPressed(EKeyCode::Space) || ImGui::IsMouseClicked(0))
+	if (DeltaTime <= 0.0f)
 	{
-		CurrentProgress = 1.0f;
+		static auto PrevTime = std::chrono::steady_clock::now();
+		auto CurrTime = std::chrono::steady_clock::now();
+		DeltaTime = std::chrono::duration<float>(CurrTime - PrevTime).count();
+		PrevTime = CurrTime;
+		if (DeltaTime > 0.1f)
+		{
+			DeltaTime = 0.033f;
+		}
 	}
 
-	if (CurrentProgress >= 1.0f)
+	ElapsedTime += DeltaTime;
+
+	// 프레임 애니메이션 갱신
+	CurrentFrameIndex = static_cast<int32>(ElapsedTime * AnimationFps) % 6;
+
+	// 진행도 갱신
+	const float ApproachRate = (bSceneLoaded ? 0.9f : 0.5f);
+	CurrentProgress = (std::min)(1.0f, (std::min)(TargetProgress, CurrentProgress + DeltaTime * ApproachRate));
+
+	// 상태 텍스트 갱신
+	if (CurrentProgress < 0.25f)
+		CurrentStatusText = "Initializing engine subsystems...";
+	else if (CurrentProgress < 0.55f)
+		CurrentStatusText = "Loading shaders and textures...";
+	else if (CurrentProgress < 0.85f)
+		CurrentStatusText = "Building scene primitives...";
+	else if (CurrentProgress < 1.0f)
+		CurrentStatusText = "Finalizing render pipelines...";
+	else
+		CurrentStatusText = "Ready";
+
+	// 건너뛰기 입력 확인
+	if (FInputSystem::IsKeyPressed(EKeyCode::Space) || ImGui::IsMouseClicked(0))
 	{
-		bIsFinished = true;
+		if (bSceneLoaded)
+		{
+			CurrentProgress = 1.0f;
+			bIsFinished = true;
+			return;
+		}
+	}
+
+	// 로딩 완료 판정
+	if (bSceneLoaded && CurrentProgress >= 1.0f)
+	{
+		// 완료 화면 잠시 유지
+		CompletionHoldTimer += DeltaTime;
+		if (CompletionHoldTimer >= 0.35f)
+		{
+			bIsFinished = true;
+		}
 	}
 }
 
@@ -59,7 +113,7 @@ void FLoadingScreen::Draw()
 	ImGui::SetNextWindowPos(Viewport->WorkPos);
 	ImGui::SetNextWindowSize(Viewport->WorkSize);
 
-	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.07f, 0.07f, 0.09f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -135,6 +189,6 @@ void FLoadingScreen::Draw()
 	}
 	ImGui::End();
 
-	ImGui::PopStyleVar(4);
+	ImGui::PopStyleVar(3);
 	ImGui::PopStyleColor(1);
 }

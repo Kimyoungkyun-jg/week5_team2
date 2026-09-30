@@ -15,7 +15,8 @@ public:
 	// 훅은 등록한 쪽이 수명을 책임진다. 해제는 nullptr을 넘긴다.
 	static void SetWndProcHook(FWndProcHook Hook);
 
-	bool Create(HINSTANCE hInstance, int Width, int Height, const wchar_t* Title);
+	bool Create(HINSTANCE hInstance, int Width, int Height, const wchar_t* Title, bool bShowImmediately = true);
+	void Show();
 	void ProcessMessage(bool& bIsRunning);
 
 	HWND GetHandle() const { return hWnd;  }

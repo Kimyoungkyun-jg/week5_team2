@@ -5,6 +5,7 @@
 #include "Core/EngineLog.h"
 #include <commdlg.h>
 #include "Serialization/JsonArchive.h"
+#include "Serialization/DefaultSceneLoader.h"
  
 FString FEditorFileUtils::CurrentScenePath = "";
 
@@ -103,6 +104,31 @@ bool FEditorFileUtils::LoadScene(UWorld* World)
 	CurrentScenePath = FilePath;
 
 	LOG(Info, "Load Scene : {}", CurrentScenePath);
+
+	return true;
+}
+
+bool FEditorFileUtils::LoadCompetitionScene(UWorld* World)
+{
+	if (!World)
+		return false;
+
+	FString FilePath = OpenLoadSceneDialog();
+
+	// 파일 선택 취소
+	if (FilePath.empty())
+		return false;
+
+	FilePath = std::filesystem::absolute(FilePath).lexically_normal().string();
+
+	World->ClearWorld();
+	if (!FDefaultSceneLoader::LoadScene(World, FilePath))
+		return false;
+
+	// 현재 씬 경로 갱신
+	CurrentScenePath = FilePath;
+
+	LOG(Info, "Load Competition Scene : {}", CurrentScenePath);
 
 	return true;
 }

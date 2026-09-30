@@ -108,6 +108,7 @@ void FEditorUI::DrawMainMenuBar()
 		{
 			if (ImGui::MenuItem("New Scene")) { if (OnNewScene) OnNewScene(); }
 			if (ImGui::MenuItem("Open Scene...")) { if (OnOpenScene) OnOpenScene(); }
+			if (ImGui::MenuItem("Open Competition Scene...")) { if (OnOpenCompetitionScene) OnOpenCompetitionScene(); }
 
 			ImGui::Separator();
 

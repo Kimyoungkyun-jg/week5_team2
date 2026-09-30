@@ -28,6 +28,9 @@ namespace
 
 		case EObjAxisPreset::ZUp:
 			return FVector(V.Y, V.X, V.Z);
+
+		default:
+			return FVector(-V.Z, V.X, V.Y);
 		}
 	}
 
@@ -494,12 +497,12 @@ bool FObjImporter::Cook(const FObjInfo& Raw, FStaticMeshData& Out, EObjAxisPrese
 	return true;
 }
 
-TUniquePtr<FStaticMeshData> FObjImporter::LoadStaticMeshData(const FString& Path, EObjAxisPreset Preset)
+TUniquePtr<FStaticMeshData> FObjImporter::LoadStaticMeshData(const FString& Path, EObjAxisPreset& Preset)
 {
 	const FString BinPath = Path + ".bin";
 
 	// .bin 파일 읽기
-	if (TUniquePtr<FStaticMeshData> Baked = FStaticMeshBake::ReadBaked(BinPath))
+	if (TUniquePtr<FStaticMeshData> Baked = FStaticMeshBake::ReadBaked(BinPath, Preset))
 	{
 		return Baked;
 	}
@@ -512,7 +515,7 @@ TUniquePtr<FStaticMeshData> FObjImporter::LoadStaticMeshData(const FString& Path
 		return nullptr;
 	}
 
-	FStaticMeshBake::WriteBaked(BinPath, *Data);
+	FStaticMeshBake::WriteBaked(BinPath, *Data, Preset);
 	return Data;
 }
 

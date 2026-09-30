@@ -3,6 +3,7 @@
 #include "Asset/RenderAsset.h"
 #include "Rendering/Buffer.h"
 #include "Rendering/StaticMeshData.h"
+#include "Asset/ObjImporter/ObjImportSettings.h"
 
 struct FStaticMeshLOD
 {
@@ -37,4 +38,8 @@ public:
 
 	// 메시 간소화 라이브러리를 통한 자동 생성
 	bool GenerateLODs();
+	bool RebuildFromMeshData(FStaticMeshData&& InData);
+
+	EObjAxisPreset ImportAxisPreset = EObjAxisPreset::Default;
+	EObjAxisPreset AppliedAxisPreset = EObjAxisPreset::Default;
 };

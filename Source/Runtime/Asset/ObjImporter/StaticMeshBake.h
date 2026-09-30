@@ -2,6 +2,7 @@
 
 #include "Core/Types.h"
 #include "Core/EngineString.h"
+#include "Asset/ObjImporter/ObjImportSettings.h"
 
 struct FStaticMeshData;
 
@@ -9,6 +10,6 @@ struct FStaticMeshData;
 class FStaticMeshBake
 {
 public:
-	static TUniquePtr<FStaticMeshData> ReadBaked(const FString& BinPath);
-	static void WriteBaked(const FString& BinPath, const FStaticMeshData& Data);
+	static TUniquePtr<FStaticMeshData> ReadBaked(const FString& BinPath, EObjAxisPreset& OutPreset);
+	static void WriteBaked(const FString& BinPath, const FStaticMeshData& Data, EObjAxisPreset Preset);
 };

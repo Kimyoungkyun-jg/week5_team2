@@ -302,21 +302,42 @@ namespace
 			ImGui::Spacing();
 			ImGui::Text("Import Settings");
 
-			const char* AxisItems[] = {"Default", "Z-Up"};
-
+			const char* AxisItems[] = {"Y-Up (Default)", "Z-Up"};
 			int AxisIndex = static_cast<int>(Current->ImportAxisPreset);
 
-			ImGui::SetNextItemWidth(-1.0f);
+			ImGui::TextDisabled("Axis");
+			ImGui::SameLine();
+
+			const float ButtonWidth = ImGui::CalcTextSize("Reimport").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ButtonWidth - ImGui::GetStyle().ItemSpacing.x);
 
 			if (ImGui::Combo("##ImportAxis", &AxisIndex, AxisItems, IM_ARRAYSIZE(AxisItems)))
 			{
 				Current->ImportAxisPreset = static_cast<EObjAxisPreset>(AxisIndex);
 			}
 
+			ImGui::SameLine();
+
+			const bool bPresetChanged = Current->ImportAxisPreset != Current->AppliedAxisPreset;
+
+			if (!bPresetChanged)
+				ImGui::BeginDisabled();
+
 			if (ImGui::Button("Reimport"))
 			{
-				//UAssetManager::ReimportStaticMesh(Current);
+				EObjAxisPreset Previous = Current->AppliedAxisPreset;
+
+				if (UAssetManager::ReimportStaticMesh(Current))
+				{
+					Current->AppliedAxisPreset = Current->ImportAxisPreset;
+
+					LOG(Info, "[StaticMesh] Reimported: {} -> {} ({})", AxisItems[static_cast<int>(Previous)], AxisItems[static_cast<int>(Current->AppliedAxisPreset)], Current->GetPath());
+				}
 			}
+
+			if (!bPresetChanged)
+				ImGui::EndDisabled();
 		}
 
 		if (UStaticMeshComponent* MeshComponent = Cast<UStaticMeshComponent>(Owner))

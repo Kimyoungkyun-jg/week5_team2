@@ -403,13 +403,41 @@ UStaticMesh* UAssetManager::LoadObjStaticMesh(const FString& Path)
 		return Cached;
 	}
 
-	TUniquePtr<FStaticMeshData> Data = FObjImporter::LoadStaticMeshData(Path);
+	EObjAxisPreset Preset = EObjAxisPreset::Default;
+	TUniquePtr<FStaticMeshData> Data = FObjImporter::LoadStaticMeshData(Path, Preset);
+
 	UStaticMesh* Mesh = CreateStaticMesh(Data.get());   // Data가 nullptr이면 nullptr 반환
 	if (!Mesh)
 	{
 		return nullptr;
 	}
 
+	Mesh->ImportAxisPreset = Preset;
+	Mesh->AppliedAxisPreset = Preset;
+
 	Get().RegisterAsset(Key, Mesh);
 	return Mesh;
+}
+
+bool UAssetManager::ReimportStaticMesh(UStaticMesh* Mesh)
+{
+	if (!Mesh)
+		return false;
+
+	const FString Key = Mesh->GetPath();
+
+	FString* Path = Get().AssetPathMap.FindOrNull(Key);
+	if (!Path)
+		return false;
+
+	std::filesystem::remove(*Path + ".bin");
+
+	TUniquePtr<FStaticMeshData> Data = FObjImporter::LoadStaticMeshData(*Path, Mesh->ImportAxisPreset);
+
+	if (!Data)
+	{
+		return false;
+	}
+
+	return Mesh->RebuildFromMeshData(std::move(*Data));
 }

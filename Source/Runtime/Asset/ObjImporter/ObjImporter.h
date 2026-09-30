@@ -11,7 +11,7 @@ struct FStaticMeshData;
 class FObjImporter
 {
 public:
-	static TUniquePtr<FStaticMeshData> LoadStaticMeshData(const FString& Path, EObjAxisPreset Preset = EObjAxisPreset::Default);
+	static TUniquePtr<FStaticMeshData> LoadStaticMeshData(const FString& Path, EObjAxisPreset& Preset);
 
 	// 디버그용 출력
 	static void PrintObjInfo(const FObjInfo& ObjInfo);

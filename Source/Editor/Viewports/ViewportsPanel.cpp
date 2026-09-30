@@ -289,7 +289,7 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 		Lines.Add({"Picking", TitleColor});
 		Lines.Add({std::format("  Last Pick {:.3f} ms", Picking.CurrentValue), ValueColor});
 		Lines.Add({std::format("  Num Attempts {}", Picking.SampleCount), ValueColor});
-		Lines.Add({std::format("  Accumulated Time {:.0f} ms", Picking.TotalValue), ValueColor});
+		Lines.Add({std::format("  Accumulated Time {:.4f} ms", Picking.TotalValue), ValueColor});
 	}
 
 	if (Lines.Num() == 0)

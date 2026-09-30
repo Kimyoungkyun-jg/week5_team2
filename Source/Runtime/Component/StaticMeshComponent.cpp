@@ -35,6 +35,7 @@ void UStaticMeshComponent::SetStaticMesh(UStaticMesh* InStaticMesh)
     StaticMesh = InStaticMesh;
     ClearOverrideMaterials();
     MarkBoundsDirtyRecursive();
+	bRenderPacketCacheDirty = true;
 }
 
 int32 UStaticMeshComponent::GetNumMaterials() const
@@ -54,28 +55,59 @@ UMaterial* UStaticMeshComponent::GetDefaultMaterial(int32 SlotIndex) const
     return StaticMesh ? StaticMesh->GetMaterial(static_cast<uint32>(SlotIndex)) : nullptr;
 }
 
+void UStaticMeshComponent::RebuildRenderPacketCache()
+{
+	CachedRenderPackets.Reset();
+
+	if (!StaticMesh)
+		return;
+
+	const FStaticMeshData& MeshData = StaticMesh->GetMeshData();
+
+	for (const FStaticMeshSection& Section : MeshData.Sections)
+	{
+		UMaterial* SectionMaterial = GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
+		if (!SectionMaterial)
+			continue;
+
+		FRenderPacket rp;
+		rp.mesh = StaticMesh;
+		rp.material = SectionMaterial;
+		rp.StartIndex = Section.StartIndex;
+		rp.IndexCount = Section.IndexCount;
+		CachedRenderPackets.Add(rp);
+	}
+	
+	CachedMeshRenderDataRevision = StaticMesh->GetRenderDataRevision();
+	bRenderPacketCacheDirty = false;
+}
+
+void UStaticMeshComponent::SetMaterial(int32 SlotIndex, UMaterial* InMaterial)
+{
+	UMaterial* PreviousMaterial = GetMaterial(SlotIndex);
+
+	UMeshComponent::SetMaterial(SlotIndex, InMaterial);
+
+	if (PreviousMaterial != GetMaterial(SlotIndex))
+		bRenderPacketCacheDirty = true;
+}
+
 // TArray 기반 고속 패킷 제출
 void UStaticMeshComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets)
 {
     if (!StaticMesh)
         return;
 
-    const FStaticMeshData& MeshData = StaticMesh->GetMeshData();
+	if (bRenderPacketCacheDirty || CachedMeshRenderDataRevision != StaticMesh->GetRenderDataRevision())
+	{
+		RebuildRenderPacketCache();
+	}
+
     const FMatrix WorldMatrix = GetWorldMatrix();
 
-    for (const FStaticMeshSection& Section : MeshData.Sections)
-    {
-        UMaterial* SectionMaterial = GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
-        if (!SectionMaterial)
-            continue;
-
-        FRenderPacket rp;
-        rp.mesh = StaticMesh;
-        rp.model = WorldMatrix;
-        rp.StartIndex = Section.StartIndex;
-        rp.IndexCount = Section.IndexCount;
-        rp.material = SectionMaterial;
-
-        OutPackets.Add(rp);
-    }
+	for (FRenderPacket RenderPacket : CachedRenderPackets)
+	{
+		RenderPacket.model = WorldMatrix;
+		OutPackets.Add(RenderPacket);
+	}
 }

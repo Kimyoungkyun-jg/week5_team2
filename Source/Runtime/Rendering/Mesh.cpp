@@ -226,5 +226,10 @@ bool UStaticMesh::RebuildFromMeshData(FStaticMeshData&& InData)
 	{
 		return false;
 	}
+
+	++RenderDataRevision;
+	if (RenderDataRevision == 0)
+		RenderDataRevision = 1;
+
 	return true;
 }

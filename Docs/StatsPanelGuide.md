@@ -2,6 +2,10 @@
 
 StatsPanel은 **어느 구간부터 개선해야 하는지** 찾는 도구다. 먼저 위쪽의 병목 후보를 보고, 해당 구간의 상세 수치만 펼쳐서 확인한다.
 
+StatsPanel을 X 버튼이나 Window 메뉴로 닫으면 상세 Stat 수집과 GPU 타임스탬프·마커 기록을 중단한다. 다시 열면 기존 체크 상태대로 수집을 재개하며, 이전 표본은 유지한다. Frame / Picking은 패널을 닫아도 개별 활성 설정에 따라 계속 수집한다. 창을 접거나 다른 탭에 가리는 것은 닫기와 다르다.
+
+중단되는 것은 Stats용 측정과 기록이다. 컬링 알고리즘의 내부 결과·예산 판단, 기본 렌더링과 내부 카운터 계산까지 제거하는 기능은 아니다.
+
 ## 1. 처음에는 이렇게 본다
 
 1. 비교할 씬과 카메라를 고정하고, 가능하면 뷰포트를 하나만 사용한다.
@@ -139,7 +143,7 @@ CPU 샘플이 적다고 비용이 작은 것은 아니다. 잠든 스레드의 �
 
 1. PIX의 GPU 캡처용 실행 설정에서 **Force D3D11On12**를 켜고 에디터를 새로 실행한다.
 2. 같은 씬과 카메라로 맞춘다.
-3. StatsPanel에서 **Enable GPU breakdown**을 누른다. 현재 코드는 해당 Stat이 꺼져 있으면 annotation도 생략한다.
+3. StatsPanel에서 **Enable GPU breakdown**을 누르고 패널을 열어 둔다. 패널을 닫거나 해당 Stat을 끄면 annotation도 생략한다.
 4. 화면이 안정된 뒤 GPU Capture로 한 프레임을 잡는다.
 5. Events에서 아래 마커를 찾아 펼친다. 필요하면 캡처의 Timing Data를 수집해 구간을 비교하고, 의심되는 Draw나 Dispatch의 Pipeline/State를 확인한다. [Microsoft: GPU Capture](https://devblogs.microsoft.com/pix/gpu-captures/)
 

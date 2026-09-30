@@ -11,6 +11,13 @@ FGPUProfiler& FGPUProfiler::Get()
 
 void FGPUProfiler::BeginFrame(ID3D11Device* InDevice, ID3D11DeviceContext* InContext)
 {
+	if (!FStats::IsDetailedCollectionEnabled())
+	{
+		// Previous scopes have ended. Discard pending results without polling the GPU.
+		if (Device)
+			Shutdown();
+		return;
+	}
 	Device = InDevice;
 	Context = InContext;
 	if (!Device || !Context || bFailed)

@@ -225,6 +225,7 @@ bool FDefaultSceneLoader::LoadScene(UWorld* World, const FString& Path)
 							else
 							{
 								Mesh = UAssetManager::GetAssetByFileName<UStaticMesh>(FileName);
+
 								MeshCache.Add(FileName, Mesh);
 							}
 

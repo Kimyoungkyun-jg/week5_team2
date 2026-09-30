@@ -11,7 +11,7 @@ public:
 	virtual void OnRender() = 0;
 
 	bool IsOpen() const { return bIsOpen; }
-	void SetOpen(bool bOpen) { bIsOpen = bOpen; }
+	virtual void SetOpen(bool bOpen) { bIsOpen = bOpen; }
 	virtual const char* GetPanelName() const = 0;
 
 private:

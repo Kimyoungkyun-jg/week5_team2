@@ -30,6 +30,7 @@ struct FStatDesc
 	EStatUnit Unit;
 	EStatMode Mode;
 	bool bEnabledByDefault = false;
+	bool bCollectWhenPanelClosed = false;
 };
 
 struct FStatRecord
@@ -56,17 +57,26 @@ class FStats
 	static void BeginFrame();
 	static void ResetSamples();
 	static uint64 GetFrameNumber() { return FrameNumber; }
+	static void SetDetailedCollectionEnabled(bool bEnabled) { bDetailedCollectionEnabled = bEnabled; }
+	static bool IsDetailedCollectionEnabled() { return bDetailedCollectionEnabled; }
 
 	static void Add(FStatId Id, double Value);
 	static void Set(FStatId Id, double Value);
 	static void RecordEvent(FStatId Id, double Value);
 
 	static void SetEnabled(FStatId Id, bool bEnabled) {	assert(Records.IsValidIndex(Id)); Records[Id].bEnabled = bEnabled; }
-	static bool IsEnabled(FStatId Id) { assert(Records.IsValidIndex(Id)); return Records[Id].bEnabled; }
+	static bool IsEnabled(FStatId Id)
+	{
+		assert(Records.IsValidIndex(Id));
+		const FStatRecord& Record = Records[Id];
+		return Record.bEnabled && (bDetailedCollectionEnabled || Record.Desc.bCollectWhenPanelClosed);
+	}
 
   private:
 	inline static TArray<FStatRecord> Records;
 	inline static uint64 FrameNumber = 0;
+	// Keep checkbox preferences separate from the panel's collection gate.
+	inline static bool bDetailedCollectionEnabled = false;
 };
 
 class FStatScope

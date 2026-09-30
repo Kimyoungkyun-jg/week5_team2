@@ -37,7 +37,7 @@ void FStats::Add(FStatId Id, double Value)
 	FStatRecord& Record = Records[Id];
 	assert(Record.Desc.Mode == EStatMode::FrameSum);
 
-	if (!Record.bEnabled)
+	if (!IsEnabled(Id))
 		return;
 
 	Record.CurrentValue += Value;
@@ -48,7 +48,7 @@ void FStats::Set(FStatId Id, double Value)
 	FStatRecord& Record = Records[Id];
 	assert(Record.Desc.Mode == EStatMode::Gauge);
 
-	if (!Record.bEnabled)
+	if (!IsEnabled(Id))
 		return;
 
 	Record.CurrentValue = Value;
@@ -60,7 +60,7 @@ void FStats::RecordEvent(FStatId Id, double Value)
 
 	assert(Record.Desc.Mode == EStatMode::Event);
 
-	if (!Record.bEnabled)
+	if (!IsEnabled(Id))
 		return;
 
 	Record.CurrentValue = Value;

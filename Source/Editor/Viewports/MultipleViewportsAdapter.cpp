@@ -921,7 +921,6 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
     }
 
     const TArray<uint8>& VisibleLODs = SoftwareOcclusion.GetVisibleLODs(ViewIndex);
-    const bool bVisibleLODsEmpty = VisibleLODs.IsEmpty();
     const UClass* StaticMeshClass = UStaticMeshComponent::StaticClass();
 
     Tasks::ParallelFor(TotalPrimitives, ChunkSize, [&](int32 Start, int32 End)
@@ -941,32 +940,8 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
                     auto* SMC = static_cast<UStaticMeshComponent*>(Primitive);
                     if (SMC->GetForcedLOD() >= 0)
                     {
+                        // 강제 단계 지정 적용
                         TargetLOD = static_cast<uint8>(SMC->GetForcedLOD());
-                    }
-                    else
-                    {
-                        const float Dist = (std::max)(1.0f, FVector::Distance(RenderCamera.Transform.Location, SMC->GetWorldLocation()));
-                        const FBox Bounds = SMC->GetWorldBounds();
-                        const float Radius = (Bounds.Max - Bounds.Min).Length() * 0.5f;
-                        const float DiameterRatio = (Radius * 2.0f) / Dist;
-
-                        // 화면 크기 미달 시 렌더링 제외
-                        if (DiameterRatio < 0.008f)
-                        {
-                            continue;
-                        }
-
-                        if (TargetLOD == 0 && bVisibleLODsEmpty)
-                        {
-                            if (DiameterRatio < 0.05f)
-                            {
-                                TargetLOD = 2;
-                            }
-                            else if (DiameterRatio < 0.15f)
-                            {
-                                TargetLOD = 1;
-                            }
-                        }
                     }
                 }
 

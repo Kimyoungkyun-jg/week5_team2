@@ -85,11 +85,12 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
 
         if (bVisible && LodCode > 0u && bUseHZB != 0)
         {
-            // 바운딩 박스 코너 투영 최적화
+            // 가림 판정용 영역 투영
+            float3 CullExtent = Extent * 0.85f;
             float4 CenterClip = mul(float4(Center, 1.0f), ViewProjection);
-            float4 VX = ViewProjection[0] * Extent.x;
-            float4 VY = ViewProjection[1] * Extent.y;
-            float4 VZ = ViewProjection[2] * Extent.z;
+            float4 VX = ViewProjection[0] * CullExtent.x;
+            float4 VY = ViewProjection[1] * CullExtent.y;
+            float4 VZ = ViewProjection[2] * CullExtent.z;
 
             float4 CornersClip[8];
             CornersClip[0] = CenterClip - VX - VY - VZ;
@@ -128,16 +129,22 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
 
                 float2 PixelSize = (MaxUV - MinUV) * HZBSize;
                 float MaxDim = max(PixelSize.x, PixelSize.y);
-                float Mip = ceil(log2(max(MaxDim, 1.0f)));
+                float Mip = floor(log2(max(MaxDim * 0.5f, 1.0f)));
                 Mip = clamp(Mip, 0.0f, float(NumHZBMips - 1));
 
-                float4 Depths;
-                Depths.x = HZBTexture.SampleLevel(PointClampSampler, float2(MinUV.x, MinUV.y), Mip);
-                Depths.y = HZBTexture.SampleLevel(PointClampSampler, float2(MaxUV.x, MinUV.y), Mip);
-                Depths.z = HZBTexture.SampleLevel(PointClampSampler, float2(MinUV.x, MaxUV.y), Mip);
-                Depths.w = HZBTexture.SampleLevel(PointClampSampler, float2(MaxUV.x, MaxUV.y), Mip);
+                // 텍셀 해상도 산출
+                float2 MipSize = max(HZBSize * exp2(-Mip), 1.0f);
+                int2 PixelMin = clamp(int2(MinUV * MipSize), int2(0, 0), int2(MipSize) - 1);
+                int2 PixelMax = clamp(int2(MaxUV * MipSize), int2(0, 0), int2(MipSize) - 1);
 
-                float MaxHZBDepth = max(max(Depths.x, Depths.y), max(Depths.z, Depths.w));
+                // 밉 텍셀 직접 조회
+                float d0 = HZBTexture.Load(int3(PixelMin.x, PixelMin.y, int(Mip)));
+                float d1 = HZBTexture.Load(int3(PixelMax.x, PixelMin.y, int(Mip)));
+                float d2 = HZBTexture.Load(int3(PixelMin.x, PixelMax.y, int(Mip)));
+                float d3 = HZBTexture.Load(int3(PixelMax.x, PixelMax.y, int(Mip)));
+
+                // 가림 여부 판정
+                float MaxHZBDepth = max(max(d0, d1), max(d2, d3));
                 if (MinNDC.z > MaxHZBDepth + DepthBias)
                 {
                     bVisible = false;

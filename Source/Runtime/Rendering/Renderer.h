@@ -10,11 +10,10 @@
 
 struct FPerObjectConstants
 {
-	FMatrix MVP;
 	FMatrix World;
 };
 
-static_assert(sizeof(FPerObjectConstants) == 128);
+static_assert(sizeof(FPerObjectConstants) == sizeof(FMatrix));
 
 class UCameraComponent;
 
@@ -43,6 +42,7 @@ private:
 	uint32 FirstTranslucentIndex = 0;
 	TUniquePtr<FConstantBuffer> CB;
 	TUniquePtr<FConstantBuffer> Temp;
+	TUniquePtr<FConstantBuffer> ViewCB;
 
 	D3D11_VIEWPORT ViewportInfo;
 

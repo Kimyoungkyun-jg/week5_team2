@@ -939,8 +939,6 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
         return;
     }
 
-    const FMatrix& VP = View.EngineViewProjection;
-    const FMatrixRegister VPReg = FMatrixRegister::Load(VP);
     const uint32 NumWorkers = (std::max)(1u, Tasks::FTaskScheduler::Get().GetNumWorkers());
     const int32 ChunkSize = (TotalPrimitives + NumWorkers - 1) / NumWorkers;
     const int32 NumJobs = (TotalPrimitives + ChunkSize - 1) / ChunkSize;
@@ -996,18 +994,6 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
                 Primitive->SubmitToRenderPackets(LocalList);
 				if (LocalList.Num() > PrevCount)
 				{
-					// 패킷 생성 직후 변환 및 거리 계산
-					const FRenderPacket& FirstPacket = LocalList[PrevCount];
-
-					const float DX = FirstPacket.model.M[3][0] - RenderCamera.Transform.Location.X;
-					const float DY = FirstPacket.model.M[3][1] - RenderCamera.Transform.Location.Y;
-					const float DZ = FirstPacket.model.M[3][2] - RenderCamera.Transform.Location.Z;
-					const float CamDistSq = DX * DX + DY * DY + DZ * DZ;
-
-					const FMatrixRegister ModelReg = FMatrixRegister::Load(FirstPacket.model);
-					FMatrix MVPMatrix;
-					(ModelReg * VPReg).Store(MVPMatrix);
-
 					for (int32 p = PrevCount; p < LocalList.Num(); ++p)
 					{
 						FRenderPacket& Packet = LocalList[p];
@@ -1024,7 +1010,7 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
 							}
 							else if (Packet.LODIndex > 0)
 							{
-								// Multi-section은 LOD별 section range가 없으므로 LOD0 사용
+								// 섹션 정보에 따라 단계 설정
 								Packet.LODIndex = 0;
 							}
 						}
@@ -1032,8 +1018,6 @@ void FMultipleViewportsAdapter::BuildRenderPackets(
 						{
 							Packet.LODIndex = 0;
 						}
-						Packet.CameraDistanceSquared = CamDistSq;
-						Packet.MVP = MVPMatrix;
 					}
 				}
             }

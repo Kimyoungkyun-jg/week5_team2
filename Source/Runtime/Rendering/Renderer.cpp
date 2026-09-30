@@ -76,6 +76,7 @@ namespace
 
 bool FRenderer::Init()
 {
+	ViewCB = RenderCommand::CreateConstantBuffer(sizeof(FMatrix));
 	if (RenderCommand::GetRenderDevice()->SupportsConstantBufferOffsetting())
 	{
 		return EnsureConstantBufferCapacity(Temp, InitialPacketCapacity);
@@ -170,6 +171,12 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 		return;
 	}
 
+	if (!ViewCB)
+	{
+		ViewCB = RenderCommand::CreateConstantBuffer(sizeof(FMatrix));
+	}
+	RenderCommand::UpdateBufferData(ViewCB.get(), &ViewProjection, sizeof(FMatrix));
+
 	EnsureDeferredWorkers();
 
 	{
@@ -223,7 +230,6 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 			for (int32 i = 0; i < TotalPackets; ++i)
 			{
 				FPerObjectConstants Constants;
-				Constants.MVP = InPackets[i].MVP;
 				Constants.World = InPackets[i].model;
 				std::memcpy(Base + static_cast<size_t>(i) * PerObjectSlotSize, &Constants, sizeof(Constants));
 			}
@@ -231,6 +237,8 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 			if (BatchStats.bCountUploadBytes)
 				BatchStats.UploadBytes += static_cast<uint64>(TotalPackets) * sizeof(FPerObjectConstants);
 		}
+
+		RenderCommand::BindConstantBuffer(2, ViewCB.get(), EShaderBindFlagBits::Vertex);
 
 		FStatScope DrawScope(StatIds::RenderDrawLoop());
 		for (int32 i = 0; i < TotalPackets; ++i)
@@ -272,7 +280,6 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 					return;
 				}
 				FPerObjectConstants Constants;
-				Constants.MVP = RenderPacket.MVP;
 				Constants.World = RenderPacket.model;
 				std::memcpy(MappedData, &Constants, sizeof(Constants));
 				RenderCommand::UnmapBuffer(Temp.get());
@@ -343,6 +350,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 			Context->OMSetRenderTargets(NumRTVs, RTVs, DSV);
 			Context->RSSetViewports(NumViewports, &Viewport);
+			RenderCommand::BindConstantBuffer(2, ViewCB.get(), EShaderBindFlagBits::Vertex, Context);
 
 			const UStaticMesh* LastMesh  = nullptr;
 			const UMaterial* LastMaterial = nullptr;
@@ -365,7 +373,6 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 			for (int32 i = Start; i < End; ++i)
 			{
 				FPerObjectConstants Constants;
-				Constants.MVP = InPackets[i].MVP;
 				Constants.World = InPackets[i].model;
 
 				const uint32 LocalIndex = i - Start;
@@ -543,14 +550,10 @@ void FRenderer::UpdateMaterialParams(UMaterial* material)
 	}
 }
 
-// b0 MVP 채우고 꽂기
+// 오브젝트 상수 버퍼 갱신
 void FRenderer::UpdatePerObjectConstants(const FRenderPacket& RenderPacket, const FMatrixRegister& ViewProjection)
 {
 	FPerObjectConstants Constants;
-
-	const FMatrixRegister Model = FMatrixRegister::Load(RenderPacket.model);
-	(Model * ViewProjection).Store(Constants.MVP);   // MVP: 레지스터에서 목적지로 바로
-	Model.Store(Constants.World);                   // World: 이미 올린 model 재사용
-
+	Constants.World = RenderPacket.model;
 	RenderCommand::UpdateBufferData(Temp.get(), &Constants);
 }

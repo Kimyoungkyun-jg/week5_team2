@@ -516,15 +516,13 @@ void FGPUOcclusionCuller::Cull(
         std::memcpy(ReadbackBits.GetData(), ReadMapped.pData, NumWords * sizeof(uint32));
         Context->Unmap(ReadStaging, 0);
 
-        // 비트마스크 기반 필터링 및 단계 추출
-        OutVisible.Reserve(TotalObjects);
-        OutLODs.Reserve(TotalObjects);
+        // 단계별 수량 계수
+        uint32 LodCounts[3] = { 0, 0, 0 };
         for (uint32 WordIdx = 0; WordIdx < NumWords; ++WordIdx)
         {
             uint32 Mask = ReadbackBits[WordIdx];
             if (Mask == 0)
             {
-                // 블록 전체 컬링 시 스킵
                 continue;
             }
 
@@ -538,13 +536,44 @@ void FGPUOcclusionCuller::Cull(
                 }
 
                 uint32 Code = (Mask >> (Bit * 2)) & 0x03;
-                if (Code > 0)
+                if (Code > 0 && Objects[ObjIdx].Primitive)
                 {
-                    if (Objects[ObjIdx].Primitive)
-                    {
-                        OutVisible.Add(Objects[ObjIdx].Primitive);
-                        OutLODs.Add(static_cast<uint8>(Code - 1));
-                    }
+                    ++LodCounts[Code - 1];
+                }
+            }
+        }
+
+        const uint32 TotalVisible = LodCounts[0] + LodCounts[1] + LodCounts[2];
+        OutVisible.SetNum(TotalVisible);
+        OutLODs.SetNum(TotalVisible);
+
+        uint32 Offsets[3] = { 0, LodCounts[0], LodCounts[0] + LodCounts[1] };
+
+        // 단계별 오프셋 위치에 직접 기록
+        for (uint32 WordIdx = 0; WordIdx < NumWords; ++WordIdx)
+        {
+            uint32 Mask = ReadbackBits[WordIdx];
+            if (Mask == 0)
+            {
+                continue;
+            }
+
+            uint32 BaseIdx = WordIdx * 16;
+            for (uint32 Bit = 0; Bit < 16; ++Bit)
+            {
+                uint32 ObjIdx = BaseIdx + Bit;
+                if (ObjIdx >= TotalObjects)
+                {
+                    break;
+                }
+
+                uint32 Code = (Mask >> (Bit * 2)) & 0x03;
+                if (Code > 0 && Objects[ObjIdx].Primitive)
+                {
+                    const uint32 LodIdx = Code - 1;
+                    const uint32 TargetIdx = Offsets[LodIdx]++;
+                    OutVisible[TargetIdx] = Objects[ObjIdx].Primitive;
+                    OutLODs[TargetIdx] = static_cast<uint8>(LodIdx);
                 }
             }
         }

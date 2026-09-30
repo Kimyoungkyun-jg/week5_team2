@@ -238,9 +238,59 @@ inline FStatId GpuSkipped()
 	return Id;
 }
 
+inline FStatId RenderMaterials()
+{
+	static const FStatId Id = FStats::Register({"Render Detail CPU", "Material collect + update", EStatUnit::Milliseconds, EStatMode::Event, true});
+	return Id;
+}
+
+inline FStatId RenderUpload()
+{
+	static const FStatId Id = FStats::Register({"Render Detail CPU", "Immediate bulk CB upload", EStatUnit::Milliseconds, EStatMode::Event, true});
+	return Id;
+}
+
+inline FStatId RenderDrawLoop()
+{
+	static const FStatId Id = FStats::Register({"Render Detail CPU", "Immediate bind + draw (fallback CB included)", EStatUnit::Milliseconds, EStatMode::Event, true});
+	return Id;
+}
+
+inline FStatId RenderWorkers()
+{
+	static const FStatId Id = FStats::Register({"Render Detail CPU", "Worker record + completion wait", EStatUnit::Milliseconds, EStatMode::Event, true});
+	return Id;
+}
+
+inline FStatId RenderExecute()
+{
+	static const FStatId Id = FStats::Register({"Render Detail CPU", "Execute command lists", EStatUnit::Milliseconds, EStatMode::Event, true});
+	return Id;
+}
+
+inline FStatId GpuGrid()
+{
+	static const FStatId Id = FStats::Register({"GPU", "Grid / Pass", EStatUnit::Milliseconds, EStatMode::Event, false});
+	return Id;
+}
+
+inline FStatId GpuEditor()
+{
+	static const FStatId Id = FStats::Register({"GPU", "Editor overlays / Pass", EStatUnit::Milliseconds, EStatMode::Event, false});
+	return Id;
+}
+
 // Register before UI iteration; defaults belong to each definition.
 inline void RegisterAll()
 {
+	RenderMaterials();
+	RenderUpload();
+	RenderDrawLoop();
+	RenderWorkers();
+	RenderExecute();
+	GpuGrid();
+	GpuEditor();
+
 	CaptureWorld();
 	PacketBuild();
 	RenderSort();

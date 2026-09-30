@@ -168,19 +168,23 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 		std::sort(InPackets.begin(), InPackets.end(), CompareStateThenDepth);
 	}
 
-	// 머티리얼 파라미터 사전 일괄 갱신
-	TArray<UMaterial*> UniqueMaterials;
-	UniqueMaterials.Reserve(8);
-	for (const FRenderPacket& Packet : InPackets)
 	{
-		if (Packet.material && std::find(UniqueMaterials.begin(), UniqueMaterials.end(), Packet.material) == UniqueMaterials.end())
+		FStatScope MaterialScope(StatIds::RenderMaterials());
+		// 머티리얼 파라미터 사전 일괄 갱신
+		TArray<UMaterial*> UniqueMaterials;
+		UniqueMaterials.Reserve(8);
+		for (const FRenderPacket& Packet : InPackets)
 		{
-			UniqueMaterials.Add(Packet.material);
+			if (Packet.material && std::find(UniqueMaterials.begin(), UniqueMaterials.end(), Packet.material) == UniqueMaterials.end())
+			{
+				UniqueMaterials.Add(Packet.material);
+			}
 		}
-	}
-	for (UMaterial* Mat : UniqueMaterials)
-	{
-		UpdateMaterialParams(Mat);
+		for (UMaterial* Mat : UniqueMaterials)
+		{
+			UpdateMaterialParams(Mat);
+		}
+
 	}
 
 	const int32 NumWorkers = DeferredWorkers.Num();
@@ -196,6 +200,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 
 		if (bUseOffsets)
 		{
+			FStatScope UploadScope(StatIds::RenderUpload());
 			if (!EnsureConstantBufferCapacity(Temp, TotalPackets))
 			{
 				return;
@@ -217,6 +222,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 			BatchStats.UploadBytes += static_cast<uint64>(TotalPackets) * sizeof(FPerObjectConstants);
 		}
 
+		FStatScope DrawScope(StatIds::RenderDrawLoop());
 		for (int32 i = 0; i < TotalPackets; ++i)
 		{
 			const FRenderPacket& RenderPacket = InPackets[i];
@@ -263,9 +269,10 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 				BatchStats.UploadBytes += sizeof(FPerObjectConstants);
 				RenderCommand::BindConstantBuffer(0, Temp.get(), EShaderBindFlagBits::Vertex);
 			}
-			RenderCommand::DrawIndexed(RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount(), RenderPacket.StartIndex);
+			const uint32 IndexCount = RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->GetIndexCount(RenderPacket.LODIndex);
+			RenderCommand::DrawIndexed(IndexCount, RenderPacket.StartIndex);
 			++BatchStats.Draws;
-			BatchStats.Triangles += (RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount()) / 3;
+			BatchStats.Triangles += IndexCount / 3;
 		}
 		return;
 	}
@@ -302,54 +309,56 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 	std::vector<ComPtr<ID3D11CommandList>> CommandLists(NumJobs);
 	std::vector<FBatchCounters> WorkerCounters(NumJobs);
 
-	Tasks::ParallelFor(TotalPackets, ChunkSize, [&](int32 Start, int32 End)
 	{
-		const int32 JobIndex = Start / ChunkSize;
-		if (JobIndex >= DeferredWorkers.Num())
+		FStatScope WorkerScope(StatIds::RenderWorkers());
+		Tasks::ParallelFor(TotalPackets, ChunkSize, [&](int32 Start, int32 End)
 		{
-			return;
-		}
+			const int32 JobIndex = Start / ChunkSize;
+			if (JobIndex >= DeferredWorkers.Num())
+			{
+				return;
+			}
 
-		ID3D11DeviceContext* Context = DeferredWorkers[JobIndex].Context.Get();
-		FConstantBuffer* WorkerCB = DeferredWorkers[JobIndex].PerObjectCB.get();
-		ID3D11DeviceContext1* Context1 = DeferredWorkers[JobIndex].Context1.Get();
+			ID3D11DeviceContext* Context = DeferredWorkers[JobIndex].Context.Get();
+			FConstantBuffer* WorkerCB = DeferredWorkers[JobIndex].PerObjectCB.get();
+			ID3D11DeviceContext1* Context1 = DeferredWorkers[JobIndex].Context1.Get();
 
-		Context->OMSetRenderTargets(NumRTVs, RTVs, DSV);
-		Context->RSSetViewports(NumViewports, &Viewport);
+			Context->OMSetRenderTargets(NumRTVs, RTVs, DSV);
+			Context->RSSetViewports(NumViewports, &Viewport);
 
-		const UStaticMesh* LastMesh  = nullptr;
-		uint8 LastLOD = 0xFF;
-		const UMaterial* LastMaterial = nullptr;
-		EPSOType LastPSO = EPSOType::Count;
+			const UStaticMesh* LastMesh  = nullptr;
+			const UMaterial* LastMaterial = nullptr;
+			uint8 LastLOD = 0xFF;
+			EPSOType LastPSO = EPSOType::Count;
 
-		assert(static_cast<uint32>(End - Start) * PerObjectSlotSize <= WorkerCB->GetBufferSize());
+			assert(static_cast<uint32>(End - Start) * PerObjectSlotSize <= WorkerCB->GetBufferSize());
 
-		void* MappedData = RenderCommand::MapBufferWriteDiscard(WorkerCB, Context);
+			void* MappedData = RenderCommand::MapBufferWriteDiscard(WorkerCB, Context);
 
-		if (!MappedData)
-		{
-			ComPtr<ID3D11CommandList> Discarded;
-			Context->FinishCommandList(FALSE, Discarded.GetAddressOf());
-			return;
-		}
+			if (!MappedData)
+			{
+				ComPtr<ID3D11CommandList> Discarded;
+				Context->FinishCommandList(FALSE, Discarded.GetAddressOf());
+				return;
+			}
 
-		uint8* Base = static_cast<uint8*>(MappedData);
+			uint8* Base = static_cast<uint8*>(MappedData);
 
-		for (int32 i = Start; i < End; ++i)
-		{
-			FPerObjectConstants Constants;
-			Constants.MVP = InPackets[i].MVP;
-			Constants.World = InPackets[i].model;
+			for (int32 i = Start; i < End; ++i)
+			{
+				FPerObjectConstants Constants;
+				Constants.MVP = InPackets[i].MVP;
+				Constants.World = InPackets[i].model;
 
-			const uint32 LocalIndex = i - Start;
+				const uint32 LocalIndex = i - Start;
 
-			uint8* Dest = Base + LocalIndex * PerObjectSlotSize;
+				uint8* Dest = Base + LocalIndex * PerObjectSlotSize;
 
-			std::memcpy(Dest, &Constants, sizeof(FPerObjectConstants));
-		}
+				std::memcpy(Dest, &Constants, sizeof(FPerObjectConstants));
+			}
 
-		RenderCommand::UnmapBuffer(WorkerCB, Context);
-		WorkerCounters[JobIndex].UploadBytes = static_cast<uint64>(End - Start) * sizeof(FPerObjectConstants);
+			RenderCommand::UnmapBuffer(WorkerCB, Context);
+			WorkerCounters[JobIndex].UploadBytes = static_cast<uint64>(End - Start) * sizeof(FPerObjectConstants);
 
 		for (int32 i = Start; i < End; ++i)
 		{
@@ -371,13 +380,13 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 					LastPSO = RenderPacket.material->PSOType;
 				}
 
-				const uint32 LocalIndex = i - Start;
-				const uint32 FirstConstant = LocalIndex * (PerObjectSlotSize / 16);
-				const uint32 NumConstants = PerObjectSlotSize / 16;
+					const uint32 LocalIndex = i - Start;
+					const uint32 FirstConstant = LocalIndex * (PerObjectSlotSize / 16);
+					const uint32 NumConstants = PerObjectSlotSize / 16;
 
-				RenderCommand::BindConstantBufferRange(0, WorkerCB, EShaderBindFlagBits::Vertex, FirstConstant, NumConstants, Context1);
+					RenderCommand::BindConstantBufferRange(0, WorkerCB, EShaderBindFlagBits::Vertex, FirstConstant, NumConstants, Context1);
 
-				const uint32 IndexCount = RenderPacket.mesh ? RenderPacket.mesh->GetIndexCount(RenderPacket.LODIndex) : RenderPacket.IndexCount;
+				const uint32 IndexCount = RenderPacket.mesh->GetIndexCount(RenderPacket.LODIndex);
 				RenderCommand::DrawIndexed(
 					IndexCount,
 					RenderPacket.StartIndex,
@@ -385,15 +394,16 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 					Context
 				);
 				++WorkerCounters[JobIndex].Draws;
-				WorkerCounters[JobIndex].Triangles += (RenderPacket.IndexCount ? RenderPacket.IndexCount : RenderPacket.mesh->IndexBuffer->GetIndexCount()) / 3;
+				WorkerCounters[JobIndex].Triangles += IndexCount / 3;
 			}
 		}
 
-		if (FAILED(Context->FinishCommandList(FALSE, CommandLists[JobIndex].GetAddressOf())))
-		{
-			CommandLists[JobIndex].Reset();
-		}
-	});
+			if (FAILED(Context->FinishCommandList(FALSE, CommandLists[JobIndex].GetAddressOf())))
+			{
+				CommandLists[JobIndex].Reset();
+			}
+		});
+	}
 
 	// 메인 스레드에서 커맨드 리스트 순차 실행
 	const bool bAllJobsSucceeded = std::all_of(CommandLists.begin(), CommandLists.end(), [](const auto& List) { return List != nullptr; });
@@ -407,6 +417,7 @@ void FRenderer::RenderOpaque(TArray<FRenderPacket>& InPackets, const FMatrix& Vi
 	for (const FBatchCounters& Counters : WorkerCounters)
 		BatchStats.UploadBytes += Counters.UploadBytes;
 	{
+		FStatScope ExecuteScope(StatIds::RenderExecute());
 		FGPUStatScope OpaqueScope(StatIds::GpuOpaque(), L"Opaque Command Lists");
 		for (int32 i = 0; bAllJobsSucceeded && i < NumJobs; ++i)
 		{

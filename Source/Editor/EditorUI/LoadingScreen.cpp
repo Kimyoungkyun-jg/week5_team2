@@ -65,12 +65,13 @@ void FLoadingScreen::Tick(float DeltaTime)
 
 	ElapsedTime += DeltaTime;
 
-	// 프레임 애니메이션 갱신
-	CurrentFrameIndex = static_cast<int32>(ElapsedTime * AnimationFps) % TotalFrames;
-
 	// 진행도 갱신
 	const float ApproachRate = (bSceneLoaded ? 0.9f : 0.5f);
 	CurrentProgress = (std::min)(1.0f, (std::min)(TargetProgress, CurrentProgress + DeltaTime * ApproachRate));
+
+	// 진행도 연동 애니메이션 갱신
+	const float AnimationCycles = 0.7f;
+	CurrentFrameIndex = (static_cast<int32>(CurrentProgress * static_cast<float>(TotalFrames) * AnimationCycles) % TotalFrames + TotalFrames) % TotalFrames;
 
 	// 상태 텍스트 갱신
 	if (CurrentProgress < 0.25f)

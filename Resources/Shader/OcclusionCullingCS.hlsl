@@ -127,7 +127,11 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
             float Dist = length(Center - CameraPosition);
             float ScreenDiameter = (Bound.Radius * 2.0f) / max(Dist, 0.001f);
             
-            if (ScreenDiameter < 0.05f)
+            if (ScreenDiameter < 0.008f)
+            {
+                LodCode = 0u; // 화면 크기 미달 시 비가시 처리 (0비트 유지)
+            }
+            else if (ScreenDiameter < 0.05f)
             {
                 LodCode = 3u;
             }

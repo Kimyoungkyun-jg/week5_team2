@@ -395,10 +395,8 @@ void FMultipleViewportsAdapter::UpdateLayout(
     if (IsViewRectValid(ViewRects[ViewIndex]))
       ConstrainOrthographicWidth(Views.Cameras[ViewIndex].Projection,
                                  ViewRects[ViewIndex]);
-  // Hover 추적은 비활성화한다. 클릭 위치 판정 함수는 입력 전환에서 계속
-  // 사용한다. InputState.HoveredViewIndex =
-  // DetermineHoveredView(LocalMousePosition, ViewRects);
-  InputState.HoveredViewIndex = InvalidViewIndex;
+  InputState.HoveredViewIndex =
+      DetermineHoveredView(LocalMousePosition, ViewRects);
   if (InputState.CapturedViewIndex != InvalidViewIndex &&
       !IsViewActive(InputState.CapturedViewIndex))
     InputState = EndCapture(InputState);
@@ -436,6 +434,7 @@ void FMultipleViewportsAdapter::UpdateInput(const float DeltaTime,
     InputState = EndCapture(InputState);
   const int32 PointerViewIndex =
       DetermineHoveredView(LocalMousePosition, ViewRects);
+  InputState.HoveredViewIndex = PointerViewIndex;
   // 우클릭 시작 위치를 Capture하고, Capture 밖에서는 좌클릭으로만 선택을
   // 바꾼다.
   if (InputState.CapturedViewIndex == InvalidViewIndex &&
@@ -445,8 +444,8 @@ void FMultipleViewportsAdapter::UpdateInput(const float DeltaTime,
     else if (FInputSystem::IsMousePressed(EMouseButton::Left))
       ActiveViewIndex = PointerViewIndex;
   }
-  if (InputState.CapturedViewIndex != InvalidViewIndex)
-    ActiveViewIndex = InputState.CapturedViewIndex;
+  ActiveViewIndex = DetermineActiveView(
+      InputState, LocalMousePosition, ViewRects);
   if (!IsViewActive(ActiveViewIndex))
     return;
 

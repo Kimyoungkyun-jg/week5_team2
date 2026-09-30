@@ -26,15 +26,7 @@ public:
 
 	LRESULT HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-	bool CheckResized()
-	{
-		if (bIsResized)
-		{
-			bIsResized = false;
-			return true;
-		}
-		return false;
-	}
+	bool CheckResized();
 
 private:
 	bool bIsResized = false;

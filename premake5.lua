@@ -160,6 +160,9 @@ project "HitoriEngine"
 		"%{IncludeDir.meshoptimizer}/meshoptimizer.h",
 		"%{IncludeDir.meshoptimizer}/allocator.cpp",
 		"%{IncludeDir.meshoptimizer}/simplifier.cpp",
+		"%{IncludeDir.meshoptimizer}/vcacheoptimizer.cpp",
+		"%{IncludeDir.meshoptimizer}/vfetchoptimizer.cpp",
+		"%{IncludeDir.meshoptimizer}/overdrawoptimizer.cpp",
 	}
 
 	filter "files:Source/ThirdParty/meshoptimizer/**.cpp"

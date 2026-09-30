@@ -104,6 +104,24 @@ bool UStaticMesh::GenerateLODs()
 
 		if (ReducedCount > 0 && ReducedCount < TotalIndices)
 		{
+			// 버텍스 캐시 및 오버드로우 최적화
+			meshopt_optimizeVertexCache(
+				LOD1Indices.GetData(),
+				LOD1Indices.GetData(),
+				ReducedCount,
+				TotalVertices
+			);
+
+			meshopt_optimizeOverdraw(
+				LOD1Indices.GetData(),
+				LOD1Indices.GetData(),
+				ReducedCount,
+				Positions,
+				TotalVertices,
+				PositionStride,
+				1.05f
+			);
+
 			FStaticMeshLOD LOD1;
 			LOD1.IndexBuffer = RenderCommand::CreateStaticIndexBuffer(
 				LOD1Indices.GetData(),
@@ -152,6 +170,24 @@ bool UStaticMesh::GenerateLODs()
 
 		if (ReducedCount > 0 && ReducedCount < PrevIndexCount)
 		{
+			// 버텍스 캐시 및 오버드로우 최적화
+			meshopt_optimizeVertexCache(
+				LOD2Indices.GetData(),
+				LOD2Indices.GetData(),
+				ReducedCount,
+				TotalVertices
+			);
+
+			meshopt_optimizeOverdraw(
+				LOD2Indices.GetData(),
+				LOD2Indices.GetData(),
+				ReducedCount,
+				Positions,
+				TotalVertices,
+				PositionStride,
+				1.05f
+			);
+
 			FStaticMeshLOD LOD2;
 			LOD2.IndexBuffer = RenderCommand::CreateStaticIndexBuffer(
 				LOD2Indices.GetData(),

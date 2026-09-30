@@ -17,6 +17,7 @@
 
 #include "Rendering/ImageLoader.h"
 #include "Collision/Ray.h"
+#include <meshoptimizer.h>
 
 
 namespace
@@ -25,11 +26,6 @@ namespace
 	{
 		if (!MeshData || !MeshData->Vertices.Num() || !MeshData->Indices.Num())
 			return nullptr;
-
-		TUniquePtr<FVertexBuffer> VB = RenderCommand::CreateStaticVertexBuffer(MeshData->Vertices.GetData(), sizeof(FVertexPNCT) * static_cast<uint32>(MeshData->Vertices.size()), sizeof(FVertexPNCT));
-		TUniquePtr<FIndexBuffer> IB = RenderCommand::CreateStaticIndexBuffer(MeshData->Indices.GetData(), static_cast<uint32>(MeshData->Indices.size()));
-
-		if (VB == nullptr || IB == nullptr) return nullptr;
 
 		UStaticMesh* Mesh = FObjectFactory::ConstructObject<UStaticMesh>();
 
@@ -55,12 +51,69 @@ namespace
 			Mesh->MeshData.Sections.Add(DefaultSection);
 		}
 
+		const size_t VertexCount = Mesh->MeshData.Vertices.Num();
+		const size_t IndexCount = Mesh->MeshData.Indices.Num();
+
+		// 인덱스 버퍼 및 버텍스 캐시 최적화
+		for (const FStaticMeshSection& Section : Mesh->MeshData.Sections)
+		{
+			if (Section.IndexCount == 0)
+			{
+				continue;
+			}
+
+			uint32* SectionIndices = Mesh->MeshData.Indices.GetData() + Section.StartIndex;
+
+			meshopt_optimizeVertexCache(
+				SectionIndices,
+				SectionIndices,
+				Section.IndexCount,
+				VertexCount
+			);
+
+			meshopt_optimizeOverdraw(
+				SectionIndices,
+				SectionIndices,
+				Section.IndexCount,
+				reinterpret_cast<const float*>(&Mesh->MeshData.Vertices[0].Position),
+				VertexCount,
+				sizeof(FVertexPNCT),
+				1.05f
+			);
+		}
+
+		// 버텍스 버퍼 재정렬 및 인덱스 리매핑
+		TArray<FVertexPNCT> OptimizedVertices;
+		OptimizedVertices.SetNum(VertexCount);
+		meshopt_optimizeVertexFetch(
+			OptimizedVertices.GetData(),
+			Mesh->MeshData.Indices.GetData(),
+			IndexCount,
+			Mesh->MeshData.Vertices.GetData(),
+			VertexCount,
+			sizeof(FVertexPNCT)
+		);
+		Mesh->MeshData.Vertices = std::move(OptimizedVertices);
+
 		// 피킹 중 최초 구축 비용이 들어가지 않도록 로드 단계에서 Triangle BVH를 준비한다.
 		PrepareMeshPickingBVH(Mesh->MeshData);
 
 		// Vertex/Index GPU 업로드
-		Mesh->VertexBuffer = std::move(VB);
-		Mesh->IndexBuffer = std::move(IB);
+		Mesh->VertexBuffer = RenderCommand::CreateStaticVertexBuffer(
+			Mesh->MeshData.Vertices.GetData(),
+			sizeof(FVertexPNCT) * static_cast<uint32>(Mesh->MeshData.Vertices.size()),
+			sizeof(FVertexPNCT)
+		);
+		Mesh->IndexBuffer = RenderCommand::CreateStaticIndexBuffer(
+			Mesh->MeshData.Indices.GetData(),
+			static_cast<uint32>(Mesh->MeshData.Indices.size())
+		);
+
+		if (!Mesh->VertexBuffer || !Mesh->IndexBuffer)
+		{
+			return nullptr;
+		}
+
 		Mesh->GenerateLODs();
 
 		UMaterial* DefaultMaterial = UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial");

@@ -68,7 +68,8 @@ bool RayIntersectsTriangle(const FRay& Ray, const FVector& v1, const FVector& v2
 // StaticMesh 로드 시 피킹용 Triangle BVH를 미리 구축해 첫 클릭 비용을 제거한다.
 void PrepareMeshPickingBVH(const FStaticMeshData& Mesh);
 
-bool RayIntersectsMesh(const FRay& LocalRay, const FStaticMeshData& Mesh, float& OutT);
+// MaxT보다 가까운 교차만 찾는다. 로컬 레이 방향이 비정규화라 t는 월드 거리와 같으므로 전역 최근접 거리를 넘길 수 있다.
+bool RayIntersectsMesh(const FRay& LocalRay, const FStaticMeshData& Mesh, float& OutT, float MaxT = FLT_MAX);
 
 FVector2 WorldToScreen(const FVector& WorldPos, const FMatrix& ViewProj, int ScreenW, int ScreenH);
 

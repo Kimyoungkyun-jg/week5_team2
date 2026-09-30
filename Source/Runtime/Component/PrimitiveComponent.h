@@ -68,7 +68,7 @@ public:
 
 protected:
 	virtual void OnBoundsMarkedDirty() override;
-	bool TraceMesh(const FRay& WorldRay, const FStaticMeshData& Mesh, const FMatrix& WorldMatrix, FHitResult& OutResult);
+	bool TraceMesh(const FRay& WorldRay, const FStaticMeshData& Mesh, const FMatrix& WorldMatrix, FHitResult& OutResult, float MaxT = FLT_MAX);
 	bool bVisible = true;
 
 	/*TArray<UMaterial* MaterialOverride = nullptr;*/

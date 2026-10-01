@@ -52,8 +52,12 @@ void FStatOverlay::Tick(const float DeltaTime)
 	if (AccumulatedTime < SampleInterval || AccumulatedFrames <= 0)
 		return;
 
-	DisplayFPS = static_cast<float>(AccumulatedFrames) / AccumulatedTime;
-	DisplayFrameTimeMs = (AccumulatedTime / static_cast<float>(AccumulatedFrames)) * 1000.0f;
+	FStats::Set(StatIds::FrameFPS(), static_cast<float>(AccumulatedFrames) / AccumulatedTime);
+	FStats::Set(StatIds::FrameTime(), (AccumulatedTime / static_cast<float>(AccumulatedFrames)) * 1000.0f);
+	FStats::Set(StatIds::MemoryObjects(), GetObjectAllocationBytes());
+	FStats::Set(StatIds::MemoryAllocations(), GetObjectAllocationCount());
+	if (FStats::IsEnabled(StatIds::MemoryProcess()))
+		FStats::Set(StatIds::MemoryProcess(), GetProcessWorkingSetBytes());
 
 	AccumulatedTime = 0.0f;
 	AccumulatedFrames = 0;
@@ -70,11 +74,20 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 
 	if (Tokens.Num() < 2)
 	{
-		OutMessage = "Usage: stat <fps|memory|all|none>";
+		OutMessage = "Usage: stat <fps|memory|picking|all|none>";
 		return true;
 	}
 
 	const FString& Arg = Tokens[1];
+	if (EqualsIgnoreCase(Arg, "memory"))
+	{
+		const bool bEnable = !FStats::GetRecord(StatIds::MemoryProcess()).bEnabled;
+		FStats::SetEnabled(StatIds::MemoryObjects(), bEnable);
+		FStats::SetEnabled(StatIds::MemoryAllocations(), bEnable);
+		FStats::SetEnabled(StatIds::MemoryProcess(), bEnable);
+		OutMessage = std::format("stat memory: {} (Stats panel)", bEnable ? "on" : "off");
+		return true;
+	}
 
 	if (EqualsIgnoreCase(Arg, "none"))
 	{
@@ -85,7 +98,7 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 
 	if (EqualsIgnoreCase(Arg, "all"))
 	{
-		Flags = EStatFlags::FPS | EStatFlags::Memory;
+		Flags = EStatFlags::FPS | EStatFlags::Picking;
 		OutMessage = "stat all: all overlays enabled";
 		return true;
 	}
@@ -93,12 +106,13 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 	EStatFlags Target = EStatFlags::None;
 	if (EqualsIgnoreCase(Arg, "fps"))
 		Target = EStatFlags::FPS;
-	else if (EqualsIgnoreCase(Arg, "memory"))
-		Target = EStatFlags::Memory;
+
+	else if (EqualsIgnoreCase(Arg, "picking"))
+		Target = EStatFlags::Picking;
 
 	if (Target == EStatFlags::None)
 	{
-		OutMessage = std::format("stat: unknown stat '{}'. Available: fps, memory, all, none", Arg);
+		OutMessage = std::format("stat: unknown stat '{}'. Available: fps, memory, picking, all, none", Arg);
 		return true;
 	}
 
@@ -111,6 +125,28 @@ bool FStatOverlay::ExecCommand(const FString& CommandLine, FString& OutMessage)
 
 	OutMessage = std::format("stat {}: {}", Arg, bEnable ? "on" : "off");
 	return true;
+}
+
+uint32 FStatOverlay::GetScreenWidth()
+{
+	DEVMODE DisplayMode{};
+	DisplayMode.dmSize = sizeof(DEVMODE);
+
+	if (EnumDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &DisplayMode))
+		return DisplayMode.dmPelsWidth;
+
+	return 0;
+}
+
+uint32 FStatOverlay::GetScreenHeight()
+{
+	DEVMODE DisplayMode{};
+	DisplayMode.dmSize = sizeof(DEVMODE);
+
+	if (EnumDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &DisplayMode))
+		return DisplayMode.dmPelsHeight;
+
+	return 0;
 }
 
 uint64 FStatOverlay::GetObjectAllocationBytes()

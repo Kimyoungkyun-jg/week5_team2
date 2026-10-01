@@ -1,7 +1,7 @@
 // Todo: subuv
 cbuffer constants : register(b0)
 {
-    matrix MVP;
+    row_major matrix MVP;
 };
 
 cbuffer subuv : register(b1)

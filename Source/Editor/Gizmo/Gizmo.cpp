@@ -327,9 +327,9 @@ FVector FGizmo::GetRenderLocation() const
 // 직교에서는 대상 위치, 원근에서는 카메라 앞 일정 거리로 표시 위치를 정한다.
 FVector FGizmo::GetRenderLocationForView(const FVector& CameraLocation, const bool bCameraOrthographic) const
 {
-	if (!Target) return FVector(0, 0, 0);
-	if (bCameraOrthographic) return GetLocation();
-	return (Target->GetRelativeLocation() - CameraLocation).Normalized() * 10.0f + CameraLocation;
+	if (!Target)
+		return FVector(0, 0, 0);
+	return GetLocation();
 }
 
 // 현재 입력 View의 카메라 위치를 반환한다.

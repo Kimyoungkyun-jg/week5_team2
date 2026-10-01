@@ -5,7 +5,7 @@
 #include <fstream>
 #include <type_traits>
 
-#include "Render/StaticMeshData.h"
+#include "Rendering/StaticMeshData.h"
 #include "Core/EngineLog.h"
 
 static_assert(sizeof(FVertexPNCT) == 48);
@@ -18,88 +18,85 @@ static_assert(std::is_trivially_copyable_v<FBox>);
 
 namespace
 {
-	// FStaticMeshData, FVertexPNCT, FStaticMeshSection, FStaticMaterialSlot 구조가 바뀌면 올린다
-	constexpr uint32 BakeVersion = 2;
+// FStaticMeshData, FVertexPNCT, FStaticMeshSection, FStaticMaterialSlot 구조가 바뀌면 올린다
+constexpr uint32 BakeVersion = 3;
 
-	struct FBakeHeader
+struct FBakeHeader
+{
+	// 'S'taic 'M'esh 'B'a'K'e
+	char Magic[4] = {'S', 'M', 'B', 'K'};
+	uint32 Version = BakeVersion;
+	EObjAxisPreset AxisPreset = EObjAxisPreset::Default;
+};
+
+// 숫자 || 숫자만 있는 구조체
+template <typename T> void WritePod(std::ofstream& Out, const T& Value)
+{
+	static_assert(std::is_trivially_copyable_v<T>, "invalid plane old data");
+	Out.write(reinterpret_cast<const char*>(&Value), sizeof(T));
+}
+
+template <typename T> bool ReadPod(std::ifstream& In, T& Value)
+{
+	static_assert(std::is_trivially_copyable_v<T>);
+	In.read(reinterpret_cast<char*>(&Value), sizeof(T));
+	return static_cast<bool>(In);
+}
+
+// 배열: 개수 + 원소 전체를 한 번에
+template <typename T> void WriteArray(std::ofstream& Out, const TArray<T>& Array)
+{
+	const uint32 Count = static_cast<uint32>(Array.Num());
+	WritePod(Out, Count);
+	if (Count > 0)
 	{
-		// 'S'taic 'M'esh 'B'a'K'e
-		char Magic[4] = { 'S', 'M', 'B', 'K' };
-		uint32 Version = BakeVersion;
-	};
-
-	// 숫자 || 숫자만 있는 구조체
-	template<typename T>
-	void WritePod(std::ofstream& Out, const T& Value)
-	{
-		static_assert(std::is_trivially_copyable_v<T>, "invalid plane old data");
-		Out.write(reinterpret_cast<const char*>(&Value), sizeof(T));
-	}
-
-	template<typename T>
-	bool ReadPod(std::ifstream& In, T& Value)
-	{
-		static_assert(std::is_trivially_copyable_v<T>);
-		In.read(reinterpret_cast<char*>(&Value), sizeof(T));
-		return static_cast<bool>(In);
-	}
-
-	// 배열: 개수 + 원소 전체를 한 번에
-	template<typename T>
-	void WriteArray(std::ofstream& Out, const TArray<T>& Array)
-	{
-		const uint32 Count = static_cast<uint32>(Array.Num());
-		WritePod(Out, Count);
-		if (Count > 0)
-		{
-			Out.write(reinterpret_cast<const char*>(Array.GetData()), sizeof(T) * Count);
-		}
-	}
-
-	template<typename T>
-	bool ReadArray(std::ifstream& In, TArray<T>& Array, uint32 MaxCount)
-	{
-		uint32 Count = 0;
-		if (!ReadPod(In, Count) || Count > MaxCount)
-		{
-			return false;
-		}
-
-		Array.SetNum(static_cast<int32>(Count));
-		if (Count > 0)
-		{
-			In.read(reinterpret_cast<char*>(Array.GetData()), sizeof(T) * Count);
-		}
-		return static_cast<bool>(In);
-	}
-
-	// 길이 + 문자열
-	void WriteString(std::ofstream& Out, const FString& Str)
-	{
-		const uint32 Length = static_cast<uint32>(Str.size());
-		WritePod(Out, Length);
-		Out.write(Str.data(), Length);
-	}
-
-	bool ReadString(std::ifstream& In, FString& Str)
-	{
-		uint32 Length = 0;
-		if (!ReadPod(In, Length) || Length > 4096)
-		{
-			return false;
-		}
-		Str.resize(Length);
-		In.read(Str.data(), Length);
-		return static_cast<bool>(In);
+		Out.write(reinterpret_cast<const char*>(Array.GetData()), sizeof(T) * Count);
 	}
 }
 
-TUniquePtr<FStaticMeshData> FStaticMeshBake::ReadBaked(const FString& BinPath)
+template <typename T> bool ReadArray(std::ifstream& In, TArray<T>& Array, uint32 MaxCount)
+{
+	uint32 Count = 0;
+	if (!ReadPod(In, Count) || Count > MaxCount)
+	{
+		return false;
+	}
+
+	Array.SetNum(static_cast<int32>(Count));
+	if (Count > 0)
+	{
+		In.read(reinterpret_cast<char*>(Array.GetData()), sizeof(T) * Count);
+	}
+	return static_cast<bool>(In);
+}
+
+// 길이 + 문자열
+void WriteString(std::ofstream& Out, const FString& Str)
+{
+	const uint32 Length = static_cast<uint32>(Str.size());
+	WritePod(Out, Length);
+	Out.write(Str.data(), Length);
+}
+
+bool ReadString(std::ifstream& In, FString& Str)
+{
+	uint32 Length = 0;
+	if (!ReadPod(In, Length) || Length > 4096)
+	{
+		return false;
+	}
+	Str.resize(Length);
+	In.read(Str.data(), Length);
+	return static_cast<bool>(In);
+}
+} // namespace
+
+TUniquePtr<FStaticMeshData> FStaticMeshBake::ReadBaked(const FString& BinPath, EObjAxisPreset& OutPreset)
 {
 	std::ifstream In(BinPath, std::ios::binary);
 	if (!In)
 	{
-		return nullptr;   // .bin이 없음 (처음 로드)
+		return nullptr; // .bin이 없음 (처음 로드)
 	}
 
 	TUniquePtr<FStaticMeshData> Data = MakeUnique<FStaticMeshData>();
@@ -108,17 +105,15 @@ TUniquePtr<FStaticMeshData> FStaticMeshBake::ReadBaked(const FString& BinPath)
 	// 우리 형식이 맞는지, 같은 구조로 저장했는지 확인
 	FBakeHeader Header;
 	const FBakeHeader Expected;
-	if (!ReadPod<FBakeHeader>(In, Header) ||
-		std::memcmp(Header.Magic, Expected.Magic, sizeof(Header.Magic)) != 0 ||
-		Header.Version != Expected.Version)
+	if (!ReadPod<FBakeHeader>(In, Header) || std::memcmp(Header.Magic, Expected.Magic, sizeof(Header.Magic)) != 0 || Header.Version != Expected.Version)
 	{
 		LOG(Warning, "[BAKE] {}: invalid header or version, re-cooking", BinPath);
 		return nullptr;
 	}
 
-	if (!ReadArray<FVertexPNCT>(In, Data->Vertices, MaxCount) ||
-		!ReadArray<uint32>(In, Data->Indices, MaxCount) ||
-		!ReadArray<FStaticMeshSection>(In, Data->Sections, MaxCount))
+	OutPreset = Header.AxisPreset;
+
+	if (!ReadArray<FVertexPNCT>(In, Data->Vertices, MaxCount) || !ReadArray<uint32>(In, Data->Indices, MaxCount) || !ReadArray<FStaticMeshSection>(In, Data->Sections, MaxCount))
 	{
 		return nullptr;
 	}
@@ -132,9 +127,7 @@ TUniquePtr<FStaticMeshData> FStaticMeshBake::ReadBaked(const FString& BinPath)
 	for (uint32 i = 0; i < MaterialSlotsNum; ++i)
 	{
 		FStaticMaterialSlot Slot;
-		if (!ReadString(In, Slot.Name) ||
-			!ReadPod<FVector4>(In, Slot.BaseColor) ||
-			!ReadString(In, Slot.DiffuseTexturePath))
+		if (!ReadString(In, Slot.Name) || !ReadPod<FVector4>(In, Slot.BaseColor) || !ReadString(In, Slot.DiffuseTexturePath))
 		{
 			return nullptr;
 		}
@@ -159,7 +152,7 @@ TUniquePtr<FStaticMeshData> FStaticMeshBake::ReadBaked(const FString& BinPath)
 	return Data;
 }
 
-void FStaticMeshBake::WriteBaked(const FString& BinPath, const FStaticMeshData& Data)
+void FStaticMeshBake::WriteBaked(const FString& BinPath, const FStaticMeshData& Data, EObjAxisPreset Preset)
 {
 	std::ofstream Out(BinPath, std::ios::binary);
 	if (!Out)
@@ -168,7 +161,11 @@ void FStaticMeshBake::WriteBaked(const FString& BinPath, const FStaticMeshData& 
 		return;
 	}
 
-	WritePod<FBakeHeader>(Out, FBakeHeader());
+	FBakeHeader Header;
+	Header.AxisPreset = Preset;
+
+	WritePod<FBakeHeader>(Out, Header);
+
 	WriteArray<FVertexPNCT>(Out, Data.Vertices);
 	WriteArray<uint32>(Out, Data.Indices);
 	WriteArray<FStaticMeshSection>(Out, Data.Sections);

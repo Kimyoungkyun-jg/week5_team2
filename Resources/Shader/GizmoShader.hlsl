@@ -1,7 +1,7 @@
 cbuffer constants : register(b0)
 {
-    matrix World;
-	matrix ViewProjection;
+    row_major matrix World;
+    row_major matrix ViewProjection;
 	float4 Color;
 };
 

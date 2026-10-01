@@ -1,17 +1,18 @@
 #include "EnginePCH.h"
+#include "Rendering/Material.h"
 #include "BillboardComponent.h"
 
 #include "Asset/AssetManager.h"
 #include "Serialization/TypeSerializer.h"
 
 #include "GameFramework/Actor.h"
-#include "Engine/World.h"
+#include "World/World.h"
 
 // Billboard 컴포넌트의 초기 상태를 구성한다.
 UBillboardComponent::UBillboardComponent()
 {
-	QuadMesh = UAssetManager::GetAssetByPath<UStaticMesh>("ParticleQuad");
-	Material = UAssetManager::GetAssetByPath<UMaterial>("SubUVMaterial");
+	QuadMesh = UAssetManager::GetAssetByKey<UStaticMesh>("ParticleQuad");
+	Material = UAssetManager::GetAssetByKey<UMaterial>("SubUVMaterial");
 }
 
 // Billboard 컴포넌트의 소멸을 처리한다.
@@ -48,10 +49,20 @@ bool UBillboardComponent::LineTraceComponentForView(
 	return QuadMesh && TraceMesh(WorldRay, QuadMesh->GetMeshData(), BillboardWorldMatrix, OutHit);
 }
 
-// 기본 카메라용 행렬을 구해 공통 렌더 패킷 제출 경로로 전달한다.
-void UBillboardComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue)
+// View별 행렬 공급자가 있으면 클릭한 View의 실제 렌더 행렬로, 없으면 메인 카메라 기준으로 판정한다.
+// (기존 World 루프의 Billboard 분기와 같은 동작. ParticleSubUV도 이 함수를 상속받는다)
+bool UBillboardComponent::LineTraceWithContext(const FTraceContext& Context, FHitResult& OutHit)
 {
-	// 렌더러가 역참조하므로 둘 중 하나라도 없으면 보내지 않는다
+	if (Context.ResolveBillboard)
+	{
+		return LineTraceComponentForView(Context.Ray, OutHit, Context.ResolveBillboard(*this, Context.ViewContext));
+	}
+	return LineTraceComponent(Context.Ray, OutHit);
+}
+
+// 기본 카메라 기준으로 패킷 배열에 추가
+void UBillboardComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets)
+{
 	if (QuadMesh == nullptr || Material == nullptr)
 	{
 		return;
@@ -59,11 +70,11 @@ void UBillboardComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue
 
 	FMatrix BillboardWorldMatrix;
 	GetWorldTransformedMatrix(&BillboardWorldMatrix);
-	SubmitToRenderQueue(RenderQueue, BillboardWorldMatrix);
+	SubmitToRenderPackets(OutPackets, BillboardWorldMatrix);
 }
 
-// View별 Billboard 행렬과 Material을 렌더 패킷에 담는다.
-void UBillboardComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue, const FMatrix& BillboardWorldMatrix)
+// 전달받은 행렬 기준으로 패킷 배열에 직접 추가
+void UBillboardComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets, const FMatrix& BillboardWorldMatrix)
 {
 	if (QuadMesh == nullptr || Material == nullptr)
 		return;
@@ -72,7 +83,7 @@ void UBillboardComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue
 	Packet.mesh = QuadMesh;
 	Packet.material = Material;
 	Packet.model = BillboardWorldMatrix;
-	RenderQueue.Enqueue(Packet);
+	OutPackets.Add(Packet);
 }
 
 void UBillboardComponent::Serialize(json& Handle, bool bIsLoading)

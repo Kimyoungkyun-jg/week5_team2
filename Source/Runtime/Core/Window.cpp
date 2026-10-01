@@ -40,7 +40,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return DefWindowProc(hWnd, msg, wParam, lParam);   // return 0 대신
 }
 
-bool FWindow::Create(HINSTANCE hInstance, int InWidth, int InHeight, const wchar_t* Title)
+bool FWindow::Create(HINSTANCE hInstance, int InWidth, int InHeight, const wchar_t* Title, bool bShowImmediately)
 {
 	Width = InWidth;
 	Height = InHeight;
@@ -51,16 +51,17 @@ bool FWindow::Create(HINSTANCE hInstance, int InWidth, int InHeight, const wchar
 	wc.hInstance = hInstance;
 	wc.lpszClassName = CLASS_NAME;
 	wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON2));
+	// 검은색 배경 브러시 지정
+	wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
 	RegisterClassW(&wc);
 
 	DWORD style = WS_OVERLAPPEDWINDOW;
 
-	// 원하는 클라이언트 크기 -> 실제 윈도우 크기로 보정
+	// 원하는 클라이언트 크기 반영
 	RECT rc = { 0, 0, Width, Height };
-	AdjustWindowRect(&rc, style, FALSE);   // FALSE = 메뉴 없음
+	AdjustWindowRect(&rc, style, FALSE);
 	int WindowWidth = rc.right - rc.left;
 	int WindowHeight = rc.bottom - rc.top;
-
 
 	hWnd = CreateWindowEx(
 		0, CLASS_NAME, Title,
@@ -71,10 +72,23 @@ bool FWindow::Create(HINSTANCE hInstance, int InWidth, int InHeight, const wchar
 	if (hWnd == nullptr)
 		return false;
 
-	ShowWindow(hWnd, SW_SHOW);
-
+	// 즉시 표시 설정 확인
+	if (bShowImmediately)
+	{
+		ShowWindow(hWnd, SW_SHOW);
+	}
 
 	return true;
+}
+
+void FWindow::Show()
+{
+	// 창 출력 및 화면 갱신
+	if (hWnd)
+	{
+		ShowWindow(hWnd, SW_SHOW);
+		UpdateWindow(hWnd);
+	}
 }
 
 void FWindow::ProcessMessage(bool& bIsRunning)
@@ -86,6 +100,34 @@ void FWindow::ProcessMessage(bool& bIsRunning)
 		DispatchMessage(&msg);
 		if (msg.message == WM_QUIT) { bIsRunning = false; }
 	}
+}
+
+bool FWindow::CheckResized()
+{
+	// WM_SIZE/WM_EXITSIZEMOVE 전달 여부에만 의존하지 않고 실제 Client 크기를
+	// 비교한다. ImGui platform window 처리나 대화형 크기 조절 중 메시지가
+	// 합쳐져도 다음 프레임에 반드시 Swapchain 크기를 갱신한다.
+	if (hWnd)
+	{
+		RECT ClientRect{};
+		if (GetClientRect(hWnd, &ClientRect))
+		{
+			const uint32 ClientWidth = static_cast<uint32>(
+				(std::max)(0L, ClientRect.right - ClientRect.left));
+			const uint32 ClientHeight = static_cast<uint32>(
+				(std::max)(0L, ClientRect.bottom - ClientRect.top));
+			if (Width != ClientWidth || Height != ClientHeight)
+			{
+				Width = ClientWidth;
+				Height = ClientHeight;
+				bIsResized = true;
+			}
+		}
+	}
+
+	const bool bResult = bIsResized;
+	bIsResized = false;
+	return bResult;
 }
 
 LRESULT FWindow::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -175,17 +217,10 @@ LRESULT FWindow::HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		break;
 
 	case WM_SIZE:
-		if (wParam == SIZE_MINIMIZED)
-			break;
-
 		Width = LOWORD(lParam);
 		Height = HIWORD(lParam);
-
-		if (wParam == SIZE_MAXIMIZED || wParam == SIZE_RESTORED)
-		{
-			if (!bIsInSizeMove)
-				bIsResized = true;
-		}
+		if (wParam != SIZE_MINIMIZED)
+			bIsResized = true;
 		break;
 
 	case WM_ENTERSIZEMOVE:

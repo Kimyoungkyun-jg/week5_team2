@@ -17,6 +17,7 @@ IncludeDir = {}
 IncludeDir["ImGui"] = "Source/ThirdParty/ImGui"
 IncludeDir["stb"]   = "Source/ThirdParty/stb"
 IncludeDir["json"]  = "Source/ThirdParty/json"
+IncludeDir["meshoptimizer"] = "Source/ThirdParty/meshoptimizer"
 
 -- premake의 filter는 project()를 만나면 초기화된다.
 -- 두 프로젝트가 같은 런타임(/MDd vs /MD)으로 컴파일되지 않으면 링크가 실패하므로
@@ -58,6 +59,9 @@ function CommonSettings()
 		runtime  "Release"
 		optimize "on"
 		symbols  "on"
+		-- LTCG: 컴파일 /GL + 링크 /LTCG. .cpp 파일 경계를 넘는 인라인을 허용한다.
+		-- (premake 5.0.0-beta8 문법. 예전 flags { "LinkTimeOptimization" }는 이 버전에서 쓰지 않는다)
+		linktimeoptimization "On"
 
 	-- 에디터 없이 OBJ 파일만 열어보는 Viewer 빌드
 	filter "configurations:ObjViewer"
@@ -106,22 +110,71 @@ project "HitoriEngine"
 	location "Source/Runtime"
 	kind     "StaticLib"
 	CommonSettings()
-
+	filter { "system:windows", "configurations:Release" }
+    	buildoptions { "/GT" }
+	filter {}
 	pchheader "EnginePCH.h"
 	pchsource "Source/Runtime/EnginePCH.cpp"
+
+	-- Group larger subsystems while keeping class and file names aligned.
+	vpaths
+	{
+		["ObjectSystem"] = { "Source/Runtime/ObjectSystem/**" },
+		["World"] = { "Source/Runtime/World/**" },
+		["Core/Names"] = { "Source/Runtime/Core/Name*" },
+		["Core/Profiling"] = { "Source/Runtime/Core/StatOverlay.*", "Source/Runtime/Core/ScopeCycleCounter.*" },
+		["Platform"] = { "Source/Runtime/Core/Window.*", "Source/Runtime/Core/EntryPoint.*" },
+		["Rendering"] =
+		{
+			"Source/Runtime/Rendering/Renderer.*", "Source/Runtime/Rendering/RenderPacket.*",
+			"Source/Runtime/Rendering/RenderCommand.*", "Source/Runtime/Rendering/RenderingInfo.*",
+			"Source/Runtime/Rendering/RenderUtil.*", "Source/Runtime/Rendering/LineBatcher.*",
+			"Source/Runtime/Rendering/SkyboxRenderer.*",
+			"Source/Runtime/Rendering/GPUProfiler.*",
+		},
+		["Rendering/Device"] =
+		{
+			"Source/Runtime/Rendering/RenderDevice.*", "Source/Runtime/Rendering/Swapchain.*",
+			"Source/Runtime/Rendering/PipelineState.*", "Source/Runtime/Rendering/RenderStates.*",
+			"Source/Runtime/Rendering/RenderEnums.*",
+		},
+		["Rendering/Resources"] =
+		{
+			"Source/Runtime/Rendering/Buffer.*", "Source/Runtime/Rendering/Shader.*",
+			"Source/Runtime/Rendering/Texture*", "Source/Runtime/Rendering/RenderResourceManager.*",
+			"Source/Runtime/Rendering/ImageLoader.*",
+		},
+		["Rendering/Materials"] = { "Source/Runtime/Rendering/Material*" },
+		["Rendering/Geometry"] =
+		{
+			"Source/Runtime/Rendering/Mesh.*", "Source/Runtime/Rendering/StaticMeshData.*",
+			"Source/Runtime/Rendering/Vertex.*", "Source/Runtime/Rendering/GeometryGenerator.*",
+		},
+	}
 
 	files
 	{
 		"Source/Runtime/**.h",
 		"Source/Runtime/**.hpp",
 		"Source/Runtime/**.cpp",
+		"%{IncludeDir.meshoptimizer}/meshoptimizer.h",
+		"%{IncludeDir.meshoptimizer}/allocator.cpp",
+		"%{IncludeDir.meshoptimizer}/simplifier.cpp",
+		"%{IncludeDir.meshoptimizer}/vcacheoptimizer.cpp",
+		"%{IncludeDir.meshoptimizer}/vfetchoptimizer.cpp",
+		"%{IncludeDir.meshoptimizer}/overdrawoptimizer.cpp",
 	}
+
+	filter "files:Source/ThirdParty/meshoptimizer/**.cpp"
+		enablepch "Off"
+	filter {}
 
 	includedirs
 	{
 		"Source/Runtime",
 		"%{IncludeDir.stb}",
 		"%{IncludeDir.json}",
+		"%{IncludeDir.meshoptimizer}",
 	}
 
 	links
@@ -141,6 +194,20 @@ project "HitoriEditor"
 
 	pchheader "EnginePCH.h"
 	pchsource "Source/Editor/EditorPCH.cpp"
+
+	vpaths
+	{
+		["Application"] = { "Source/Editor/Application/**", "Source/Editor/EditorEntryPoint.cpp" },
+		["UI"] = { "Source/Editor/EditorUI/**" },
+		["Panels"] =
+		{
+			"Source/Editor/ContentDrawer/**", "Source/Editor/Details/**",
+			"Source/Editor/EditorControls/**", "Source/Editor/Outliner/**",
+			"Source/Editor/OutputLog/**", "Source/Editor/Settings/**",
+		},
+		["Viewports"] = { "Source/Editor/Viewports/**" },
+		["Tools/ObjViewer"] = { "Source/Programs/ObjViewer/**" },
+	}
 
 	links { "HitoriEngine", "ImGui" }
 
@@ -162,6 +229,7 @@ project "HitoriEditor"
 		"%{IncludeDir.ImGui}/backends",
 		"%{IncludeDir.stb}",
 		"%{IncludeDir.json}",
+		"%{IncludeDir.meshoptimizer}",
 	}
 
 	links

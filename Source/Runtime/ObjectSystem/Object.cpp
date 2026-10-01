@@ -1,4 +1,6 @@
 #include "EnginePCH.h"
+#include "Rendering/Mesh.h"
+#include "Rendering/Material.h"
 #include "Object.h"
 
 #include "Core/EngineStatics.h"
@@ -12,6 +14,8 @@ TArray<UObject*> GUObjectArray;
 
 UObject::UObject()
 {
+	static uint32 NextSerialNumber = 1;
+	InternalSerialNumber = NextSerialNumber++;
 	ObjectUUID = FEngineStatics::GetUUID();
 	InternalIndex = GUObjectArray.Num();
 	GUObjectArray.Add(this);
@@ -20,6 +24,8 @@ UObject::UObject()
 
 UObject::UObject(bool bRegister)
 {
+	static uint32 NextSerialNumber = 1;
+	InternalSerialNumber = NextSerialNumber++;
 	bIsRegistered = bRegister;
 }
 
@@ -95,7 +101,7 @@ void UObject::Serialize(json& Handle, bool bIsLoading)
 			case EPropertyType::String:
 			{
 				FString& Value = *static_cast<FString*>(Ptr);
-				if (bIsLoading) Value = Handle[Property.Name].get<std::string>();
+				if (bIsLoading) Value = Handle[Property.Name].get<FString>();
 				else Handle[Property.Name] = Value;
 				break;
 			}
@@ -151,11 +157,11 @@ void UObject::Serialize(json& Handle, bool bIsLoading)
 
 					if (Property.Class && Property.Class->IsChildOf(UStaticMesh::StaticClass()))
 					{
-						Asset = UAssetManager::GetAssetByPath<UStaticMesh>(AssetPath);
+						Asset = UAssetManager::GetAssetByKey<UStaticMesh>(AssetPath);
 					}
 					else
 					{
-						Asset = UAssetManager::GetAssetByPath<URenderAsset>(AssetPath);
+						Asset = UAssetManager::GetAssetByKey<URenderAsset>(AssetPath);
 					}
 
 					// 못 찾으면 생성자가 넣어둔 기본값을 그대로 둔다.

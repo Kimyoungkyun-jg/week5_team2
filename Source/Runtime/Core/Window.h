@@ -15,7 +15,8 @@ public:
 	// 훅은 등록한 쪽이 수명을 책임진다. 해제는 nullptr을 넘긴다.
 	static void SetWndProcHook(FWndProcHook Hook);
 
-	bool Create(HINSTANCE hInstance, int Width, int Height, const wchar_t* Title);
+	bool Create(HINSTANCE hInstance, int Width, int Height, const wchar_t* Title, bool bShowImmediately = true);
+	void Show();
 	void ProcessMessage(bool& bIsRunning);
 
 	HWND GetHandle() const { return hWnd;  }
@@ -25,15 +26,7 @@ public:
 
 	LRESULT HandleMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-	bool CheckResized()
-	{
-		if (bIsResized)
-		{
-			bIsResized = false;
-			return true;
-		}
-		return false;
-	}
+	bool CheckResized();
 
 private:
 	bool bIsResized = false;

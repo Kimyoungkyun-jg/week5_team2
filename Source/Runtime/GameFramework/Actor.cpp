@@ -1,7 +1,7 @@
 #include "EnginePCH.h"
 #include "Actor.h"
-#include "Engine/World.h"
-#include "Engine/Level.h"
+#include "World/World.h"
+#include "World/Level.h"
 #include "ObjectSystem/ObjectFactory.h"
 #include "Component/SceneComponent.h"
 
@@ -40,6 +40,29 @@ void AActor::Tick(float DeltaTime)
 	{
 		Component->TickComponent(DeltaTime);
 	}
+}
+
+void AActor::SetActorTickEnabled(const bool bEnabled)
+{
+	const bool bNewEnabled = bCanEverTick && bEnabled;
+	if (bTickEnabled == bNewEnabled)
+		return;
+
+	bTickEnabled = bNewEnabled;
+	if (World)
+		World->RefreshActorTickRegistration(this);
+}
+
+void AActor::SetCanEverTick(const bool bEnabled)
+{
+	if (bCanEverTick == bEnabled)
+		return;
+
+	bCanEverTick = bEnabled;
+	if (!bCanEverTick)
+		bTickEnabled = false;
+	if (World)
+		World->RefreshActorTickRegistration(this);
 }
 
 void AActor::RemoveOwnedComponent(UActorComponent* Component)

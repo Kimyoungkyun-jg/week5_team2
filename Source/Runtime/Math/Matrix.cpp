@@ -111,17 +111,11 @@ FMatrix FMatrix::MakeTranslation(const FVector& T)
 
 FVector4 FMatrix::TransformFVector4(const FVector4& V) const
 {
-	FMatrixRegister MReg = FMatrixRegister::Load(*this);
-	MReg = MReg.Transpose();
+	const FVectorRegister Result = MultiplyRow(VectorSIMD::Load(V.V), FMatrixRegister::Load(*this));
 
-	FVectorRegister VReg = VectorSIMD::SetVal(V.X, V.Y, V.Z, V.W);
-
-	return FVector4(
-		VectorSIMD::Dot(MReg.R[0], VReg),
-		VectorSIMD::Dot(MReg.R[1], VReg),
-		VectorSIMD::Dot(MReg.R[2], VReg),
-		VectorSIMD::Dot(MReg.R[3], VReg)
-	);
+	FVector4 Out;
+	VectorSIMD::Store(Out.V, Result);
+	return Out;
 }
 
 FVector FMatrix::TransformPosition(const FVector& V) const
@@ -175,21 +169,13 @@ FMatrix FMatrix::Multiply(const FMatrix& Other) const
 
 		Result.R[i] = VectorSIMD::Add(VectorSIMD::Add(X, Y), VectorSIMD::Add(Z, W));
 	}
-
+	 
 	return Result.ToFMatrix();
 }
 
 /* Operator */
 
-FMatrix& FMatrix::operator = (const FMatrix& Other)
-{
-	M[0][0] = Other[0][0]; M[0][1] = Other[0][1]; M[0][2] = Other[0][2]; M[0][3] = Other[0][3];
-	M[1][0] = Other[1][0]; M[1][1] = Other[1][1]; M[1][2] = Other[1][2]; M[1][3] = Other[1][3];
-	M[2][0] = Other[2][0]; M[2][1] = Other[2][1]; M[2][2] = Other[2][2]; M[2][3] = Other[2][3];
-	M[3][0] = Other[3][0]; M[3][1] = Other[3][1]; M[3][2] = Other[3][2]; M[3][3] = Other[3][3];
-
-	return *this;
-}
+// operator= 는 Matrix.h에서 = default 로 선언 (원소 복사, 헤더에서 인라인됨)
 
 FMatrix FMatrix::operator - ()
 {

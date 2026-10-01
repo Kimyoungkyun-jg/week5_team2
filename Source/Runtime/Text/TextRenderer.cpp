@@ -3,8 +3,8 @@
 
 #include "Camera/CameraComponent.h"
 
-#include "Render/RenderCommand.h"
-#include "Render/RenderResourceManager.h"
+#include "Rendering/RenderCommand.h"
+#include "Rendering/RenderResourceManager.h"
 
 #include "Font.h"
 
@@ -206,13 +206,14 @@ void FTextRenderer::OnRender(const FString& Text, const FMatrix& WorldMatrix, fl
 	RenderCommand::UpdateBufferData(IndexBuffer.get(), Indices.GetData(), sizeof(uint32) * Indices.Num());
 
 	TextTransformData TransData;
-	TransData.World = WorldMatrix.GetTransposed();
-	TransData.ViewProj = ViewProjection.GetTransposed();
+	// TextShader cbuffer가 row_major이므로 전치 없이 올린다.
+	TransData.World = WorldMatrix;
+	TransData.ViewProj = ViewProjection;
 
 	MSDFData MSDFData;
 	MSDFData.ScreenPx = Atlas.DistanceRange;
 
-	RenderCommand::BindPipelineState(PipelineState);
+	RenderCommand::BindPipelineState(&PipelineState);
 	RenderCommand::BindShaderResource(0, Atlas.AtlasTexture, EShaderBindFlagBits::Pixel);
 	RenderCommand::UpdateBufferData(MVP.get(), &TransData, sizeof(TextTransformData));
 	RenderCommand::UpdateBufferData(ScreenPx.get(), &MSDFData, sizeof(MSDFData));

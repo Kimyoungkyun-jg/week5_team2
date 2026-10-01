@@ -2,13 +2,15 @@
 
 #include "Types.h"
 #include "EngineString.h"
+#include "StatDefinitions.h"
 
 // Overlay로 표시할 Stat 항목. 여러 항목을 동시에 켤 수 있어 비트 플래그로 둔다.
 enum class EStatFlags : uint32
 {
 	None   = 0,
 	FPS    = 1 << 0,
-	Memory = 1 << 1,
+
+	Picking = 1 << 2,
 };
 DEFINE_ENUM_OPERATORS(EStatFlags)
 
@@ -27,10 +29,20 @@ public:
 	static EStatFlags GetFlags() { return Flags; }
 	static bool IsEnabled(EStatFlags Flag) { return HasFlag(Flags, Flag); }
 	static bool IsAnyEnabled() { return Flags != EStatFlags::None; }
+	static void SetEnabled(EStatFlags Flag, bool bEnabled)
+	{
+		if (bEnabled)
+			Flags |= Flag;
+		else
+			Flags &= ~Flag;
+	}
+
+	static uint32 GetScreenWidth();
+	static uint32 GetScreenHeight();
 
 	// 샘플 구간 평균 FPS와 프레임 시간(ms). 매 프레임 값은 흔들려서 평균만 노출한다.
-	static float GetFPS() { return DisplayFPS; }
-	static float GetFrameTimeMs() { return DisplayFrameTimeMs; }
+	static float GetFPS() { return static_cast<float>(FStats::GetRecord(StatIds::FrameFPS()).CurrentValue); }
+	static float GetFrameTimeMs() { return static_cast<float>(FStats::GetRecord(StatIds::FrameTime()).CurrentValue); }
 
 	// UObject::operator new/delete가 추적한 누적 할당량.
 	static uint64 GetObjectAllocationBytes();
@@ -42,9 +54,8 @@ private:
 	// 표시 수치 갱신 주기(초). 너무 짧으면 숫자가 읽히지 않는다.
 	static constexpr float SampleInterval = 0.25f;
 
-	inline static EStatFlags Flags = EStatFlags::None;
+	inline static EStatFlags Flags =
+		EStatFlags::FPS | EStatFlags::Picking;
 	inline static float AccumulatedTime = 0.0f;
 	inline static int32 AccumulatedFrames = 0;
-	inline static float DisplayFPS = 0.0f;
-	inline static float DisplayFrameTimeMs = 0.0f;
 };

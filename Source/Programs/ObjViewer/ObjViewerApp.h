@@ -1,11 +1,11 @@
 #pragma once
 
 #include "Core/Window.h"
-#include "Render/RenderDevice.h"
-#include "Render/RenderPacket.h"
-#include "Render/Renderer.h"
-#include "Render/Swapchain.h"
-#include "Render/Texture2D.h"
+#include "Rendering/RenderDevice.h"
+#include "Rendering/RenderPacket.h"
+#include "Rendering/Renderer.h"
+#include "Rendering/Swapchain.h"
+#include "Rendering/Texture2D.h"
 
 #include "Core/Application.h"
 
@@ -28,7 +28,7 @@ private:
 	void UpdateWindowTitle();
 
 	// Render
-	void BuildRenderQueue(TQueue<FRenderPacket>& OutQueue) const;
+	void BuildRenderPackets(TArray<FRenderPacket>& OutPackets, const FMatrix& ViewProjection) const;
 	void CreateDepthBuffer(uint32 Width, uint32 Height);
 
 	// Camera
@@ -41,6 +41,8 @@ private:
 	TUniquePtr<FWindow> MainWindow;
 	TUniquePtr<FSwapchain> Swapchain;
 	TUniquePtr<FTexture2D> DepthBuffer;
+	// 프레임마다 Reset해 기존 capacity를 재사용한다.
+	TArray<FRenderPacket> RenderPackets;
 
 	UStaticMesh* Mesh = nullptr;
 	FString CurrentMeshPath;

@@ -1,13 +1,13 @@
 #include "EnginePCH.h"
 #include "StaticMeshComponent.h"
 #include "Asset/AssetManager.h"
-#include "Render/RenderCommand.h"
+#include "Rendering/RenderCommand.h"
 
 
 // StaticMesh 컴포넌트를 초기화한다.
 UStaticMeshComponent::UStaticMeshComponent()
 {
-    StaticMesh = UAssetManager::GetAssetByPath<UStaticMesh>("Cube");
+	StaticMesh = UAssetManager::GetAssetByKey<UStaticMesh>("Cube");
 }
 
 // StaticMesh 컴포넌트의 소멸을 처리한다.
@@ -34,6 +34,8 @@ void UStaticMeshComponent::SetStaticMesh(UStaticMesh* InStaticMesh)
 
     StaticMesh = InStaticMesh;
     ClearOverrideMaterials();
+    MarkBoundsDirtyRecursive();
+	bRenderPacketCacheDirty = true;
 }
 
 int32 UStaticMeshComponent::GetNumMaterials() const
@@ -53,28 +55,59 @@ UMaterial* UStaticMeshComponent::GetDefaultMaterial(int32 SlotIndex) const
     return StaticMesh ? StaticMesh->GetMaterial(static_cast<uint32>(SlotIndex)) : nullptr;
 }
 
-// Section별 Material·Texture와 인덱스 범위를 보존해 패킷을 제출한다.
-void UStaticMeshComponent::SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue)
+void UStaticMeshComponent::RebuildRenderPacketCache()
+{
+	CachedRenderPackets.Reset();
+
+	if (!StaticMesh)
+		return;
+
+	const FStaticMeshData& MeshData = StaticMesh->GetMeshData();
+
+	for (const FStaticMeshSection& Section : MeshData.Sections)
+	{
+		UMaterial* SectionMaterial = GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
+		if (!SectionMaterial)
+			continue;
+
+		FRenderPacket rp;
+		rp.mesh = StaticMesh;
+		rp.material = SectionMaterial;
+		rp.StartIndex = Section.StartIndex;
+		rp.IndexCount = Section.IndexCount;
+		CachedRenderPackets.Add(rp);
+	}
+	
+	CachedMeshRenderDataRevision = StaticMesh->GetRenderDataRevision();
+	bRenderPacketCacheDirty = false;
+}
+
+void UStaticMeshComponent::SetMaterial(int32 SlotIndex, UMaterial* InMaterial)
+{
+	UMaterial* PreviousMaterial = GetMaterial(SlotIndex);
+
+	UMeshComponent::SetMaterial(SlotIndex, InMaterial);
+
+	if (PreviousMaterial != GetMaterial(SlotIndex))
+		bRenderPacketCacheDirty = true;
+}
+
+// TArray 기반 고속 패킷 제출
+void UStaticMeshComponent::SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets)
 {
     if (!StaticMesh)
         return;
 
-    const FStaticMeshData& MeshData = StaticMesh->GetMeshData();
+	if (bRenderPacketCacheDirty || CachedMeshRenderDataRevision != StaticMesh->GetRenderDataRevision())
+	{
+		RebuildRenderPacketCache();
+	}
 
-    for (const FStaticMeshSection& Section : MeshData.Sections)
-    {
-        // 슬롯마다 덮어쓰기가 있으면 그것, 없으면 메시(OBJ/MTL)의 기본 머티리얼
-        UMaterial* SectionMaterial = GetMaterial(static_cast<int32>(Section.MaterialSlotIndex));
-        if (!SectionMaterial)
-            continue;
+    const FMatrix WorldMatrix = GetWorldMatrix();
 
-        FRenderPacket rp;
-        rp.mesh = StaticMesh;
-        rp.model = GetWorldMatrix();
-        rp.StartIndex = Section.StartIndex;
-        rp.IndexCount = Section.IndexCount;
-        rp.material = SectionMaterial;
-
-        RenderQueue.Enqueue(rp);
-    }
+	for (FRenderPacket RenderPacket : CachedRenderPackets)
+	{
+		RenderPacket.model = WorldMatrix;
+		OutPackets.Add(RenderPacket);
+	}
 }

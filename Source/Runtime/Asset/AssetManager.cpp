@@ -1,20 +1,23 @@
 #include "EnginePCH.h"
 #include "AssetManager.h"
-#include "Render/Buffer.h"
-#include "Render/Material.h"
+#include "Rendering/Buffer.h"
+#include "Rendering/Mesh.h"
+#include "Rendering/Material.h"
 
-#include "Render/Vertex.h"
-#include "Render/Texture2D.h"
-#include "Render/RenderCommand.h"
+#include "Rendering/Vertex.h"
+#include "Rendering/Texture2D.h"
+#include "Rendering/RenderCommand.h"
 
-#include "Render/RenderResourceManager.h"
+#include "Rendering/RenderResourceManager.h"
 
 #include "Asset/ObjImporter/ObjImporter.h"
 
-#include "Render/GeometryGenerator.h"
+#include "Rendering/GeometryGenerator.h"
 #include "ObjectSystem/ObjectFactory.h"
 
-#include "Render/ImageLoader.h"
+#include "Rendering/ImageLoader.h"
+#include "Collision/Ray.h"
+#include <meshoptimizer.h>
 
 
 namespace
@@ -23,11 +26,6 @@ namespace
 	{
 		if (!MeshData || !MeshData->Vertices.Num() || !MeshData->Indices.Num())
 			return nullptr;
-
-		TUniquePtr<FVertexBuffer> VB = RenderCommand::CreateStaticVertexBuffer(MeshData->Vertices.GetData(), sizeof(FVertexPNCT) * static_cast<uint32>(MeshData->Vertices.size()), sizeof(FVertexPNCT));
-		TUniquePtr<FIndexBuffer> IB = RenderCommand::CreateStaticIndexBuffer(MeshData->Indices.GetData(), static_cast<uint32>(MeshData->Indices.size()));
-
-		if (VB == nullptr || IB == nullptr) return nullptr;
 
 		UStaticMesh* Mesh = FObjectFactory::ConstructObject<UStaticMesh>();
 
@@ -53,11 +51,72 @@ namespace
 			Mesh->MeshData.Sections.Add(DefaultSection);
 		}
 
-		// Vertex/Index GPU 업로드
-		Mesh->VertexBuffer = std::move(VB);
-		Mesh->IndexBuffer = std::move(IB);
+		const size_t VertexCount = Mesh->MeshData.Vertices.Num();
+		const size_t IndexCount = Mesh->MeshData.Indices.Num();
 
-		UMaterial* DefaultMaterial = UAssetManager::GetAssetByPath<UMaterial>("DefaultMaterial");
+		// 인덱스 버퍼 및 버텍스 캐시 최적화
+		for (const FStaticMeshSection& Section : Mesh->MeshData.Sections)
+		{
+			if (Section.IndexCount == 0)
+			{
+				continue;
+			}
+
+			uint32* SectionIndices = Mesh->MeshData.Indices.GetData() + Section.StartIndex;
+
+			meshopt_optimizeVertexCache(
+				SectionIndices,
+				SectionIndices,
+				Section.IndexCount,
+				VertexCount
+			);
+
+			meshopt_optimizeOverdraw(
+				SectionIndices,
+				SectionIndices,
+				Section.IndexCount,
+				reinterpret_cast<const float*>(&Mesh->MeshData.Vertices[0].Position),
+				VertexCount,
+				sizeof(FVertexPNCT),
+				1.05f
+			);
+		}
+
+		// 버텍스 버퍼 재정렬 및 인덱스 리매핑
+		TArray<FVertexPNCT> OptimizedVertices;
+		OptimizedVertices.SetNum(VertexCount);
+		meshopt_optimizeVertexFetch(
+			OptimizedVertices.GetData(),
+			Mesh->MeshData.Indices.GetData(),
+			IndexCount,
+			Mesh->MeshData.Vertices.GetData(),
+			VertexCount,
+			sizeof(FVertexPNCT)
+		);
+		Mesh->MeshData.Vertices = std::move(OptimizedVertices);
+
+		// 피킹 중 최초 구축 비용이 들어가지 않도록 로드 단계에서 Triangle BVH를 준비한다.
+		PrepareMeshPickingBVH(Mesh->MeshData);
+
+		// Vertex/Index GPU 업로드
+		Mesh->VertexBuffer = RenderCommand::CreateStaticVertexBuffer(
+			Mesh->MeshData.Vertices.GetData(),
+			sizeof(FVertexPNCT) * static_cast<uint32>(Mesh->MeshData.Vertices.size()),
+			sizeof(FVertexPNCT)
+		);
+		Mesh->IndexBuffer = RenderCommand::CreateStaticIndexBuffer(
+			Mesh->MeshData.Indices.GetData(),
+			static_cast<uint32>(Mesh->MeshData.Indices.size())
+		);
+
+		if (!Mesh->VertexBuffer || !Mesh->IndexBuffer)
+		{
+			return nullptr;
+		}
+
+		Mesh->GenerateLODs();
+
+		UMaterial* DefaultMaterial = UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial");
 		if (!DefaultMaterial)
 		{
 			return nullptr;
@@ -74,8 +133,7 @@ namespace
 			Material->BaseColor = Slot.BaseColor;
 			if (Material->BaseColor.W < 1.0f)
 			{
-				Material->BlendState = EBlendState::AlphaBlend;
-				Material->DepthStencilState = EDepthStencilState::ReadOnly;
+				Material->PSOType = EPSOType::StaticMesh_Translucent;
 			}
 
 			if (!Slot.DiffuseTexturePath.empty())
@@ -104,7 +162,7 @@ UAssetManager& UAssetManager::Get()
 	return *Instance;
 }
 
-void UAssetManager::ScanAssets(const fs::path& AssetRoot)
+void UAssetManager::ScanAssets(const fs::path& AssetRoot, std::function<void(float, const FString&)> OnProgress)
 {
 	if (!fs::exists(AssetRoot))
 	{
@@ -112,14 +170,32 @@ void UAssetManager::ScanAssets(const fs::path& AssetRoot)
 		return;
 	}
 
+	// 애셋 목록 수집
+	TArray<fs::path> AssetFiles;
 	for (const fs::directory_entry& Entry : fs::recursive_directory_iterator(AssetRoot))
 	{
 		if (!Entry.is_regular_file()) continue;
+		AssetFiles.Add(Entry.path());
+	}
 
-		FString Key = fs::relative(Entry.path(), AssetRoot).generic_string();
-		FString Path = Entry.path().generic_string();
+	const int32 TotalFiles = static_cast<int32>(AssetFiles.Num());
+	int32 ProcessedCount = 0;
+
+	// 애셋 순회 로드
+	for (const fs::path& FilePath : AssetFiles)
+	{
+		FString Key = fs::relative(FilePath, AssetRoot).generic_string();
+		FString Path = FilePath.generic_string();
 		AssetPathMap.Add(Key, Path);
 		LoadAsset(Key, Path);
+
+		++ProcessedCount;
+		// 진행도 콜백 호출
+		if (OnProgress && TotalFiles > 0)
+		{
+			const float Ratio = static_cast<float>(ProcessedCount) / static_cast<float>(TotalFiles);
+			OnProgress(Ratio, Key);
+		}
 	}
 }
 
@@ -147,13 +223,13 @@ void UAssetManager::LoadAsset(const FString& Key, const FString& Path)
 	}
 }
 
-void UAssetManager::Init()
+void UAssetManager::Init(std::function<void(float, const FString&)> OnProgress)
 {
 	FGeometryGenerator::CreateDefaultMeshDatas();
 	// 머티리얼이 참조하므로 반드시 먼저 만든다
 	CreateDefaultTextures();
 	CreateDefaultMaterial();
-	ScanAssets("Assets");
+	ScanAssets("Assets", OnProgress);
 	CreateDefaultMeshes();
 	CreateParticleMaterial();
 }
@@ -260,11 +336,8 @@ void UAssetManager::CreateDefaultMeshes()
 void UAssetManager::CreateDefaultMaterial()
 {
 	UMaterial* DefaultMat = FObjectFactory::ConstructObject<UMaterial>();
-	DefaultMat->Shader = FRenderResourceManager::GetShaderProgram("Resources/Shader/StaticMeshShader.hlsl");
-	DefaultMat->Textures.Add(GetAssetByPath<UTexture2D>("WhiteTexture"));
-
-
-	DefaultMat->ParamLayout = EMaterialParamLayout::StaticMesh;
+	DefaultMat->PSOType = EPSOType::StaticMesh_Opaque;
+	DefaultMat->Textures.Add(GetAssetByKey<UTexture2D>("WhiteTexture"));
 	DefaultMat->ParamBuffer = RenderCommand::CreateConstantBuffer(sizeof(FStaticMeshMaterialParams));
 	RegisterAsset("DefaultMaterial", DefaultMat);
 }
@@ -272,11 +345,8 @@ void UAssetManager::CreateDefaultMaterial()
 void UAssetManager::CreateParticleMaterial()
 {
 	UMaterial* ParticleMat = FObjectFactory::ConstructObject<UMaterial>();
-	ParticleMat->Shader = FRenderResourceManager::GetShaderProgram("Resources/Shader/ParticleSubUVShader.hlsl");
-	ParticleMat->Textures.Add(GetAssetByPath<UTexture2D>("Assets/SubUV/StarParticle.png"));
-	ParticleMat->BlendState = EBlendState::AlphaBlend;
-	ParticleMat->DepthStencilState = EDepthStencilState::ReadOnly;
-	ParticleMat->ParamLayout = EMaterialParamLayout::ParticleSubUV;
+	ParticleMat->PSOType = EPSOType::Particle_AlphaBlend;
+	ParticleMat->Textures.Add(GetAssetByKey<UTexture2D>("Assets/SubUV/StarParticle.png"));
 	ParticleMat->ParamBuffer = RenderCommand::CreateConstantBuffer(256);
 	RegisterAsset("SubUVMaterial", ParticleMat);
 }
@@ -346,18 +416,46 @@ UFont* UAssetManager::LoadFontAtlas(const FString& JsonPath, const FString& Atla
 UStaticMesh* UAssetManager::LoadObjStaticMesh(const FString& Path)
 {
 	const FString Key = MakeAssetKey(Path);
-	if (UStaticMesh* Cached = GetAssetByPath<UStaticMesh>(Key))
+	if (UStaticMesh* Cached = GetAssetByKey<UStaticMesh>(Key))
 	{
 		return Cached;
 	}
 
-	TUniquePtr<FStaticMeshData> Data = FObjImporter::LoadStaticMeshData(Path);
+	EObjAxisPreset Preset = EObjAxisPreset::Default;
+	TUniquePtr<FStaticMeshData> Data = FObjImporter::LoadStaticMeshData(Path, Preset);
+
 	UStaticMesh* Mesh = CreateStaticMesh(Data.get());   // Data가 nullptr이면 nullptr 반환
 	if (!Mesh)
 	{
 		return nullptr;
 	}
 
+	Mesh->ImportAxisPreset = Preset;
+	Mesh->AppliedAxisPreset = Preset;
+
 	Get().RegisterAsset(Key, Mesh);
 	return Mesh;
+}
+
+bool UAssetManager::ReimportStaticMesh(UStaticMesh* Mesh)
+{
+	if (!Mesh)
+		return false;
+
+	const FString Key = Mesh->GetPath();
+
+	FString* Path = Get().AssetPathMap.FindOrNull(Key);
+	if (!Path)
+		return false;
+
+	std::filesystem::remove(*Path + ".bin");
+
+	TUniquePtr<FStaticMeshData> Data = FObjImporter::LoadStaticMeshData(*Path, Mesh->ImportAxisPreset);
+
+	if (!Data)
+	{
+		return false;
+	}
+
+	return Mesh->RebuildFromMeshData(std::move(*Data));
 }

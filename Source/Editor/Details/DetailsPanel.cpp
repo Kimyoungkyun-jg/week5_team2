@@ -1,16 +1,19 @@
 #include "EnginePCH.h"
 #include "Editor/Details/DetailsPanel.h"
+#include "World/World.h"
+#include <format>
 
 #include "imgui_internal.h"
-#include "Editor/HitoriEd/EditorDragDrop.h"
+#include "Editor/Application/EditorDragDrop.h"
 #include "Component/PrimitiveComponent.h"
 #include "Component/StaticMeshComponent.h"
 #include "Component/TextRenderComponent.h"
 #include "Asset/AssetManager.h"
-#include "Render/Material.h"
-#include "Render/Texture2D.h"
+#include "Rendering/Material.h"
+#include "Rendering/Texture2D.h"
+#include "Rendering/Mesh.h"
 #include "Text/Font.h"
-#include "UObject/UObjectIterator.h"
+#include "ObjectSystem/UObjectIterator.h"
 #include "GameFramework/Actor.h"
 
 namespace
@@ -38,7 +41,7 @@ namespace
 
 		// 드래그 슬라이더
 		ImGui::SameLine();
-		std::string dragID = "##" + _label;
+		FString dragID = "##" + _label;
 		isValueChanged |= ImGui::DragFloat(dragID.c_str(), &_value, _speed, _minValue, _maxValue, "%.2f");
 
 		return isValueChanged;
@@ -147,7 +150,7 @@ namespace
 				// 머티리얼이 없으면 기본 머티리얼에서 시작한다
 				if (!Material)
 				{
-					Material = UMaterial::CreateInstance(UAssetManager::GetAssetByPath<UMaterial>("DefaultMaterial"));
+					Material = UMaterial::CreateInstance(UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial"));
 					*MaterialPtr = Material;
 				}
 				// 공유 에셋이면 지금 복제한다.
@@ -293,6 +296,74 @@ namespace
 			}
 			ImGui::EndCombo();
 		}
+
+		if (Current)
+		{
+			ImGui::Spacing();
+			ImGui::Text("Import Settings");
+
+			const char* AxisItems[] = {"Y-Up (Default)", "Z-Up"};
+			int AxisIndex = static_cast<int>(Current->ImportAxisPreset);
+
+			ImGui::TextDisabled("Axis");
+			ImGui::SameLine();
+
+			const float ButtonWidth = ImGui::CalcTextSize("Reimport").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ButtonWidth - ImGui::GetStyle().ItemSpacing.x);
+
+			if (ImGui::Combo("##ImportAxis", &AxisIndex, AxisItems, IM_ARRAYSIZE(AxisItems)))
+			{
+				Current->ImportAxisPreset = static_cast<EObjAxisPreset>(AxisIndex);
+			}
+
+			ImGui::SameLine();
+
+			const bool bPresetChanged = Current->ImportAxisPreset != Current->AppliedAxisPreset;
+
+			if (!bPresetChanged)
+				ImGui::BeginDisabled();
+
+			if (ImGui::Button("Reimport"))
+			{
+				EObjAxisPreset Previous = Current->AppliedAxisPreset;
+
+				if (UAssetManager::ReimportStaticMesh(Current))
+				{
+					Current->AppliedAxisPreset = Current->ImportAxisPreset;
+
+					LOG(Info, "[StaticMesh] Reimported: {} -> {} ({})", AxisItems[static_cast<int>(Previous)], AxisItems[static_cast<int>(Current->AppliedAxisPreset)], Current->GetPath());
+				}
+			}
+
+			if (!bPresetChanged)
+				ImGui::EndDisabled();
+		}
+
+		if (UStaticMeshComponent* MeshComponent = Cast<UStaticMeshComponent>(Owner))
+		{
+			ImGui::Spacing();
+			ImGui::Text("LOD Level");
+
+			int CurrentForced = MeshComponent->GetForcedLOD();
+			int SelectedIndex = CurrentForced + 1;
+			const char* LODItems[] = { "Auto (GPU)", "LOD 0", "LOD 1", "LOD 2" };
+
+			ImGui::SetNextItemWidth(-1.0f);
+			if (ImGui::Combo("##LODSelection", &SelectedIndex, LODItems, IM_ARRAYSIZE(LODItems)))
+			{
+				MeshComponent->SetForcedLOD(static_cast<int8>(SelectedIndex - 1));
+			}
+
+			if (Current)
+			{
+				const uint32 TotalLODs = static_cast<uint32>(Current->LODs.Num());
+				const uint32 Idx0 = Current->GetIndexCount(0);
+				const uint32 Idx1 = Current->GetIndexCount(1);
+				const uint32 Idx2 = Current->GetIndexCount(2);
+				ImGui::TextDisabled("LODs: %u | Indices: %u / %u / %u", TotalLODs, Idx0, Idx1, Idx2);
+			}
+		}
 	}
 
 	UMaterial* EnsureMaterialOverride(UMeshComponent* MeshComponent, int32 Slot, UMaterial* Effective, UMaterial* Override)
@@ -301,7 +372,7 @@ namespace
 		// 메시의 머티리얼은 같은 메시를 쓰는 모든 액터가 공유하므로 직접 고치면 안 된다.
 		if (Override && Override->bIsInstance)	return Override;
 
-		UMaterial* Source = Effective ? Effective : UAssetManager::GetAssetByPath<UMaterial>("DefaultMaterial");
+		UMaterial* Source = Effective ? Effective : UAssetManager::GetAssetByKey<UMaterial>("DefaultMaterial");
 
 		Override = UMaterial::CreateInstance(Source);
 		MeshComponent->SetMaterial(Slot, Override);
@@ -499,19 +570,34 @@ namespace
 					ImGui::TableSetColumnIndex(1);
 					ImGui::SetNextItemWidth(-1.0f);
 
-					const char* BlendItems[] = { "Opaque", "Alpha Blend" };
-					int BlendIndex = Effective ? static_cast<int>(Effective->BlendState) : static_cast<int>(EBlendState::Opaque);
-					if (ImGui::BeginCombo("##BlendState", BlendItems[BlendIndex]))
+					const char* RenderModes[] = { "Opaque", "Alpha Blend", "Wireframe" };
+					int CurrentIndex = 0;
+					if (Effective)
 					{
-						for (int i = 0; i < IM_ARRAYSIZE(BlendItems); ++i)
+						if (Effective->PSOType == EPSOType::StaticMesh_Translucent)
+							CurrentIndex = 1;
+						else if (Effective->PSOType == EPSOType::StaticMesh_Wireframe)
+							CurrentIndex = 2;
+						else
+							CurrentIndex = 0;
+					}
+					if (ImGui::BeginCombo("##RenderMode", RenderModes[CurrentIndex]))
+					{
+						for (int i = 0; i < IM_ARRAYSIZE(RenderModes); ++i)
 						{
-							if (ImGui::Selectable(BlendItems[i], BlendIndex == i))
+							if (ImGui::Selectable(RenderModes[i], CurrentIndex == i))
 							{
 								Override = EnsureMaterialOverride(MeshComponent, Slot, Effective, Override);
 								if (Override)
 								{
-									Override->BlendState = static_cast<EBlendState>(i);
+									if (i == 1)
+										Override->PSOType = EPSOType::StaticMesh_Translucent;
+									else if (i == 2)
+										Override->PSOType = EPSOType::StaticMesh_Wireframe;
+									else
+										Override->PSOType = EPSOType::StaticMesh_Opaque;
 									Effective = Override;
+									MeshComponent->MarkBoundsDirty();
 								}
 							}
 						}
@@ -605,9 +691,14 @@ namespace
 			FTransform* Value = static_cast<FTransform*>(ValuePtr);
 
 			ImGui::NewLine();
-			DrawVector3Controller("Location", Value->Location.V, 0.0f, 55.0f);
-			DrawRotatorAsXYZ("Rotation", Value->Rotation);
-			DrawVector3Controller("Scale", Value->Scale.V, 1.0f, 55.0f);
+			bool bChanged = DrawVector3Controller("Location", Value->Location.V, 0.0f, 55.0f);
+			bChanged |= DrawRotatorAsXYZ("Rotation", Value->Rotation);
+			bChanged |= DrawVector3Controller("Scale", Value->Scale.V, 1.0f, 55.0f);
+			if (bChanged)
+			{
+				if (USceneComponent* SceneComponent = Cast<USceneComponent>(Object))
+					SceneComponent->MarkTransformDirty();
+			}
 			break;
 		}
 		case EPropertyType::Object:

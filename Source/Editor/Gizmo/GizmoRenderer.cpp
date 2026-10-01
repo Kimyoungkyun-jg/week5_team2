@@ -1,10 +1,11 @@
 #include "EnginePCH.h"
 #include "Editor/Gizmo/GizmoRenderer.h"
+#include "Rendering/Mesh.h"
 
-#include "Render/GeometryGenerator.h"
+#include "Rendering/GeometryGenerator.h"
 #include "Camera/CameraComponent.h"
-#include "Render/RenderCommand.h"
-#include "Render/RenderResourceManager.h"
+#include "Rendering/RenderCommand.h"
+#include "Rendering/RenderResourceManager.h"
 #include "Asset/AssetManager.h"
 
 
@@ -18,10 +19,10 @@ bool FGizmoRenderer::Init(FRenderer* InRenderer)
 {
 	Renderer = InRenderer;
 	
-	LocationMesh = UAssetManager::GetAssetByPath<UStaticMesh>("Arrow");
-	RotationMesh = UAssetManager::GetAssetByPath<UStaticMesh>("Ring");
-	ScaleMesh = UAssetManager::GetAssetByPath<UStaticMesh>("ScaleBar");
-	SphereMesh = UAssetManager::GetAssetByPath<UStaticMesh>("GizmoSphere");
+	LocationMesh = UAssetManager::GetAssetByKey<UStaticMesh>("Arrow");
+	RotationMesh = UAssetManager::GetAssetByKey<UStaticMesh>("Ring");
+	ScaleMesh = UAssetManager::GetAssetByKey<UStaticMesh>("ScaleBar");
+	SphereMesh = UAssetManager::GetAssetByKey<UStaticMesh>("GizmoSphere");
 
 	CB = RenderCommand::CreateConstantBuffer(sizeof(FGizmoData));
 
@@ -61,9 +62,9 @@ void FGizmoRenderer::OnRender(
 	default: return;
 	}
 
-	RenderCommand::BindPipelineState(PipelineState);
+	RenderCommand::BindPipelineState(&PipelineState);
 
-	const FMatrix ViewProjT = ViewProj.GetTransposed();
+	// GizmoShader cbuffer가 row_major이므로 행렬을 전치 없이 그대로 올린다.
 	// const FVector GizmoLocation = Gizmo.GetLocation();
 	const int HoveredAxis = Gizmo.GetHoveredAxis();
 
@@ -91,8 +92,8 @@ void FGizmoRenderer::OnRender(
 		}
 
 		FGizmoData Data{};
-		Data.World = World.GetTransposed();
-		Data.ViewProj = ViewProjT;
+		Data.World = World;
+		Data.ViewProj = ViewProj;
 		Data.Color = (i == HoveredAxis)
 			? FVector4(1.0f, 1.0f, 0.0f, 1.0f)     // hover 시 노랑
 			: AxisDataArray[i].Color;
@@ -106,8 +107,8 @@ void FGizmoRenderer::OnRender(
 		Transform.Rotation = FRotator(0.0f, 0.0f, 0.0f);
 
 		FGizmoData SphereData{};
-		SphereData.World = Transform.GetLocalMatrix().GetTransposed();
-		SphereData.ViewProj = ViewProjT;
+		SphereData.World = Transform.GetLocalMatrix();
+		SphereData.ViewProj = ViewProj;
 		SphereData.Color = (6 == HoveredAxis)
 			? FVector4(1.0f, 1.0f, 0.0f, 1.0f)     // hover 시 노랑
 			: AxisDataArray[6].Color;
@@ -131,8 +132,8 @@ void FGizmoRenderer::OnRender(
 		FMatrix Trans = FMatrix::MakeTranslation(GizmoLocation);
 
 		FGizmoData Data{};
-		Data.World = (Scale * Rot * Trans).GetTransposed();
-		Data.ViewProj = ViewProjT;
+		Data.World = Scale * Rot * Trans;
+		Data.ViewProj = ViewProj;
 		Data.Color = (6 == HoveredAxis)
 			? FVector4(1.0f, 1.0f, 0.0f, 1.0f)     // hover 시 노랑
 			: AxisDataArray[6].Color;
@@ -148,5 +149,5 @@ void FGizmoRenderer::DrawMesh(UStaticMesh* Mesh, const FGizmoData& Data)
 	RenderCommand::BindMesh(Mesh);
 	RenderCommand::UpdateBufferData(CB.get(), &Data, sizeof(FGizmoData));
 	RenderCommand::BindConstantBuffer(0, CB.get(), EShaderBindFlagBits::Vertex);
-	RenderCommand::DrawIndexed(Mesh->IndexBuffer->GetIndexCount());
+	RenderCommand::DrawIndexed(Mesh ? Mesh->GetIndexCount() : 0);
 }

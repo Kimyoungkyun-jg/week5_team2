@@ -48,16 +48,13 @@ public:
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime) override;
 
-	virtual void SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue) override;
+	virtual void SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets) override;
 	// Adapter가 View별 거리 정렬 입력을 만들 수 있도록 현재 파티클 배열을 읽기 전용으로 제공한다.
 	const TArray<FParticle>& GetParticlesForView() const { return Particles; }
 	// 프레임의 첫 View 전에 파티클 인덱스별 상수를 준비하고 네 View에서 재사용한다.
 	void BeginViewSubmission();
 	// 불투명 파티클의 기존 정렬 경로를 선택한다.
 	bool UsesOpaqueMaterial() const;
-	// Adapter가 정렬한 파티클을 View별 Billboard 행렬과 거리 순서로 렌더 큐에 넣는다.
-	void SubmitParticleToRenderQueue(TQueue<FRenderPacket>& RenderQueue, int32 ParticleIndex, const FMatrix& WorldMatrix, float CameraDistanceSquared);
-
 	void SetSubUVSize(uint32 Cols, uint32 Rows);
 	void SetFrameRate(float InFrameRate);
 

@@ -1,11 +1,12 @@
 #pragma once
 
 #include "SceneComponent.h"
-#include "../Render/Shader.h"
-#include "../Render/Mesh.h"
-#include "Render/RenderPacket.h"
-#include "Render/GeometryGenerator.h"
+#include "../Rendering/Shader.h"
+#include "../Rendering/Mesh.h"
+#include "Rendering/RenderPacket.h"
+#include "Rendering/GeometryGenerator.h"
 #include "Collision/HitResult.h"
+#include "Collision/Ray.h"
 
 enum class EPrimitiveType
 {
@@ -33,9 +34,7 @@ public:
 
 	virtual void BeginPlay() override;
 
-	// Todo: subuv
-	//void SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue);
-	virtual void SubmitToRenderQueue(TQueue<FRenderPacket>& RenderQueue);
+	virtual void SubmitToRenderPackets(TArray<FRenderPacket>& OutPackets);
 
 	virtual const FStaticMeshData* GetMeshData() const { return nullptr; }
 
@@ -51,18 +50,35 @@ public:
 	// FShader* GetShader() const { return Shader.get(); };
 
 	bool IsVisible() const { return bVisible; }
-	void SetVisible(bool bInVisible) { bVisible = bInVisible; }
+	void SetVisible(bool bInVisible)
+	{
+		if (bVisible == bInVisible)
+			return;
+		bVisible = bInVisible;
+		MarkBoundsDirtyRecursive();
+	}
 
 	virtual bool LineTraceComponent(const FRay& WorldRay, FHitResult& OutHit);
+	// 피킹 전용 판정: 클릭당 한 번 준비한 컨텍스트(레이 역수, 최근접 거리, Billboard 행렬 공급자)를 쓴다.
+	// View에 따라 형상이 정해지는 컴포넌트(Billboard·Particle)는 이 함수를 override한다.
+	virtual bool LineTraceWithContext(const FTraceContext& Context, FHitResult& OutHit);
 	virtual FBox CalcLocalBounds() const override
 	{
 		const FStaticMeshData* Data = GetMeshData();
 		return Data ? Data->AABB : Super::CalcLocalBounds();
 	}
 
+	
+
+	
+
 protected:
-	bool TraceMesh(const FRay& WorldRay, const FStaticMeshData& Mesh, const FMatrix& WorldMatrix, FHitResult& OutResult);
+	virtual void OnBoundsMarkedDirty() override;
+	bool TraceMesh(const FRay& WorldRay, const FStaticMeshData& Mesh, const FMatrix& WorldMatrix, FHitResult& OutResult, float MaxT = FLT_MAX);
 	bool bVisible = true;
 
 	/*TArray<UMaterial* MaterialOverride = nullptr;*/
+
+
+
 };

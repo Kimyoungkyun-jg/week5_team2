@@ -449,3 +449,10 @@ editor.ini
 
 # 셰이더 컴파일 캐시 (실행 시 자동 생성)
 /Intermediate/
+imgui.ini
+editor.ini
+
+Docs/hzb_depth_pyramid.jpg
+Docs/frustum_culling.jpg
+Docs/gpu_to_cpu_readback.jpg
+Docs/hzb_depth_comparison.jpg

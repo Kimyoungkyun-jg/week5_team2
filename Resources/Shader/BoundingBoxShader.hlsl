@@ -1,6 +1,6 @@
 cbuffer constants : register(b0)
 {
-    matrix ViewProj;
+    row_major matrix ViewProj;
 };
 
 struct VS_INPUT

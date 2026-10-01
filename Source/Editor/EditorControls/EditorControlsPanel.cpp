@@ -1,11 +1,11 @@
 #include "EnginePCH.h"
 
 #include "Editor/EditorControls/EditorControlsPanel.h"
-#include "Editor/LevelEditor/MultipleViewports/Adapter/MultipleViewportsAdapter.h"
+#include "Editor/Viewports/MultipleViewportsAdapter.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 
-#include "Engine/World.h"
+#include "World/World.h"
 
 #include "Input/InputSystem.h"
 
@@ -30,10 +30,51 @@ void FEditorControlsPanel::Tick(float DeltaTime)
 	}
 }
 
+FVector FEditorControlsPanel::GetSpawnOrigin() const 
+{
+	const FViewCamera& Camera = ViewportAdapter->GetEditorViewCamera();
+
+	FVector CameraLocation = Camera.Transform.Location;
+	FQuat CameraRotation(Camera.Transform.Rotation.X, Camera.Transform.Rotation.Y, Camera.Transform.Rotation.Z, Camera.Transform.Rotation.W);
+	FVector CameraForward = CameraRotation.GetForwardVector();
+
+	float SpawnDistance = 5.0f;
+	return CameraLocation + CameraForward * SpawnDistance;
+}
+
 // 선택한 클래스의 액터를 월드에 생성한다.
 void FEditorControlsPanel::AddActor(uint32 Index)
 {
-	World->SpawnActor(Classes[Index]);
+	if (!World || !ViewportAdapter || Index >= static_cast<uint32>(Classes.Num()))
+		return;
+
+	FTransform SpawnTransform;
+	SpawnTransform.Location = GetSpawnOrigin();
+	World->SpawnActor(Classes[Index], NAME_None, &SpawnTransform);
+}
+
+void FEditorControlsPanel::AddActorsGrid(uint32 Index)
+{
+	if (!World || !ViewportAdapter || Index >= static_cast<uint32>(Classes.Num()))
+		return;
+
+	FVector GridOrigin = GetSpawnOrigin();
+
+	for (int32 Z = 0; Z < GridCount[2]; ++Z)
+	{
+		for (int32 Y = 0; Y < GridCount[1]; ++Y)
+		{
+			for (int32 X = 0; X < GridCount[0]; ++X)
+			{
+				const FVector Offset(X * GridSpacing, Y * GridSpacing, Z * GridSpacing);
+
+				FTransform SpawnTransform;
+				SpawnTransform.Location = GridOrigin + Offset;
+
+				World->SpawnActor(Classes[Index], NAME_None, &SpawnTransform);
+			}
+		}
+	}
 }
 
 // 액터 생성·카메라 속성·기즈모·경로 추적 UI를 그린다.
@@ -41,38 +82,35 @@ void FEditorControlsPanel::OnRender()
 {
 	ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiCond_FirstUseEver);
 	ImGui::Begin("Editor Controls");
-	ImGui::Spacing();
+	//ImGui::Dummy(ImVec2(0.0f, SectionGap));
 
-	char FpsText[64];
-	std::snprintf(FpsText, sizeof(FpsText), "FPS %.1f   %.1f ms", 1.0f / DeltaTime, DeltaTime * 1000.0f);
-	float TextWidth = ImGui::CalcTextSize(FpsText).x;
-	float CursorX = ImGui::GetCursorPosX();
-	float AvailableWidth = ImGui::GetContentRegionAvail().x;
 
-	ImGui::SetCursorPosX(CursorX + AvailableWidth - TextWidth);
-	ImGui::TextDisabled("%s", FpsText);
+	// 5주차에서 Control Panel의 FPS 표시는 임시 삭제, 추후 복원 가능
+	//char FpsText[64];
+	//std::snprintf(FpsText, sizeof(FpsText), "FPS %.1f   %.1f ms", 1.0f / DeltaTime, DeltaTime * 1000.0f);
+	//float TextWidth = ImGui::CalcTextSize(FpsText).x;
+	//float CursorX = ImGui::GetCursorPosX();
+	//float AvailableWidth = ImGui::GetContentRegionAvail().x;
+
+	//ImGui::SetCursorPosX(CursorX + AvailableWidth - TextWidth);
+	//ImGui::TextDisabled("%s", FpsText);
 
 	//////////////////////////////////////////////////////
 
 	ImGui::Dummy(ImVec2(0.0f, SectionGap));
 	ImGui::SeparatorText("Actor Spawn");
 
+	// Actor 종류 ComboBox로 골라 하나씩 스폰
 	const float SpawnButtonWidth = 70.0f;
 
 	char CountText[32];
-	std::snprintf(
-		CountText,
-		sizeof(CountText),
-		"%d Actors",
-		World->GetActorNum()
-	);
+	std::snprintf(CountText, sizeof(CountText), "%d Actors", World ? World->GetActorNum() : 0);
 
 	const float CountWidth = ImGui::CalcTextSize(CountText).x;
 	const float Available = ImGui::GetContentRegionAvail().x;
-	const float Spacing = ImGui::GetStyle().ItemSpacing.x;
+	const float ItemSpacing = ImGui::GetStyle().ItemSpacing.x;
 
-	const float ComboWidth =
-		Available - SpawnButtonWidth - CountWidth - Spacing * 2.0f;
+	const float ComboWidth = Available - SpawnButtonWidth - CountWidth - ItemSpacing * 2.0f;
 
 	ImGui::SetNextItemWidth(ComboWidth);
 	ImGui::Combo("##ActorType", &SelectedIndex, Items, IM_ARRAYSIZE(Items));
@@ -87,6 +125,65 @@ void FEditorControlsPanel::OnRender()
 	ImGui::SameLine();
 	ImGui::TextDisabled("%s", CountText);
 
+	// StaticMeshActor를 Grid 간격 맞춰서 한꺼번에 소환
+	ImGui::Dummy(ImVec2(0.0f, SubsectionGap));
+
+	if (ImGui::CollapsingHeader("Grid Spawn"))
+	{
+		if (ImGui::BeginTable("GridSpawnSettings", 2))
+		{
+			ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+			ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::Text("Count");
+
+			ImGui::TableSetColumnIndex(1);
+			ImGui::SetNextItemWidth(-1.0f);
+			ImGui::InputInt3("##GridCount", GridCount);
+
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::Text("Spacing");
+
+			ImGui::TableSetColumnIndex(1);
+			ImGui::SetNextItemWidth(-1.0f);
+			ImGui::DragFloat("##GridSpacing", &GridSpacing, 0.1f, 0.1f, 100.0f, "%.1f");
+
+			const bool bValidGrid = GridCount[0] > 0 && GridCount[1] > 0 && GridCount[2] > 0 && GridSpacing > 0.0f;
+
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::Text("Total");
+
+			ImGui::TableSetColumnIndex(1);
+
+			if (bValidGrid)
+			{
+				const int32 TotalCount = GridCount[0] * GridCount[1] * GridCount[2];
+
+				ImGui::TextDisabled("%d Actors", TotalCount);
+			}
+			else
+			{
+				ImGui::TextDisabled("Invalid");
+			}
+
+			ImGui::EndTable();
+
+			ImGui::Dummy(ImVec2(0.0f, SubsectionGap));
+
+			ImGui::BeginDisabled(!bValidGrid);
+
+			if (ImGui::Button("Spawn Grid", ImVec2(-1.0f, 0)))
+			{
+				AddActorsGrid(SelectedIndex);
+			}
+			ImGui::EndDisabled();
+		}
+	}
+
 	//////////////////////////////////////////////////////
 
 	DrawCameraProperties();
@@ -96,7 +193,7 @@ void FEditorControlsPanel::OnRender()
 	ImGui::Dummy(ImVec2(0.0f, SectionGap));
 	ImGui::SeparatorText("Gizmo");
 
-	if (ImGui::BeginTable("GizmoControls", 2))
+	if (Gizmo && ImGui::BeginTable("GizmoControls", 2))
 	{
 		ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, 70.0f);
 		ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
@@ -130,49 +227,6 @@ void FEditorControlsPanel::OnRender()
 	}
 
 	//////////////////////////////////////////////////////
-
-	ImGui::Dummy(ImVec2(0.0f, SectionGap));
-	ImGui::SeparatorText("Path Tracker");
-
-	ImGui::TextDisabled("Recording");
-
-	if (ImGui::BeginTable("RecordingControls", 3))
-	{
-		ImGui::TableNextRow();
-
-		ImGui::TableSetColumnIndex(0);
-		if (ImGui::Button("Start", ImVec2(-1, 0)))
-			World->GetPathTracker().SetPathRenderingEnabled(true);
-
-		ImGui::TableSetColumnIndex(1);
-		if (ImGui::Button("Stop", ImVec2(-1, 0)))
-			World->GetPathTracker().SetPathRenderingEnabled(false);
-
-		ImGui::TableSetColumnIndex(2);
-		if (ImGui::Button("Clear", ImVec2(-1, 0)))
-			World->GetPathTracker().ClearPath();
-
-		ImGui::EndTable();
-	}
-
-	ImGui::Dummy(ImVec2(0.0f, SubsectionGap));
-
-	ImGui::TextDisabled("Replay");
-
-	if (ImGui::BeginTable("ReplayControls", 2))
-	{
-		ImGui::TableNextRow();
-
-		ImGui::TableSetColumnIndex(0);
-		if (ImGui::Button("Play", ImVec2(-1, 0)))
-			World->GetPathTracker().SetPlaybackEnabled(true);
-
-		ImGui::TableSetColumnIndex(1);
-		if (ImGui::Button("Stop", ImVec2(-1, 0)))
-			World->GetPathTracker().SetPlaybackEnabled(false);
-
-		ImGui::EndTable();
-	}
 
 	//////////////////////////////////////////////////////
 
@@ -398,6 +452,16 @@ void FEditorControlsPanel::DrawCameraProperties()
 			}
 			else CamCom->SetRelativeRotation(Rotation);
 		}
+
+
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(0);
+		ImGui::Text("Move Speed");
+		ImGui::TableSetColumnIndex(1);
+		ImGui::SetNextItemWidth(-1.0f);
+		ImGui::SliderFloat("##MoveSpeed", &CameraSpeed, 1.0f, 200.0f, "%.1f");
+
+
 		ImGui::EndTable();
 	}
 	if (ViewportAdapter && bChanged)

@@ -1,9 +1,11 @@
 #include "EnginePCH.h"
 #include "Editor/Viewports/ViewportsPanel.h"
-#include "Editor/LevelEditor/MultipleViewports/Adapter/MultipleViewportsAdapter.h"
+#include "Editor/Viewports/MultipleViewportsAdapter.h"
 
 #include "Core/StatOverlay.h"
-#include "Render/RenderCommand.h"
+#include "Core/Stats.h"
+#include "Core/StatDefinitions.h"
+#include "Rendering/RenderCommand.h"
 
 #include <algorithm>
 #include <cassert>
@@ -268,7 +270,6 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 	if (!DrawList || !FStatOverlay::IsAnyEnabled())
 		return;
 
-	constexpr float BytesPerMegabyte = 1024.0f * 1024.0f;
 
 	// 제목은 UE처럼 노란색, 값은 흰색으로 구분한다.
 	struct FStatLine { FString Text; ImU32 Color; };
@@ -276,19 +277,20 @@ void FViewportsPanel::DrawStatOverlay(ImDrawList* DrawList, const ImVec2& ViewMi
 
 	if (FStatOverlay::IsEnabled(EStatFlags::FPS))
 	{
-		Lines.Add({"FPS", TitleColor});
-		Lines.Add({std::format("  {:.1f} fps", FStatOverlay::GetFPS()), ValueColor});
+		Lines.Add({"Frame", TitleColor});
+		Lines.Add({std::format("  Resolution {} x {}", FStatOverlay::GetScreenWidth(), FStatOverlay::GetScreenHeight()), ValueColor});
+		Lines.Add({std::format("  {:.0f} fps", FStatOverlay::GetFPS()), ValueColor});
 		Lines.Add({std::format("  {:.2f} ms", FStatOverlay::GetFrameTimeMs()), ValueColor});
 	}
 
-	if (FStatOverlay::IsEnabled(EStatFlags::Memory))
+	if (FStatOverlay::IsEnabled(EStatFlags::Picking))
 	{
-		Lines.Add({"Memory", TitleColor});
-		Lines.Add({std::format("  Object  {:.2f} MB ({} allocs)",
-			static_cast<double>(FStatOverlay::GetObjectAllocationBytes()) / BytesPerMegabyte,
-			FStatOverlay::GetObjectAllocationCount()), ValueColor});
-		Lines.Add({std::format("  Process {:.2f} MB",
-			static_cast<double>(FStatOverlay::GetProcessWorkingSetBytes()) / BytesPerMegabyte), ValueColor});
+		const FStatRecord& Picking = FStats::GetRecord(StatIds::PickingTotal());
+
+		Lines.Add({"Picking", TitleColor});
+		Lines.Add({std::format("  Last Pick {:.3f} ms", Picking.CurrentValue), ValueColor});
+		Lines.Add({std::format("  Num Attempts {}", Picking.SampleCount), ValueColor});
+		Lines.Add({std::format("  Accumulated Time {:.4f} ms", Picking.TotalValue), ValueColor});
 	}
 
 	if (Lines.Num() == 0)
@@ -333,8 +335,8 @@ void FViewportsPanel::ResizeSlot(FViewSlot& Slot, const uint32 Width, const uint
 	Desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 	Slot.ColorTarget = RenderCommand::CreateTexture2D(Desc);
 
-	Desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-	Desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+	Desc.Format = DXGI_FORMAT_R24G8_TYPELESS;
+	Desc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
 	Slot.DepthTarget = RenderCommand::CreateTexture2D(Desc);
 
 	Slot.Width = Width;

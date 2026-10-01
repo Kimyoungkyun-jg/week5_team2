@@ -2,8 +2,8 @@
 #include "MeshComponent.h"
 
 #include "Asset/AssetManager.h"
-#include "Render/Material.h"
-#include "Render/Texture2D.h"
+#include "Rendering/Material.h"
+#include "Rendering/Texture2D.h"
 #include "Serialization/TypeSerializer.h"
 
 
@@ -54,7 +54,12 @@ void UMeshComponent::SetMaterial(int32 SlotIndex, UMaterial* InMaterial)
 	{
 		OverrideMaterials.Add(nullptr);
 	}
+	if (OverrideMaterials[SlotIndex] == InMaterial)
+	{
+		return;
+	}
 	OverrideMaterials[SlotIndex] = InMaterial;
+	MarkBoundsDirtyRecursive();
 }
 
 void UMeshComponent::Serialize(json& Handle, bool bIsLoading)

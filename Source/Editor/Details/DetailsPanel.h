@@ -1,11 +1,9 @@
 #pragma once
 
-#include <format>
 #include "Editor/EditorUI/EditorPanel.h"
 
-#include "Engine/World.h"
-
-struct FTransform;
+class UWorld;
+class USceneComponent;
 
 class FDetailsPanel : public IEditorPanel
 {

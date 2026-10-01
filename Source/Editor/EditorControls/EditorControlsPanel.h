@@ -22,7 +22,8 @@ public:
 	inline void SetWorld(UWorld* InWorld) { World = InWorld; }
 
 	float DeltaTime = 1.0f;
-	UWorld* World; // SpawnActor MainCamera
+	float CameraSpeed = 20.0f; // 기본 이동 속도
+	UWorld* World = nullptr; // 월드 포인터
 
 	void AddActor(uint32 Index);
 
@@ -30,7 +31,7 @@ public:
 
 	const char* Items[4] ={"StaticMesh","Particle","Text","Light"};
 
-	FGizmo* Gizmo;
+	FGizmo* Gizmo = nullptr;
 	int32 GizmoSelectedIndex = 0;
 	const char* GizmoItems[3] ={"Location","Rotation","Scale"};
 
@@ -50,6 +51,11 @@ public:
 private:
 	static constexpr float SectionGap = 10.0f;
 	static constexpr float SubsectionGap = 4.0f;
+
+	int32 GridCount[3] = {2, 2, 2};
+	float GridSpacing = 2.0f;
+	FVector GetSpawnOrigin() const;
+	void AddActorsGrid(uint32 Index);
 
     void DrawCameraProperties();
     FMultipleViewportsAdapter* ViewportAdapter = nullptr;

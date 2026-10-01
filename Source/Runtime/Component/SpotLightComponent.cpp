@@ -1,7 +1,7 @@
 #include "EnginePCH.h"
 #include "Component/SpotLightComponent.h"
 
-#include "Render/LineBatcher.h"
+#include "Rendering/LineBatcher.h"
 
 namespace
 {

@@ -48,7 +48,7 @@
 // 렌더 자원·월드·에디터와 MultipleViewports 연결을 초기화한다.
 bool FEditorApplication::Init(HINSTANCE hInstance) {
   // 신규 태스크 스케줄러 초기화
-  Tasks::FTaskScheduler::Get().Initialize(8);
+  Tasks::FTaskScheduler::Get().Initialize(4);
 
   EditorUI = MakeUnique<FEditorUI>();
   EditorUI->Init();

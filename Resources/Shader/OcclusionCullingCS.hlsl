@@ -129,7 +129,7 @@ void mainCS(uint3 GroupThreadID : SV_GroupThreadID, uint3 GroupID : SV_GroupID, 
 
                 float2 PixelSize = (MaxUV - MinUV) * HZBSize;
                 float MaxDim = max(PixelSize.x, PixelSize.y);
-                float Mip = floor(log2(max(MaxDim * 0.5f, 1.0f)));
+                float Mip = ceil(log2(max(MaxDim * 0.5f, 1.0f)));
                 Mip = clamp(Mip, 0.0f, float(NumHZBMips - 1));
 
                 // 텍셀 해상도 산출
